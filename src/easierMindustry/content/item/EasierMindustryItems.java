@@ -9,7 +9,7 @@ public class EasierMindustryItems {
         buildable = true;
         explosiveness = 0.5f;
         alwaysUnlocked = true;
-        iconName = "easier-mdy-frog";
+        iconName = "easier-mindustry-frog";
         }};
     public static void load(){}
 }

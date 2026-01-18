@@ -2,6 +2,7 @@ package easierMindustry.content.block;
 
 import easierMindustry.world.blocks.EasierMindustryGeneratorPump;
 import easierMindustry.world.blocks.EasierMindustryJunction;
+import easierMindustry.world.blocks.PowerProtector;
 import easierMindustry.world.blocks.RollGenerator;
 import mindustry.content.Items;
 import mindustry.content.Liquids;
@@ -11,7 +12,7 @@ import mindustry.world.Block;
 import mindustry.world.meta.BuildVisibility;
 
 public class EasierMindustryBlocks {
-    public static Block powerGenerationPump, dualPurposeJunction, rollGenerator;
+    public static Block powerGenerationPump, dualPurposeJunction, rollGenerator, powerProtector;
 
     public static void load() {
         powerGenerationPump = new EasierMindustryGeneratorPump("power-generation-pump") {{
@@ -37,12 +38,21 @@ public class EasierMindustryBlocks {
         // Compound interest generator - generates power based on 1% of existing stored power
         rollGenerator = new RollGenerator("roll-generator") {{
             requirements(Category.power, BuildVisibility.shown,
-                    ItemStack.with(Items.copper, 100, Items.lead, 80, Items.graphite, 60,
-                            Items.silicon, 50, Items.thorium, 40, Items.plastanium, 30));
-            size = 3;
-            health = 800;
-            powerProductionPercentage = 0.01f;
+                    ItemStack.with(Items.copper, 40, Items.lead, 24, Items.graphite, 20,
+                            Items.silicon, 16, Items.thorium, 16, Items.plastanium, 10));
+            size = 1;
+//            health = 800;
+            powerProductionPercentage = 0.001f;
             maxPowerGeneration = 1000f;
+        }};
+
+        // Power protector - protects power network when below 0 and recovers spent power
+        powerProtector = new PowerProtector("power-protector") {{
+            requirements(Category.power, BuildVisibility.shown,
+                    ItemStack.with(Items.copper, 150, Items.lead, 100, Items.graphite, 80,
+                            Items.silicon, 70, Items.thorium, 50, Items.plastanium, 40, Items.phaseFabric, 20));
+            size = 2;
+            health = 600;
         }};
     }
 }

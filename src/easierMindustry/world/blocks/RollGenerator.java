@@ -15,9 +15,9 @@ import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
 
 public class RollGenerator extends PowerGenerator {
-    public float powerProductionPercentage = 0.01f;
-
-    public float maxPowerGeneration = 1000f;
+    public float powerStoredProductionPercentage = 0.01f;
+    public float powerChangedProductionPercentage = 0.05f;
+    public float maxPowerGeneration = 1f;
 
     public RollGenerator(String name) {
         super(name);
@@ -33,6 +33,8 @@ public class RollGenerator extends PowerGenerator {
         saveConfig = false;      // Don't save configuration
         displayFlow = false;     // Don't display flow
         drawArrow = false;       // Don't draw arrow
+        consumePowerDynamic((entity) -> ((RollGeneratorBuild) entity).getPowerConsumptionPerTick()).optional(false, false);
+
     }
 
     @Override
@@ -47,20 +49,19 @@ public class RollGenerator extends PowerGenerator {
         super.setBars();
 
         // Add power status bar
-        addBar("power", entity -> new Bar(
-                () -> Core.bundle.format("bar.poweroutput", Strings.fixed(entity.getPowerProduction() * 60 * entity.timeScale(), 1)),
+        addBar("power", (RollGeneratorBuild entity) -> new Bar(() ->
+                Core.bundle.format("bar.power1", Strings.fixed((entity.currentPowerProduction * 60 * entity.timeScale()), 1)),
                 () -> Pal.powerBar,
-                () -> entity.power != null ? entity.power.status : 0f
-        ));
+                () -> entity.productionEfficiency));
     }
 
-    public class CompoundInterestGeneratorBuild extends GeneratorBuild {
+    public class RollGeneratorBuild extends GeneratorBuild {
         private float currentPowerProduction = 0f;
-        private float timer = 0f;
 
         @Override
         public void updateTile() {
             if (!enabled) return;
+
 
             // Calculate power generation every second (based on 1% of current stored power)
             //timer += edelta(); // Use edelta() instead of Time.delta
@@ -71,10 +72,17 @@ public class RollGenerator extends PowerGenerator {
 
             // Get current stored power in the power network
             float powerStored = power.graph.getBatteryStored();
+            float powerChanged = power.graph.getLastScaledPowerIn() - power.graph.getLastScaledPowerOut();
+            if (powerStored < power.graph.getBatteryCapacity()) {
+                maxPowerGeneration += edelta();
+            } else if (powerStored == power.graph.getBatteryCapacity() && maxPowerGeneration > 1f) {
+                maxPowerGeneration /= 2f;
+            }
 
             // Calculate new power generation: 1% per second = 1% / 60 per tick
             // Limit minimum power generation to avoid stopping
-            currentPowerProduction = Math.min(Math.max(powerStored * powerProductionPercentage / 60f, 0.01f / 60f), maxPowerGeneration / 60f);
+            currentPowerProduction = Math.min(Math.max(powerStored * powerStoredProductionPercentage / 60f +
+                    powerChanged * powerChangedProductionPercentage / 60f, 0.01f / 60f), maxPowerGeneration / 60f);
 
             // Update efficiency
             power.status = currentPowerProduction > 0 ? currentPowerProduction / (maxPowerGeneration / 60f) : 0f;
@@ -84,7 +92,11 @@ public class RollGenerator extends PowerGenerator {
         @Override
         public float getPowerProduction() {
             // Return current power generation
-            return currentPowerProduction;
+            return (currentPowerProduction > 0) ? currentPowerProduction : 0f;
+        }
+
+        public float getPowerConsumptionPerTick() {
+            return (currentPowerProduction < 0) ? currentPowerProduction : 0f;
         }
 
         @Override

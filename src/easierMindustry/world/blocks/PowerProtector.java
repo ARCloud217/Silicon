@@ -2,6 +2,7 @@ package easierMindustry.world.blocks;
 
 import arc.Core;
 import arc.graphics.Color;
+import arc.math.Mathf;
 import arc.util.Log;
 import arc.util.Strings;
 import arc.util.Time;
@@ -21,8 +22,8 @@ import mindustry.world.meta.StatUnit;
 public class PowerProtector extends PowerGenerator {
     public float protectionTime = 5 * 60 * 60f; // 5 minutes in ticks (60 ticks per second)
     public float exitGrowthTime = 30 * 60f; // 30 seconds in ticks for continuous growth
-    public float recoveryRate = 0.01f; // 1% per second for recovery
-    public float minProtectedPower = 512f; // Minimum protected power level
+    public float recoveryRate = 0.001f; // 0.1% per second for recovery
+    public float minProtectPower = 1f; // Minimum protected power level
 
     /**
      * Constructor for PowerProtector
@@ -33,16 +34,17 @@ public class PowerProtector extends PowerGenerator {
         // Basic properties setup
         update = true;           // Needs updating
         solid = true;            // Is solid
-        hasPower = true;         // Requires power module
-        outputsPower = true;    // Doesn't output power
+        consumesPower = true;
+        outputsPower = true;     // Doesn't output power
         size = 2;                // Size of the block
         health = 600;            // Health points
         envEnabled = Env.any;    // Effective in any environment
         configurable = false;    // Not configurable
         saveConfig = false;      // Don't save configuration
         displayFlow = false;     // Don't display flow
-        drawArrow = false;       // Don't draw arrow
-        consumePowerDynamic((entity) -> ((PowerProtectorBuild) entity).getRecoveryPerTick());
+        drawArrow = false;  // Don't draw arrow
+        consumePowerDynamic((entity) -> ((PowerProtectorBuild) entity).recoveryPerTick).optional(false, false);
+//        consPower.update = true;
     }
 
     /**
@@ -62,10 +64,16 @@ public class PowerProtector extends PowerGenerator {
     @Override
     public void setBars() {
         super.setBars();
+        addBar("power", (PowerProtectorBuild entity) -> new Bar(() ->
+                Core.bundle.format("bar.power1", entity.inProtection && !entity.inRecovery ?
+                        Strings.fixed(entity.getPowerProduction() * 60 * entity.timeScale(), 1) :
+                        Strings.fixed(entity.currentPowerProduction * 60 * entity.timeScale(), 1)),
+                () -> Pal.powerBar,
+                () -> entity.productionEfficiency));
 
         // Add spent power bar
         addBar("spent-power", entity -> new Bar(
-                () -> Core.bundle.format("bar.spent-power", Strings.fixed(((PowerProtectorBuild) entity).totalSpentPower, 2)),
+                () -> Core.bundle.format("bar.spent-power", Strings.fixed(((PowerProtectorBuild) entity).totalSpentPower, 1)),
                 () -> Pal.powerBar,
                 () -> ((PowerProtectorBuild) entity).totalSpentPower > 0 ?
                         Math.min(1f, ((PowerProtectorBuild) entity).totalSpentPower) : 0f
@@ -80,20 +88,22 @@ public class PowerProtector extends PowerGenerator {
                         (((PowerProtectorBuild) entity).isInRecoveryMode() ? Color.orange : Color.white),
                 () -> 1f)
         );
+//        addBar("shouldConsumePower",
+//                entity -> new Bar(String.valueOf(entity.shouldConsumePower), Color.red, () -> 1f));
     }
 
     /**
      * Internal building class for PowerProtector
      */
     public class PowerProtectorBuild extends GeneratorBuild {
-        private boolean inProtectionMode = false;
-        private boolean inRecoveryMode = false;
+        private boolean inProtection = false;
+        private boolean inRecovery = false;
         private float protectionTimer = 0f;
         private float recoveryTimer = 0f;
         /**
          * Timer for continuous power growth
          */
-        private float powerGrowthTimer = 0f;
+        private float growthTimer = 0f;
         /**
          * Total power that has been spent/deducted
          */
@@ -102,12 +112,11 @@ public class PowerProtector extends PowerGenerator {
         /**
          * Recovery period for power growth
          */
-        private float recoveryPeriod = 0f; // How long the recovery period should last
-        /**
-         * Current power production during recovery
-         */
+        private float recoveryPeriodTime = 0f; // How long the recovery period should last
         private float currentPowerProduction = 0f;
-        private float recoveryPerSecond = 0f;
+        private float restorePrincipalTick = 0f;
+        private float currentProtectPower;
+        private float recoveryPerTick = 0f;
 
         /**
          * Updates the tile every frame
@@ -120,15 +129,46 @@ public class PowerProtector extends PowerGenerator {
 //            float powerCapacity = power.graph.getBatteryCapacity();
 
             // Check if we should enter protection mode (when power is 0 or negative)
-            if (!inProtectionMode && !inRecoveryMode && powerStored == 0) {
+            if (!inProtection && !inRecovery && powerStored <= 0.1f) {
                 enterProtectionMode();
             }
 
             // Handle protection mode
-            if (inProtectionMode) {
+            if (inProtection) {
                 handleProtectionMode(powerStored);
-            } else if (inRecoveryMode) {
+
+                if (protectionTimer >= protectionTime || growthTimer >= exitGrowthTime || totalSpentPower >= 1e9f) {
+                    inProtection = false;
+                    currentProtectPower = minProtectPower;
+                    growthTimer = 0f;
+                    currentPowerProduction = 0f;
+                    // Enter recovery mode for the same duration as protection time
+//            inRecoveryMode = true;
+//            recoveryTimer = 0f;
+//            recoveryPeriod = protectionTimer; // Same duration as a protection period
+
+
+                    Log.info("Power Protector exited protection mode, entering recovery mode.");
+
+
+                    inRecovery = true;
+                    recoveryTimer = 0f;
+                    // The Recovery period is the same as the protection period
+                    recoveryPeriodTime = protectionTimer;
+                    protectionTimer = 0f;
+                    restorePrincipalTick = totalSpentPower / (recoveryPeriodTime / (60f * 60f)); // Convert ticks to seconds
+                }
+            } else if (inRecovery) {
                 handleRecoveryMode();
+
+                // Exit recovery mode when time is up or all spent power is consumed
+                if (totalSpentPower <= 0) {
+                    inRecovery = false;
+                    recoveryTimer = 0f;
+                    totalSpentPower = 0f;
+
+                    Log.info("Power Protector exited recovery mode.");
+                }
             }
 
             // Track power changes for exit condition
@@ -144,75 +184,39 @@ public class PowerProtector extends PowerGenerator {
          * Enters protection mode
          */
         private void enterProtectionMode() {
-            inProtectionMode = true;
+            currentProtectPower = minProtectPower;
+            inProtection = true;
             protectionTimer = 0f;
-            powerGrowthTimer = 0f;
+            growthTimer = 0f;
             // Record current spent power as recovery baseline
 //            currentSpentPower = totalSpentPower;
             Log.info("Power Protector entered protection mode.");
         }
 
-        /**
-         * Exits protection mode and enters recovery mode
-         */
-        private void exitProtectionMode() {
-            inProtectionMode = false;
-            protectionTimer = 0f;
-            powerGrowthTimer = 0f;
-            currentPowerProduction = 0f;
-            // Enter recovery mode for the same duration as protection time
-//            inRecoveryMode = true;
-//            recoveryTimer = 0f;
-//            recoveryPeriod = protectionTimer; // Same duration as a protection period
-
-            enterRecoveryMode();
-
-            Log.info("Power Protector exited protection mode, entering recovery mode.");
-        }
-
-        /**
-         * Enters recovery mode
-         */
-        private void enterRecoveryMode() {
-            inRecoveryMode = true;
-            recoveryTimer = 0f;
-            // The Recovery period is the same as the protection period
-            recoveryPeriod = protectionTimer;
-            recoveryPerSecond = totalSpentPower / (recoveryPeriod / 60f); // Convert ticks to seconds
-            Log.info("Power Protector entered recovery mode for " + recoveryPeriod / (60 * 60) + " seconds.");
-        }
-
-        /**
-         * Exits recovery mode
-         */
-        private void exitRecoveryMode() {
-            inRecoveryMode = false;
-            recoveryTimer = 0f;
-            totalSpentPower = 0f;
-
-            Log.info("Power Protector exited recovery mode.");
-        }
-
+//        public boolean shouldConsumePower() {
+//            return shouldConsumePower = inRecoveryMode;
+//        }
         /**
          * Handles protection mode logic
          */
         private void handleProtectionMode(float powerStored) {
             protectionTimer += Time.delta;
-            if (inProtectionMode && powerStored >= power.graph.getLastPowerStored()) {
-                powerGrowthTimer += Time.delta;
+            if (inProtection && powerStored >= power.graph.getLastPowerStored()) {
+                growthTimer += Time.delta;
             }
-            if (powerStored < Math.min(minProtectedPower, power.graph.getBatteryCapacity())) {
-                currentPowerProduction = minProtectedPower - powerStored;
-                totalSpentPower += currentPowerProduction;
+            if (powerStored <= 0.1f) {
+                currentProtectPower = Mathf.clamp(currentProtectPower * 2, minProtectPower, 1e9f);
+            }
+            if (powerStored < Math.min(currentProtectPower, power.graph.getBatteryCapacity())) {
+                currentPowerProduction = currentProtectPower - powerStored;
+                totalSpentPower = Mathf.clamp(currentPowerProduction + totalSpentPower, 0f, 1e9f);
             } else {
                 currentPowerProduction = 0;
             }
             // Exit conditions for protection mode:
             // 1. After 5 minutes have passed
             // 2. After 30 seconds of continuous power growth
-            if (protectionTimer >= protectionTime || powerGrowthTimer >= exitGrowthTime) {
-                exitProtectionMode();
-            }
+
         }
 
         /**
@@ -222,51 +226,49 @@ public class PowerProtector extends PowerGenerator {
             recoveryTimer += Time.delta;
 
             // In recovery mode, consume spent power using equal principal method at 1% per second
-            if (totalSpentPower > 0 && recoveryPeriod > 0) {
+            if (totalSpentPower > 0 && recoveryPeriodTime > 0) {
                 // Calculate equal principal amount to consume per second
-                float totalRecoveryPerTick = getRecoveryPerTick();
-
+                updateRecoveryPerTick();
                 // Reduce the current spent power by the recovery amount
-                totalSpentPower -= totalRecoveryPerTick;
+                totalSpentPower -= recoveryPerTick;
 
-                // Ensure currentSpentPower doesn't go below 0
-                if (totalSpentPower <= 0) {
-                    totalSpentPower = 0;
-                    exitRecoveryMode();
-                }
+
             }
 
-            // Exit recovery mode when time is up or all spent power is consumed
-            if (recoveryTimer >= recoveryPeriod || totalSpentPower <= 0) {
-                exitRecoveryMode();
-            }
+
         }
 
         /**
          * Calculates the amount of power to recover per tick
          */
-        public float getRecoveryPerTick() {
-            float recoveryPerTick = recoveryPerSecond / 60; // Convert to per tick
+        private void updateRecoveryPerTick() {
+            if (inRecovery) {
+                float powerStored = power.graph.getBatteryStored();
+                float powerChanged = power.graph.getLastScaledPowerIn() - power.graph.getLastScaledPowerOut();
 
-            // Also add interest at 1% per second of remaining spent power
-            float interestPerSecond = totalSpentPower * recoveryRate; // 1% per second
-            float interestPerTick = interestPerSecond / 60;
+                // Also add interest at 1% per second of remaining spent power
+                float interestPerSecond = totalSpentPower * recoveryRate;// 1% per second
 
-            return recoveryPerTick + interestPerTick;
+                float interestPerTick = interestPerSecond / 60;
+                totalSpentPower += interestPerTick;
+                recoveryPerTick = Math.min(restorePrincipalTick + interestPerTick, (powerStored + powerChanged));
+            } else {
+                recoveryPerTick = 0f;
+            }
         }
 
         /**
          * Checks if the protector is in protection mode
          */
         public boolean isInProtectionMode() {
-            return inProtectionMode;
+            return inProtection;
         }
 
         /**
          * Checks if the protector is in recovery mode
          */
         public boolean isInRecoveryMode() {
-            return inRecoveryMode;
+            return inRecovery;
         }
 
         @Override
@@ -282,7 +284,27 @@ public class PowerProtector extends PowerGenerator {
         public double sense(LAccess sensor) {
             if (sensor == LAccess.powerNetStored) return power.graph.getBatteryStored();
             if (sensor == LAccess.powerNetCapacity) return power.graph.getBatteryCapacity();
+            if (sensor == LAccess.efficiency) return shouldConsume() ? efficiency : 0f;
             return super.sense(sensor);
         }
+
+//        @Override
+//        public boolean shouldConsume() {
+//            return true;
+//        }
+//
+//        @Override
+//        public boolean consumeTriggerValid() {
+//            return true;
+//        }
+//
+//        @Override
+//        public boolean canConsume() {
+//            return true;
+//        }
+//
+//        public boolean productionValid() {
+//            return true;
+//        }
     }
 }

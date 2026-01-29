@@ -42,8 +42,7 @@ public class EasierMindustryBlocks {
                             Items.silicon, 16, Items.thorium, 16, Items.plastanium, 10));
             size = 1;
 //            health = 800;
-            powerProductionPercentage = 0.001f;
-            maxPowerGeneration = 1000f;
+            powerStoredProductionPercentage = 0.001f;
         }};
 
         // Power protector - protects power network when below 0 and recovers spent power

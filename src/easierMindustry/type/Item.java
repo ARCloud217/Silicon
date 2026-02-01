@@ -2,16 +2,15 @@ package easierMindustry.type;
 
 import arc.Core;
 import arc.graphics.Color;
-import mindustry.type.Item;
 
-public class EasierMindustryItem extends Item {
+public class Item extends mindustry.type.Item {
     public String iconName;
 
-    public EasierMindustryItem(String name) {
+    public Item(String name) {
         super(name);
     }
 
-    public EasierMindustryItem(String name, Color color) {
+    public Item(String name, Color color) {
         super(name, color);
     }
     public void loadIcon(String fullIconName){

@@ -13,11 +13,11 @@ import mindustry.world.meta.BlockGroup;
 
 import static mindustry.Vars.content;
 
-public class EasierMindustryJunction extends LiquidJunction {
+public class Junction extends LiquidJunction {
     public float speed = 26; //frames taken to go through this junction
     public int capacity = 6;
 
-    public EasierMindustryJunction(String name) {
+    public Junction(String name) {
         super(name);
         update = true;
         solid = false;

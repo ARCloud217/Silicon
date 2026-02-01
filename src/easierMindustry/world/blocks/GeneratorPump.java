@@ -31,7 +31,7 @@ import mindustry.world.meta.StatUnit;
 import static mindustry.Vars.*;
 import static mindustry.world.meta.StatValues.withTooltip;
 
-public class EasierMindustryGeneratorPump extends LiquidBlock {
+public class GeneratorPump extends LiquidBlock {
     /**
      * The amount of power produced per tick in case of an efficiency of 1.0, which represents 100%.
      */
@@ -51,7 +51,7 @@ public class EasierMindustryGeneratorPump extends LiquidBlock {
     public @Nullable ConsumeItemFilter filterItem;
     public @Nullable ConsumeLiquidFilter filterLiquid;
 
-    public EasierMindustryGeneratorPump(String name) {
+    public GeneratorPump(String name) {
         super(name);
         group = BlockGroup.liquids;
         floating = true;

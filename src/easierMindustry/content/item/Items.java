@@ -1,11 +1,11 @@
 package easierMindustry.content.item;
 
 import arc.graphics.Color;
-import easierMindustry.type.EasierMindustryItem;
+import easierMindustry.type.Item;
 
-public class EasierMindustryItems {
+public class Items {
 
-    public static EasierMindustryItem thulium = new EasierMindustryItem("thulium", Color.rgb(1, 1, 100)) {{
+    public static Item thulium = new Item("thulium", Color.rgb(1, 1, 100)) {{
         buildable = true;
         explosiveness = 0.5f;
         alwaysUnlocked = true;

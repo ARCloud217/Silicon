@@ -1,7 +1,7 @@
 package easierMindustry.content.block;
 
-import easierMindustry.world.blocks.EasierMindustryGeneratorPump;
-import easierMindustry.world.blocks.EasierMindustryJunction;
+import easierMindustry.world.blocks.GeneratorPump;
+import easierMindustry.world.blocks.Junction;
 import easierMindustry.world.blocks.PowerProtector;
 import easierMindustry.world.blocks.RollGenerator;
 import mindustry.content.Items;
@@ -11,11 +11,11 @@ import mindustry.type.ItemStack;
 import mindustry.world.Block;
 import mindustry.world.meta.BuildVisibility;
 
-public class EasierMindustryBlocks {
+public class Blocks {
     public static Block powerGenerationPump, dualPurposeJunction, rollGenerator, powerProtector;
 
     public static void load() {
-        powerGenerationPump = new EasierMindustryGeneratorPump("power-generation-pump") {{
+        powerGenerationPump = new GeneratorPump("power-generation-pump") {{
             hasItems = false;
             liquidPressure = 1f;
             pumpAmount = 0.22f;
@@ -30,7 +30,7 @@ public class EasierMindustryBlocks {
                     ItemStack.with(Items.copper, 60, Items.lead, 30, Items.metaglass, 15, Items.graphite, 40,
                             Items.titanium, 45, Items.thorium, 6, Items.silicon, 40));
         }};
-        dualPurposeJunction = new EasierMindustryJunction("dual-purpose-junction") {{
+        dualPurposeJunction = new Junction("dual-purpose-junction") {{
             requirements(Category.liquid, BuildVisibility.shown,
                     ItemStack.with(Items.graphite, 2, Items.metaglass, 4, Items.copper, 1));
         }};

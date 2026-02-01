@@ -1,8 +1,8 @@
 package easierMindustry;
 
 import arc.util.Log;
-import easierMindustry.content.block.EasierMindustryBlocks;
-import easierMindustry.content.item.EasierMindustryItems;
+import easierMindustry.content.block.Blocks;
+import easierMindustry.content.item.Items;
 import mindustry.mod.Mod;
 
 
@@ -57,8 +57,8 @@ public class EasierMindustry extends Mod {
 
     @Override
     public void loadContent() {
-        EasierMindustryItems.load();
-        EasierMindustryBlocks.load();
+        Items.load();
+        Blocks.load();
         Log.info("Loading some easierMindustry content.");
     }
 

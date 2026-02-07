@@ -9,10 +9,14 @@ import mindustry.content.Liquids;
 import mindustry.type.Category;
 import mindustry.type.ItemStack;
 import mindustry.world.Block;
+import mindustry.world.blocks.sandbox.PowerSource;
 import mindustry.world.meta.BuildVisibility;
 
+import static mindustry.type.ItemStack.with;
+
 public class Blocks {
-    public static Block powerGenerationPump, dualPurposeJunction, rollGenerator, powerProtector;
+    public static Block powerGenerationPump, dualPurposeJunction,
+            rollGenerator, powerProtector, powerSource;
 
     public static void load() {
         powerGenerationPump = new GeneratorPump("power-generation-pump") {{
@@ -43,6 +47,7 @@ public class Blocks {
             size = 1;
 //            health = 800;
             powerStoredProductionPercentage = 0.001f;
+            powerChangedProductionPercentage = 0.01f;
         }};
 
         // Power protector - protects power network when below 0 and recovers spent power
@@ -52,6 +57,13 @@ public class Blocks {
                             Items.silicon, 70, Items.thorium, 50, Items.plastanium, 40, Items.phaseFabric, 20));
             size = 2;
             health = 600;
+        }};
+        powerSource = new PowerSource("power-source") {{
+            requirements(Category.power, BuildVisibility.sandboxOnly, with());
+            alwaysUnlocked = true;
+            size = 1;
+            health = 600;
+            powerProduction = Float.MAX_VALUE;
         }};
     }
 }

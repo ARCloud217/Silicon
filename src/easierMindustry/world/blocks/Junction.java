@@ -33,7 +33,7 @@ public class Junction extends LiquidJunction {
         return true;
     }
 
-    public class EasierMindustryJunctionBuild extends LiquidJunctionBuild {
+    public class JunctionBuild extends LiquidJunctionBuild {
         public DirectionalItemBuffer buffer = new DirectionalItemBuffer(capacity);
 
         @Override

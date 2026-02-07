@@ -17,7 +17,7 @@ import mindustry.world.meta.Stat;
 public class RollGenerator extends PowerGenerator {
     public float powerStoredProductionPercentage = 0.01f;
     public float powerChangedProductionPercentage = 0.05f;
-    public float maxPowerGeneration = 1f;
+
 
     public RollGenerator(String name) {
         super(name);
@@ -52,11 +52,19 @@ public class RollGenerator extends PowerGenerator {
         addBar("power", (RollGeneratorBuild entity) -> new Bar(() ->
                 Core.bundle.format("bar.power1", Strings.fixed((entity.currentPowerProduction * 60 * entity.timeScale()), 1)),
                 () -> Pal.powerBar,
-                () -> entity.productionEfficiency));
+                () -> entity.currentPowerProduction / entity.maxPowerGeneration));
+        addBar("4",
+                (RollGeneratorBuild entity) ->
+                        new Bar(() -> String.valueOf(entity.maxPowerGeneration), () -> Color.white, () -> 1f));
+        addBar("5",
+                (RollGeneratorBuild entity) ->
+                        new Bar(() -> String.valueOf(entity.delta()), () -> Color.white, () -> 1f));
+
     }
 
     public class RollGeneratorBuild extends GeneratorBuild {
         private float currentPowerProduction = 0f;
+        public float maxPowerGeneration = 1f;
 
         @Override
         public void updateTile() {
@@ -74,8 +82,8 @@ public class RollGenerator extends PowerGenerator {
             float powerStored = power.graph.getBatteryStored();
             float powerChanged = power.graph.getLastScaledPowerIn() - power.graph.getLastScaledPowerOut();
             if (powerStored < power.graph.getBatteryCapacity()) {
-                maxPowerGeneration += edelta();
-            } else if (powerStored == power.graph.getBatteryCapacity() && maxPowerGeneration > 1f) {
+                maxPowerGeneration += delta();
+            } else if (powerStored >= power.graph.getBatteryCapacity() && maxPowerGeneration > 1f) {
                 maxPowerGeneration /= 2f;
             }
 

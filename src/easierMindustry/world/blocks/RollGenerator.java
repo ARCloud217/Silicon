@@ -53,12 +53,12 @@ public class RollGenerator extends PowerGenerator {
                 Core.bundle.format("bar.power1", Strings.fixed((entity.currentPowerProduction * 60 * entity.timeScale()), 1)),
                 () -> Pal.powerBar,
                 () -> entity.currentPowerProduction / entity.maxPowerGeneration));
-        addBar("4",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.maxPowerGeneration), () -> Color.white, () -> 1f));
-        addBar("5",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.delta()), () -> Color.white, () -> 1f));
+//        addBar("4",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.maxPowerGeneration), () -> Color.white, () -> 1f));
+//        addBar("5",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.delta()), () -> Color.white, () -> 1f));
 
     }
 
@@ -80,20 +80,20 @@ public class RollGenerator extends PowerGenerator {
 
             // Get current stored power in the power network
             float powerStored = power.graph.getBatteryStored();
-            float powerChanged = power.graph.getLastScaledPowerIn() - power.graph.getLastScaledPowerOut();
+            float powerChanged = power.graph.getPowerBalance();
             if (powerStored < power.graph.getBatteryCapacity()) {
-                maxPowerGeneration += delta();
+                maxPowerGeneration += Time.delta;
             } else if (powerStored >= power.graph.getBatteryCapacity() && maxPowerGeneration > 1f) {
                 maxPowerGeneration /= 2f;
             }
 
             // Calculate new power generation: 1% per second = 1% / 60 per tick
             // Limit minimum power generation to avoid stopping
-            currentPowerProduction = Math.min(Math.max(powerStored * powerStoredProductionPercentage / 60f +
-                    powerChanged * powerChangedProductionPercentage / 60f, 0.01f / 60f), maxPowerGeneration / 60f);
+            currentPowerProduction = Math.min(powerStored * powerStoredProductionPercentage / 60f +
+                    powerChanged * powerChangedProductionPercentage / 60f, maxPowerGeneration);
 
             // Update efficiency
-            power.status = currentPowerProduction > 0 ? currentPowerProduction / (maxPowerGeneration / 60f) : 0f;
+//            power.status = currentPowerProduction > 0 ? currentPowerProduction / (maxPowerGeneration / 60f) : 0f;
             //}
         }
 

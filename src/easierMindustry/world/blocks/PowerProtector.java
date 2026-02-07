@@ -23,7 +23,7 @@ import mindustry.world.meta.StatUnit;
 public class PowerProtector extends PowerGenerator {
     public float protectionTime = 5 * 60 * 60f; // 5 minutes in ticks (60 ticks per second)
     public float exitGrowthTime = 30 * 60f; // 30 seconds in ticks for continuous growth
-    public float recoveryRate = 0.001f; // 0.1% per second for recovery
+    public float secondRecoveryRate = 0.001f; // 0.1% per second for recovery
     public float minProtectPower = 1f; // Minimum protected power level
     public float secondsTimer = 0;
 
@@ -90,15 +90,15 @@ public class PowerProtector extends PowerGenerator {
                         (((PowerProtectorBuild) entity).isInRecoveryMode() ? Color.orange : Color.white),
                 () -> 1f)
         );
-        addBar("1",
-                (PowerProtectorBuild entity) ->
-                        new Bar(() -> UI.formatAmount((long) (entity.power.graph.getPowerBalance())), () -> Color.red, () -> 1f));
-        addBar("3",
-                (PowerProtectorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.tickRPower), () -> Color.white, () -> 1f));
-        addBar("4",
-                (PowerProtectorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.tickPPower), () -> Color.white, () -> 1f));
+//        addBar("1",
+//                (PowerProtectorBuild entity) ->
+//                        new Bar(() -> UI.formatAmount((long) (entity.power.graph.getPowerBalance())), () -> Color.red, () -> 1f));
+//        addBar("3",
+//                (PowerProtectorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.tickRPower), () -> Color.white, () -> 1f));
+//        addBar("4",
+//                (PowerProtectorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.tickPPower), () -> Color.white, () -> 1f));
     }
 
     /**
@@ -261,7 +261,7 @@ public class PowerProtector extends PowerGenerator {
                 float powerChanged = power.graph.getPowerBalance();
 
                 // Also add interest at 1% per second of remaining spent power
-                double interestPerSecond = totalSpentPower * recoveryRate;// 0.1% per second
+                double interestPerSecond = totalSpentPower * secondRecoveryRate / 60;// 0.1% per second
 
                 double interestPerTick = interestPerSecond / 60;
                 totalSpentPower += interestPerTick;

@@ -7,6 +7,8 @@ import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
 import arc.util.Strings;
 import arc.util.Time;
+import arc.util.io.Reads;
+import arc.util.io.Writes;
 import mindustry.graphics.Pal;
 import mindustry.logic.LAccess;
 import mindustry.ui.Bar;
@@ -130,6 +132,20 @@ public class RollGenerator extends PowerGenerator {
             if (sensor == LAccess.powerNetStored) return power.graph.getBatteryStored();
             if (sensor == LAccess.powerNetCapacity) return power.graph.getBatteryCapacity();
             return super.sense(sensor);
+        }
+
+        @Override
+        public void write(Writes write) {
+            super.write(write);
+            write.f(currentPowerProduction);
+            write.f(maxPowerGeneration);
+        }
+
+        @Override
+        public void read(Reads read, byte revision) {
+            super.read(read, revision);
+            currentPowerProduction = read.f();
+            maxPowerGeneration = read.f();
         }
     }
 }

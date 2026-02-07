@@ -6,6 +6,8 @@ import arc.math.Mathf;
 import arc.util.Log;
 import arc.util.Strings;
 import arc.util.Time;
+import arc.util.io.Reads;
+import arc.util.io.Writes;
 import mindustry.core.UI;
 import mindustry.graphics.Pal;
 import mindustry.logic.LAccess;
@@ -67,7 +69,7 @@ public class PowerProtector extends PowerGenerator {
     public void setBars() {
         super.setBars();
         addBar("power", (PowerProtectorBuild entity) -> new Bar(() ->
-                Core.bundle.format("bar.power1", entity.inProtection && !entity.inRecovery ?
+                Core.bundle.format("bar.power1", entity.status == 1 ?
                         Strings.fixed(entity.getPowerProduction() * 60 * entity.timeScale(), 1) :
                         Strings.fixed(entity.tickRPower * 60 * entity.timeScale(), 1)),
                 () -> Pal.powerBar,
@@ -105,8 +107,9 @@ public class PowerProtector extends PowerGenerator {
      * Internal building class for PowerProtector
      */
     public class PowerProtectorBuild extends GeneratorBuild {
-        private boolean inProtection = false;
-        private boolean inRecovery = false;
+        private byte status = 0;
+        //        private boolean inProtection = false;
+//        private boolean inRecovery = false;
         private float protectionTimer = 0f;
         /**
          * Timer for continuous power growth
@@ -134,25 +137,25 @@ public class PowerProtector extends PowerGenerator {
             float powerCapacity = power.graph.getBatteryCapacity();
 
             // Check if we should enter protection mode (when power is 0 or negative)
-            if (!inProtection && !inRecovery && powerStored <= Mathf.FLOAT_ROUNDING_ERROR &&
+            if (status == 0 && powerStored <= Mathf.FLOAT_ROUNDING_ERROR &&
                     power.links.size > 0 && power.graph.getPowerBalance() < 0f && powerCapacity > 0) {
                 enterProtectionMode();
             }
 
             // Handle protection mode
-            if (inProtection) {
+            if (status == 1) {
                 handleProtectionMode(powerStored);
 
                 if (protectionTimer >= protectionTime || growthTimer >= exitGrowthTime
                         || totalSpentPower >= Float.MAX_VALUE || power.links.size == 0 || powerCapacity == 0) {
                     exitProtectionMode(); // Exit protection mode
                 }
-            } else if (inRecovery) {
+            } else if (status == -1) {
                 handleRecoveryMode();
 
                 // Exit recovery mode when time is up or all spent power is consumed
                 if (totalSpentPower <= 0) {
-                    inRecovery = false;
+                    status = 0;
                     totalSpentPower = 0f;
                     tickRPower = 0f;
                 }
@@ -171,7 +174,7 @@ public class PowerProtector extends PowerGenerator {
          * Enters protection mode
          */
         private void enterProtectionMode() {
-            inProtection = true;
+            status = 1;
             protectionTimer = 0f;
             growthTimer = 0f;
             // Record current spent power as recovery baseline
@@ -189,7 +192,7 @@ public class PowerProtector extends PowerGenerator {
         private void handleProtectionMode(float powerStored) {
             protectionTimer += Time.delta;
             lastTickPPower = tickPPower;
-            if (inProtection && power.graph.getPowerBalance() > 0f) {
+            if (status == 1 && power.graph.getPowerBalance() > 0f) {
                 growthTimer += Time.delta;
             } else {
                 growthTimer = 0f;
@@ -229,7 +232,6 @@ public class PowerProtector extends PowerGenerator {
         }
 
         private void exitProtectionMode() {
-            inProtection = false;
             growthTimer = 0f;
             tickPPower = 0f;
             // Enter recovery mode for the same duration as protection time
@@ -238,7 +240,7 @@ public class PowerProtector extends PowerGenerator {
 //            recoveryPeriod = protectionTimer; // Same duration as a protection period
 
 
-            inRecovery = true;
+            status = -1;
             // The Recovery period is the same as the protection period
             /**
              * Recovery period for power growth
@@ -253,7 +255,7 @@ public class PowerProtector extends PowerGenerator {
          * Calculates the amount of power to recover per tick
          */
         private void updateTick() {
-            if (inRecovery) {
+            if (status == -1) {
                 lastTickRPower = tickRPower; // Store the last tick's recovery amount
                 // Reduce the current spent power by the recovery amount
                 totalSpentPower -= lastTickRPower;
@@ -281,14 +283,14 @@ public class PowerProtector extends PowerGenerator {
          * Checks if the protector is in protection mode
          */
         public boolean isInProtectionMode() {
-            return inProtection;
+            return status == 1;
         }
 
         /**
          * Checks if the protector is in recovery mode
          */
         public boolean isInRecoveryMode() {
-            return inRecovery;
+            return status == -1;
         }
 
         @Override
@@ -306,6 +308,34 @@ public class PowerProtector extends PowerGenerator {
             if (sensor == LAccess.powerNetCapacity) return power.graph.getBatteryCapacity();
             if (sensor == LAccess.efficiency) return shouldConsume() ? efficiency : 0f;
             return super.sense(sensor);
+        }
+
+        @Override
+        public void write(Writes write) {
+            super.write(write);
+            write.b(status);
+            write.f(protectionTimer);
+            write.f(growthTimer);
+            write.d(totalSpentPower);
+            write.f(tickPPower);
+            write.f(lastTickPPower);
+            write.d(rPowerPrincipal);
+            write.f(tickRPower);
+            write.f(lastTickRPower);
+        }
+
+        @Override
+        public void read(Reads read, byte revision) {
+            super.read(read, revision);
+            status = read.b();
+            protectionTimer = read.f();
+            growthTimer = read.f();
+            totalSpentPower = read.d();
+            tickPPower = read.f();
+            lastTickPPower = read.f();
+            rPowerPrincipal = read.d();
+            tickRPower = read.f();
+            lastTickRPower = read.f();
         }
 
 //        @Override

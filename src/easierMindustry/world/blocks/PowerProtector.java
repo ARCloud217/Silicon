@@ -12,6 +12,7 @@ import mindustry.core.UI;
 import mindustry.graphics.Pal;
 import mindustry.logic.LAccess;
 import mindustry.ui.Bar;
+import mindustry.world.Tile;
 import mindustry.world.blocks.power.PowerGenerator;
 import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
@@ -28,6 +29,7 @@ public class PowerProtector extends PowerGenerator {
     public float secondRecoveryRate = 0.001f; // 0.1% per second for recovery
     public float minProtectPower = 1f; // Minimum protected power level
     public float secondsTimer = 0;
+    public float warmupSpeed = 0.1f;
 
     /**
      * Constructor for PowerProtector
@@ -71,7 +73,7 @@ public class PowerProtector extends PowerGenerator {
         addBar("power", (PowerProtectorBuild entity) -> new Bar(() ->
                 Core.bundle.format("bar.power1", entity.status == 1 ?
                         Strings.fixed(entity.getPowerProduction() * 60 * entity.timeScale(), 1) :
-                        Strings.fixed(entity.tickRPower * 60 * entity.timeScale(), 1)),
+                        Strings.fixed(entity.tickRPower * 60 * entity.timeScale() * entity.efficiency, 1)),
                 () -> Pal.powerBar,
                 () -> entity.productionEfficiency));
 
@@ -84,23 +86,30 @@ public class PowerProtector extends PowerGenerator {
         ));
 
         // Add protection status bar
-        addBar("protection", entity -> new Bar(
-                () -> ((PowerProtectorBuild) entity).isInProtectionMode() ? Core.bundle.get("block.easier-mindustry-power-protector.protection") :
-                        (((PowerProtectorBuild) entity).isInRecoveryMode() ? Core.bundle.get("block.easier-mindustry-power-protector.recovery") :
-                                Core.bundle.get("block.easier-mindustry-power-protector.normal")),
-                () -> ((PowerProtectorBuild) entity).isInProtectionMode() ? Color.red :
-                        (((PowerProtectorBuild) entity).isInRecoveryMode() ? Color.orange : Color.white),
+        addBar("protection", (PowerProtectorBuild entity) -> new Bar(
+                () -> entity.isInProtectionMode() ? Core.bundle.get("block.easier-mindustry-power-protector.protection") :
+                        entity.isInRecoveryMode() ? Core.bundle.get("block.easier-mindustry-power-protector.recovery") :
+                                entity.isError() ? Core.bundle.get("block.easier-mindustry-power-protector.error") :
+                                        Core.bundle.get("block.easier-mindustry-power-protector.normal"),
+                () -> entity.isInProtectionMode() ? Color.green :
+                        entity.isInRecoveryMode() ? Color.orange : entity.isError() ? Color.red : Color.white,
                 () -> 1f)
         );
-//        addBar("1",
-//                (PowerProtectorBuild entity) ->
-//                        new Bar(() -> UI.formatAmount((long) (entity.power.graph.getPowerBalance())), () -> Color.red, () -> 1f));
-//        addBar("3",
-//                (PowerProtectorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.tickRPower), () -> Color.white, () -> 1f));
-//        addBar("4",
-//                (PowerProtectorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.tickPPower), () -> Color.white, () -> 1f));
+//        addBar("1", (PowerProtectorBuild entity) ->
+//                new Bar(() -> UI.formatAmount((long) (entity.power.graph.getPowerBalance())), () -> Color.red, () -> 1f));
+//        addBar("2", (PowerProtectorBuild entity) ->
+//                new Bar(() -> String.valueOf(entity.efficiency), () -> Color.white, () -> 1f));
+//        addBar("3", (PowerProtectorBuild entity) ->
+//                new Bar(() -> String.valueOf(consPower.efficiency(entity)), () -> Color.white, () -> 1f));
+//        addBar("5", (PowerProtectorBuild entity) ->
+//                new Bar(() -> String.valueOf(entity.power.graph.getSatisfaction()), () -> Color.white, () -> 1f));
+//        addBar("4", (PowerProtectorBuild entity) ->
+//                new Bar(() -> String.valueOf(entity.tickPPower + entity.tickRPower), () -> Color.white, () -> 1f));
+    }
+
+    @Override
+    public boolean canBreak(Tile tile) {
+        return ((PowerProtectorBuild) tile.build).status == 0;
     }
 
     /**
@@ -138,7 +147,7 @@ public class PowerProtector extends PowerGenerator {
 
             // Check if we should enter protection mode (when power is 0 or negative)
             if (status == 0 && powerStored <= Mathf.FLOAT_ROUNDING_ERROR &&
-                    power.links.size > 0 && power.graph.getPowerBalance() < 0f && powerCapacity > 0) {
+                    power.graph.all.items.length > 0 && power.graph.getPowerBalance() < 0f && powerCapacity > 0) {
                 enterProtectionMode();
             }
 
@@ -147,7 +156,7 @@ public class PowerProtector extends PowerGenerator {
                 handleProtectionMode(powerStored);
 
                 if (protectionTimer >= protectionTime || growthTimer >= exitGrowthTime
-                        || totalSpentPower >= Float.MAX_VALUE || power.links.size == 0 || powerCapacity == 0) {
+                        || totalSpentPower >= Float.MAX_VALUE || power.graph.all.items.length == 0 || powerCapacity == 0) {
                     exitProtectionMode(); // Exit protection mode
                 }
             } else if (status == -1) {
@@ -255,28 +264,32 @@ public class PowerProtector extends PowerGenerator {
          * Calculates the amount of power to recover per tick
          */
         private void updateTick() {
-            if (status == -1) {
-                lastTickRPower = tickRPower; // Store the last tick's recovery amount
-                // Reduce the current spent power by the recovery amount
-                totalSpentPower -= lastTickRPower;
-                float powerStored = power.graph.getBatteryStored();
-                float powerChanged = power.graph.getPowerBalance();
-
-                // Also add interest at 1% per second of remaining spent power
-                double interestPerSecond = totalSpentPower * secondRecoveryRate / 60;// 0.1% per second
-
-                double interestPerTick = interestPerSecond / 60;
-                totalSpentPower += interestPerTick;
-                double dP = rPowerPrincipal + interestPerTick;
-                if (dP < Float.MAX_VALUE) {
-                    tickRPower = (float) Mathf.clamp(dP, Mathf.FLOAT_ROUNDING_ERROR, powerStored + powerChanged + lastTickRPower);
-
-                } else {
-                    tickRPower = Float.MAX_VALUE;
-                }
+            if (status != -1) {
+                tickRPower = 0f;
                 return;
             }
-            tickRPower = 0f;
+            lastTickRPower = tickRPower; // Store the last tick's recovery amount
+            // Reduce the current spent power by the recovery amount
+            totalSpentPower -= lastTickRPower * efficiency;
+            float powerStored = power.graph.getBatteryStored();
+            float powerChanged = power.graph.getPowerBalance();
+
+            // Also add interest at 1% per second of remaining spent power
+            double interestPerSecond = totalSpentPower * secondRecoveryRate / 60;// 0.1% per second
+
+            double interestPerTick = interestPerSecond / 60;
+            totalSpentPower += interestPerTick;
+            double dP = rPowerPrincipal + interestPerTick;
+            if (dP < Float.MAX_VALUE) {
+//                tickRPower = Mathf.lerp(lastTickRPower, (float) Mathf.clamp(powerStored / 2 + powerChanged + lastTickRPower,
+//                        Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE), warmup());
+                tickRPower = (float) Mathf.clamp(powerStored / 2 + powerChanged + lastTickRPower,
+                        Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE);
+
+            } else {
+//                tickRPower = Mathf.lerp(lastTickRPower, Float.MAX_VALUE, warmup());
+                tickRPower = Float.MAX_VALUE;
+            }
         }
 
         /**
@@ -293,10 +306,24 @@ public class PowerProtector extends PowerGenerator {
             return status == -1;
         }
 
+        public boolean isError() {
+            return status == Byte.MIN_VALUE;
+        }
+
         @Override
         public float getPowerProduction() {
             // Return current power generation
             return tickPPower;
+        }
+
+        @Override
+        public float warmup() {
+            return warmupSpeed;
+        }
+
+        @Override
+        public byte version() {
+            return 7;
         }
 
         /**
@@ -337,6 +364,7 @@ public class PowerProtector extends PowerGenerator {
             tickRPower = read.f();
             lastTickRPower = read.f();
         }
+
 
 //        @Override
 //        public boolean shouldConsume() {

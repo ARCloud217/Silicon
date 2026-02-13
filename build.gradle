@@ -29,9 +29,9 @@ java{
 
 ext{
     //the build number that this mod is made for
-    mindustryVersion = 'v154.3'
-    arcVersion = 'v154.3'
-    jabelVersion = "93fde537c7"
+    mindustryVersion = 'v155.2'
+    arcVersion = 'v155.2'
+    jabelVersion = "1.0.1"
     //windows sucks
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
     sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
@@ -51,7 +51,7 @@ dependencies{
     compileOnly "com.github.Anuken.MindustryJitpack:core:$mindustryVersion"
     compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
 
-    annotationProcessor "com.github.Anuken:jabel:$jabelVersion"
+    annotationProcessor "com.github.bsideup:jabel:$jabelVersion"
 }
 
 //force arc version
@@ -80,7 +80,7 @@ tasks.register('jarAndroid') {
 
         //dex and desugar files - this requires d8 in your PATH
         "$d8 $dependencies --min-api 14 --output ${project.archivesBaseName}Android.jar ${project.archivesBaseName}Desktop.jar"
-                .execute(null, new File("$layout.buildDirectory/libs")).waitForProcessOutput(System.out, System.err)
+                .execute(null, new File("$buildDir/libs")).waitForProcessOutput(System.out, System.err)
     }
 }
 
@@ -105,12 +105,12 @@ tasks.register('deploy', Jar) {
     dependsOn jar
     archiveFileName = "${base.archivesBaseName}.jar"
 
-    from { [zipTree("$layout.buildDirectory/libs/${project.archivesBaseName}Desktop.jar"), zipTree("$layout.buildDirectory/libs/${project.archivesBaseName}Android.jar")] }
+    from { [zipTree("$buildDir/libs/${project.archivesBaseName}Desktop.jar"), zipTree("$buildDir/libs/${project.archivesBaseName}Android.jar")] }
 
     doLast {
         delete {
-            delete "$layout.buildDirectory/libs/${project.archivesBaseName}Desktop.jar"
-            delete "$layout.buildDirectory/libs/${project.archivesBaseName}Android.jar"
+            delete "$buildDir/libs/${project.archivesBaseName}Desktop.jar"
+            delete "$buildDir/libs/${project.archivesBaseName}Android.jar"
         }
     }
 }

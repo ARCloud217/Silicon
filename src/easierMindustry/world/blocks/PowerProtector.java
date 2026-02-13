@@ -95,16 +95,18 @@ public class PowerProtector extends PowerGenerator {
                         entity.isInRecoveryMode() ? Color.orange : entity.isError() ? Color.red : Color.white,
                 () -> 1f)
         );
-//        addBar("1", (PowerProtectorBuild entity) ->
-//                new Bar(() -> UI.formatAmount((long) (entity.power.graph.getPowerBalance())), () -> Color.red, () -> 1f));
+        addBar("1", (PowerProtectorBuild entity) ->
+                new Bar(() -> UI.formatAmount((long) (entity.tickRPower + entity.tickPPower)), () -> Color.red, () -> 1f));
 //        addBar("2", (PowerProtectorBuild entity) ->
 //                new Bar(() -> String.valueOf(entity.efficiency), () -> Color.white, () -> 1f));
 //        addBar("3", (PowerProtectorBuild entity) ->
 //                new Bar(() -> String.valueOf(consPower.efficiency(entity)), () -> Color.white, () -> 1f));
-//        addBar("5", (PowerProtectorBuild entity) ->
-//                new Bar(() -> String.valueOf(entity.power.graph.getSatisfaction()), () -> Color.white, () -> 1f));
-//        addBar("4", (PowerProtectorBuild entity) ->
-//                new Bar(() -> String.valueOf(entity.tickPPower + entity.tickRPower), () -> Color.white, () -> 1f));
+        addBar("5", (PowerProtectorBuild entity) ->
+                new Bar(() -> String.valueOf(entity.tickRPower + entity.tickPPower), () -> Color.white, () -> 1f));
+        addBar("4", (PowerProtectorBuild entity) ->
+                new Bar(() -> String.valueOf(
+                        Mathf.zero(entity.block.consPower.requestedPower(entity)) ? 0f : entity.block.consPower.usage * (entity.shouldConsume() ? entity.efficiency * entity.timeScale() : 0f) * 60f)
+                        , () -> Color.white, () -> 1f));
     }
 
     @Override

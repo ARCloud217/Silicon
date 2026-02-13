@@ -4,25 +4,24 @@ version '1.0'
 
 sourceSets.main.java.srcDirs = ["src"]
 
-//repositories{
-//    maven { url "https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository" }
-//    maven{ url 'https://www.jitpack.io' }
-//
-//    maven { setUrl("https://maven.aliyun.com/repository/central") }
-//    maven { setUrl("https://maven.aliyun.com/repository/jcenter") }
-//    maven { setUrl("https://maven.aliyun.com/repository/google") }
-//    maven { setUrl("https://maven.aliyun.com/repository/gradle-plugin") }
-//    maven { setUrl("https://maven.aliyun.com/repository/public") }
-//    maven { setUrl("https://maven.aliyun.com/nexus/content/groups/public/") }
-//    maven { setUrl("https://maven.aliyun.com/nexus/content/repositories/jcenter") }
-//    maven { setUrl("https://maven.pkg.jetbrains.space/public/p/compose/dev") }
-//    gradlePluginPortal()
-//    google()
-//    mavenCentral()
-//
-//}
 
-java{
+repositories {
+    maven { setUrl("https://www.jitpack.io") }
+    maven { setUrl("https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository") }
+    // 改为阿里云的镜像地址
+    maven { setUrl("https://maven.aliyun.com/repository/central") }
+    maven { setUrl("https://maven.aliyun.com/repository/jcenter") }
+    maven { setUrl("https://maven.aliyun.com/repository/google") }
+    maven { setUrl("https://maven.aliyun.com/repository/gradle-plugin") }
+    maven { setUrl("https://maven.aliyun.com/repository/public") }
+    maven { setUrl("https://maven.aliyun.com/nexus/content/groups/public/") }
+    maven { setUrl("https://maven.aliyun.com/nexus/content/repositories/jcenter") }
+    gradlePluginPortal()
+    google()
+    mavenCentral()
+}
+
+java {
     targetCompatibility = 8
     sourceCompatibility = JavaVersion.VERSION_17
 }

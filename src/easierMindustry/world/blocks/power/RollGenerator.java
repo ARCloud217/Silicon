@@ -1,4 +1,4 @@
-package easierMindustry.world.blocks;
+package easierMindustry.world.blocks.power;
 
 import arc.Core;
 import arc.graphics.Color;
@@ -9,12 +9,16 @@ import arc.util.Strings;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+import mindustry.gen.Building;
 import mindustry.graphics.Pal;
 import mindustry.logic.LAccess;
 import mindustry.ui.Bar;
 import mindustry.world.blocks.power.PowerGenerator;
+import mindustry.world.blocks.sandbox.PowerVoid;
 import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
+
+import static easierMindustry.Vars.*;
 
 public class RollGenerator extends PowerGenerator {
     public float powerStoredProductionPercentage = 0.01f;
@@ -56,24 +60,51 @@ public class RollGenerator extends PowerGenerator {
                 Core.bundle.format("bar.power1", Strings.fixed((entity.currentPowerProduction * 60 * entity.timeScale()), 1)),
                 () -> Pal.powerBar,
                 () -> entity.currentPowerProduction / entity.maxPowerGeneration));
-        addBar("4",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.maxPowerGeneration), () -> Color.white, () -> 1f));
-        addBar("5",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.delta()), () -> Color.white, () -> 1f));
+//        addBar("4",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.efficiency), () -> Color.white, () -> 1f));
+//        addBar("5",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.shouldConsume()), () -> Color.white, () -> 1f));
+//        addBar("6",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.currentPowerProduction), () -> Color.green, () -> 1f));
+//        addBar("7",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.potentialEfficiency), () -> Color.white, () -> 1f));
+//        addBar("8",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(consPower.efficiency(entity)), () -> Color.white, () -> 1f));
+//        addBar("9",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(optionalConsumers.length), () -> Color.white, () -> 1f));
+//        addBar("10",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(nonOptionalConsumers[0].efficiency(entity)), () -> Color.white, () -> 1f));
 
     }
 
     public class RollGeneratorBuild extends GeneratorBuild {
         private float currentPowerProduction = 0f;
-        public float maxPowerGeneration = 1;
+        private float maxPowerGeneration = 1;
         private float lastCurrentPowerProduction = 0f;
+        private float timer = 0f;
 
         @Override
         public void updateTile() {
             if (!enabled) return;
-            lastCurrentPowerProduction = currentPowerProduction;
+            if (power.graph.all.size > 0) {
+                for (Building e : power.graph.consumers.items) {
+                    if (e != null && e.block instanceof PowerVoid) {
+                        return;
+                    }
+                }
+            }
+            if (Float.isNaN(currentPowerProduction)) {
+                lastCurrentPowerProduction = 0f;
+            } else {
+                lastCurrentPowerProduction = currentPowerProduction;
+            }
             currentPowerProduction = 0f;
 
             // Calculate power generation every second (based on 1% of current stored power)
@@ -84,18 +115,23 @@ public class RollGenerator extends PowerGenerator {
             //    timer = 0f;
 
             // Get current stored power in the power network
-            float powerStored = power.graph.getBatteryStored();
-            float powerChanged = power.graph.getPowerBalance();
-            if (powerStored < power.graph.getBatteryCapacity()) {
-                maxPowerGeneration += Time.delta;
-            } else if (powerStored >= power.graph.getBatteryCapacity() && maxPowerGeneration > 1f) {
-                maxPowerGeneration = Mathf.clamp((maxPowerGeneration / 2f), 1f, Float.MAX_VALUE); // Clamped to at least 1
+
+            if (powerStored.get(self()) < powerCapacity.get(self())) {
+                maxPowerGeneration += Time.delta / 60f;
+                timer = 0;
+            } else if (powerStored.get(self()) >= powerCapacity.get(self()) && maxPowerGeneration > 1f) {
+                if (timer >= 1f) {
+                    maxPowerGeneration = Mathf.clamp((maxPowerGeneration / 2f), 1f, Float.MAX_VALUE); // Clamped to at least 1
+                    timer = 0f;
+                } else {
+                    timer += Time.delta / 60f;
+                }
             }
 
             // Calculate new power generation: 1% per second = 1% / 60 per tick
             // Limit minimum power generation to avoid stopping
-            currentPowerProduction = Mathf.lerp(lastCurrentPowerProduction, Math.min(powerStored * powerStoredProductionPercentage / 60f +
-                    powerChanged * powerChangedProductionPercentage / 60f, maxPowerGeneration), warmup());
+            currentPowerProduction = Mathf.lerp(lastCurrentPowerProduction, Math.min(powerStored.get(self()) * powerStoredProductionPercentage / 60 +
+                    powerChanged.get(self()) * powerChangedProductionPercentage, maxPowerGeneration), warmup());
 
             // Update efficiency
 //            power.status = currentPowerProduction > 0 ? currentPowerProduction / (maxPowerGeneration / 60f) : 0f;
@@ -133,6 +169,12 @@ public class RollGenerator extends PowerGenerator {
                 Lines.circle(x, y, 3f + Mathf.absin(Time.time, 10f, 1f));
                 Draw.reset();
             }
+        }
+
+        @Override
+        public void onProximityUpdate() {
+            power.status = 1;
+            super.onProximityUpdate();
         }
 
         @Override

@@ -1,4 +1,4 @@
-package easierMindustry.world.blocks;
+package easierMindustry.world.blocks.power;
 
 import arc.Core;
 import arc.graphics.Color;

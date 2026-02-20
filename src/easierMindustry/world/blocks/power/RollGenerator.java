@@ -5,6 +5,7 @@ import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
+import arc.util.Interval;
 import arc.util.Strings;
 import arc.util.Time;
 import arc.util.io.Reads;
@@ -88,7 +89,8 @@ public class RollGenerator extends PowerGenerator {
         private float currentPowerProduction = 0f;
         private float maxPowerGeneration = 1;
         private float lastCurrentPowerProduction = 0f;
-        private float timer = 0f;
+        private final Interval interval = new Interval();
+//        private float timer = 0f;
 
         @Override
         public void updateTile() {
@@ -118,13 +120,13 @@ public class RollGenerator extends PowerGenerator {
 
             if (powerStored.get(self()) < powerCapacity.get(self())) {
                 maxPowerGeneration += Time.delta / 60f;
-                timer = 0;
+                interval.clear();
+//                timer = 0;
             } else if (powerStored.get(self()) >= powerCapacity.get(self()) && maxPowerGeneration > 1f) {
-                if (timer >= 1f) {
+                if (interval.get(60f)) {
                     maxPowerGeneration = Mathf.clamp((maxPowerGeneration / 2f), 1f, Float.MAX_VALUE); // Clamped to at least 1
-                    timer = 0f;
-                } else {
-                    timer += Time.delta / 60f;
+                    interval.clear();
+//                    timer = 0f;
                 }
             }
 

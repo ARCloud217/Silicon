@@ -33,7 +33,6 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static easierMindustry.Vars.*;
-import static mindustry.Vars.state;
 import static mindustry.Vars.world;
 
 /**
@@ -433,7 +432,8 @@ public class PowerProtector extends PowerGenerator {
 //                if(!linkValid(this, link)) continue;
 
 //            if (link.block instanceof PowerNode && link.id >= id) continue;
-            if (node != null) ((PowerNode) node.block).drawLaser(x, y, node.x, node.y, size, node.block.size);
+            if (node != null && team.data().buildings.contains(node))
+                ((PowerNode) node.block).drawLaser(x, y, node.x, node.y, size, node.block.size);
 
             Draw.reset();
         }
@@ -476,14 +476,19 @@ public class PowerProtector extends PowerGenerator {
 
             Seq<Building> tree = team.data().buildings;
             if (tree != null) {
-                Log.info(state.teams.get(team).buildings);
-                state.teams.get(team).buildings.each(b -> b instanceof PowerNode.PowerNodeBuild p && p.power.links.size < ((PowerNode) p.block).maxNodes, tempBuilds::add);
+//                Log.info(state.teams.get(team).buildings);
+                tree.each(b -> b instanceof PowerNode.PowerNodeBuild p && p.power.links.size < ((PowerNode) p.block).maxNodes, tempBuilds::add);
             }
 
             tempBuilds.sort((a, b) -> {
                 int type = -Boolean.compare(valid.get(a), valid.get(b));
                 if (type != 0) return type;
-                return -Float.compare(powerChanged.get(a), powerChanged.get(b));
+                if (a.power.graph == b.power.graph) return 0;
+                float pA = powerStored.get(a) + powerChanged.get(a) * 60f;
+                float pB = powerStored.get(b) + powerChanged.get(b) * 60f;
+                if (a.power.graph == power.graph) pA += lastTickRPower * 60f;
+                if (b.power.graph == power.graph) pB += lastTickRPower * 60f;
+                return -Float.compare(pA, pB);
             });
 
 //            graphs.add(tempBuilds.items[0].power.graph);

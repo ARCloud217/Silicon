@@ -21,12 +21,30 @@ import mindustry.world.meta.Stat;
 
 import static easierMindustry.Vars.*;
 
+/**
+ * RollGenerator - A dynamic power generator that produces power based on
+ * current stored power and power change rates in the network
+ * Power generation scales with network conditions and has adaptive limits
+ */
 public class RollGenerator extends PowerGenerator {
+    /**
+     * Percentage of stored power used for base power generation per second
+     */
     public float powerStoredProductionPercentage = 0.01f;
+    /**
+     * Percentage of power change used for additional power generation
+     */
     public float powerChangedProductionPercentage = 0.05f;
+    /**
+     * Speed of warmup animation transition
+     */
     public float warmupSpeed = 0.1f;
 
 
+    /**
+     * Constructor for RollGenerator block
+     * @param name The name identifier for this block
+     */
     public RollGenerator(String name) {
         super(name);
         // Basic properties setup
@@ -45,6 +63,9 @@ public class RollGenerator extends PowerGenerator {
 
     }
 
+    /**
+     * Sets up statistics for the block
+     */
     @Override
     public void setStats() {
         super.setStats();
@@ -52,6 +73,9 @@ public class RollGenerator extends PowerGenerator {
         stats.add(Stat.productionTime, "1s"); // Add special note
     }
 
+    /**
+     * Sets up status bars for the block
+     */
     @Override
     public void setBars() {
         super.setBars();
@@ -85,13 +109,27 @@ public class RollGenerator extends PowerGenerator {
 
     }
 
+    /**
+     * Building class for RollGenerator
+     * Manages dynamic power generation based on network conditions
+     */
     public class RollGeneratorBuild extends GeneratorBuild {
-        private float currentPowerProduction = 0f;
-        private float maxPowerGeneration = 1;
-        private float lastCurrentPowerProduction = 0f;
+        /**
+         * Interval timer for periodic updates
+         */
         private final Interval interval = new Interval();
+        /** Current power production rate */
+        private float currentPowerProduction = 0f;
+        /** Maximum allowed power generation */
+        private float maxPowerGeneration = 1;
+        /** Previous power production value for smooth transitions */
+        private float lastCurrentPowerProduction = 0f;
 //        private float timer = 0f;
 
+        /**
+         * Updates the tile each frame
+         * Calculates dynamic power generation based on network conditions
+         */
         @Override
         public void updateTile() {
             if (!enabled) return;
@@ -140,26 +178,45 @@ public class RollGenerator extends PowerGenerator {
             //}
         }
 
+        /**
+         * Gets the current power production amount
+         * @return Power production in power units per tick
+         */
         @Override
         public float getPowerProduction() {
             // Return current power generation
             return (currentPowerProduction > 0) ? currentPowerProduction : 0f;
         }
 
+        /**
+         * Gets the power consumption per tick
+         * @return Negative power consumption when producing power
+         */
         public float getPowerConsumptionPerTick() {
             return (currentPowerProduction < 0) ? currentPowerProduction : 0f;
         }
 
+        /**
+         * Gets the save version for this building
+         * @return The version number
+         */
         @Override
         public byte version() {
             return 6;
         }
 
+        /**
+         * Gets the warmup progress for animations
+         * @return Warmup progress from 0 to 1
+         */
         @Override
         public float warmup() {
             return warmupSpeed;
         }
 
+        /**
+         * Draws the building and visual effects
+         */
         @Override
         public void draw() {
             super.draw();
@@ -173,12 +230,20 @@ public class RollGenerator extends PowerGenerator {
             }
         }
 
+        /**
+         * Called when proximity changes
+         */
         @Override
         public void onProximityUpdate() {
             power.status = 1;
             super.onProximityUpdate();
         }
 
+        /**
+         * Provides sensor access to power network data
+         * @param sensor The sensor type to query
+         * @return The requested sensor value
+         */
         @Override
         public double sense(LAccess sensor) {
             if (sensor == LAccess.powerNetStored) return power.graph.getBatteryStored();
@@ -186,6 +251,10 @@ public class RollGenerator extends PowerGenerator {
             return super.sense(sensor);
         }
 
+        /**
+         * Writes building data to save file
+         * @param write The writer object
+         */
         @Override
         public void write(Writes write) {
             super.write(write);
@@ -194,6 +263,11 @@ public class RollGenerator extends PowerGenerator {
             write.f(lastCurrentPowerProduction);
         }
 
+        /**
+         * Reads building data from save file
+         * @param read The reader object
+         * @param revision The save revision
+         */
         @Override
         public void read(Reads read, byte revision) {
             super.read(read, revision);

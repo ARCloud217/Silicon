@@ -22,6 +22,7 @@ import mindustry.logic.LAccess;
 import mindustry.ui.Bar;
 import mindustry.world.Edges;
 import mindustry.world.Tile;
+import mindustry.world.blocks.power.BeamNode;
 import mindustry.world.blocks.power.PowerGenerator;
 import mindustry.world.blocks.power.PowerNode;
 import mindustry.world.blocks.sandbox.PowerVoid;
@@ -41,11 +42,21 @@ import static mindustry.Vars.world;
  * continuous power growth, records spent power, and enters recovery mode after exiting.
  */
 public class PowerProtector extends PowerGenerator {
-    public float protectionTime = 5 * 60 * 60f; // 5 minutes in ticks (60 ticks per second)
-    public float exitGrowthTime = 30 * 60f; // 30 seconds in ticks for continuous growth
-    public float secondRecoveryRate = 0.001f; // 0.1% per second for recovery
-    public float minProtectPower = 1f; // Minimum protected power level
-    //    public float secondsTimer = 0;
+    /**
+     * Protection time in ticks (5 minutes)
+     */
+    public float protectionTime = 5 * 60 * 60f;
+    /**
+     * Time required for continuous power growth to exit protection (30 seconds)
+     */
+    public float exitGrowthTime = 30 * 60f;
+    /**
+     * Recovery rate per second (0.1%)
+     */
+    public float secondRecoveryRate = 0.001f;
+    /**
+     * Speed of warmup animation transition
+     */
     public float warmupSpeed = 0.1f;
 
     /**
@@ -140,6 +151,14 @@ public class PowerProtector extends PowerGenerator {
                 }
             }
         });
+        BeamNode.getNodeLinks(tile, this, team, other -> {
+            for (Building e : other.power.graph.consumers.items) {
+                if (e instanceof PowerProtectorBuild) {
+                    canPlace.set(false);
+                    return;
+                }
+            }
+        });
         for (Point2 p : Edges.getEdges(size)) {
             Tile t = tile.nearby(p);
             if (t != null && t.build != null && t.build.power != null && canPlace.get()) {
@@ -163,28 +182,42 @@ public class PowerProtector extends PowerGenerator {
      * Internal building class for PowerProtector
      */
     public class PowerProtectorBuild extends GeneratorBuild {
-        private byte status = 0;
+        /**
+         * Interval timer for periodic operations
+         */
+        private final Interval interval = new Interval();
         //        private final OrderedSet<PowerGraph> graphs = new OrderedSet<>();
         //        private boolean inProtection = false;
 //        private boolean inRecovery = false;
+        /**
+         * Current operational status: 0=normal, 1=protection, -1=recovery
+         */
+        private byte status = 0;
+        /**
+         * Timer tracking protection duration
+         */
         private float protectionTimer = 0f;
-        /**
-         * Timer for continuous power growth
-         */
+        /** Timer for continuous power growth */
         private float growthTimer = 0f;
-        /**
-         * Total power that has been spent/deducted
-         */
-        private double totalSpentPower = 0f;
         //        private float currentSpentPower = 0f;// Current amount of spent power during recovery
+        /** Total power that has been spent/deducted */
+        private double totalSpentPower = 0f;
+        /** Power production per tick during protection */
         private float tickPPower = 0f;
+        /** Previous tick's power production */
         private float lastTickPPower = 0f;
+        /** Principal amount for recovery calculations */
         private double rPowerPrincipal = 0f;
+        /** Power recovery amount per tick */
         private float tickRPower = 0f;
+        /** Previous tick's recovery power */
         private float lastTickRPower = 0f;
+        /** Error state flag */
         private boolean error = false;
-        private final Interval interval = new Interval();
-        private PowerNode.PowerNodeBuild node = null;
+        /**
+         * Connected power node for recovery mode
+         */
+        private Building node = null;
 
         /**
          * Updates the tile every frame
@@ -216,6 +249,9 @@ public class PowerProtector extends PowerGenerator {
             if (status == 1) {
                 handleProtectionMode();
 
+                // Exit conditions for protection mode:
+                // 1. After 5 minutes have passed
+                // 2. After 30 seconds of continuous power growth
                 if (protectionTimer >= protectionTime || growthTimer >= exitGrowthTime
                         || totalSpentPower >= Float.MAX_VALUE || power.graph.all.items.length == 0
                         || powerCapacity.get(self()) == 0 || error || Double.isNaN(totalSpentPower)) {
@@ -268,21 +304,6 @@ public class PowerProtector extends PowerGenerator {
             tickPPower = Math.max(-(powerChanged.get(self()) - lastTickPPower) - powerStored.get(self()), 0f);
 
             totalSpentPower = Mathf.clamp(tickPPower + totalSpentPower, Mathf.FLOAT_ROUNDING_ERROR, Float.MAX_VALUE);
-//            } else {
-//                tickPPower = 0;
-//            }
-//            if (secondsTimer >= 1f) {
-//                secondsTimer -= 1f;
-//                if (powerChanged < pPowerStored * 2) {
-//                    pPowerStored = Mathf.clamp(pPowerStored * 2, minProtectPower, Float.MAX_VALUE);
-//                } else if (powerChanged > tickPPower / 2 || powerStored > pPowerStored) {
-//                    pPowerStored = Mathf.clamp(pPowerStored / 2, minProtectPower, Float.MAX_VALUE);
-//                }
-//            }
-            // Exit conditions for protection mode:
-            // 1. After 5 minutes have passed
-            // 2. After 30 seconds of continuous power growth
-
         }
 
         /**
@@ -311,7 +332,7 @@ public class PowerProtector extends PowerGenerator {
                     }
                 }
                 getLink(team, other -> {
-                    node = (PowerNode.PowerNodeBuild) other;
+                    node = other;
                     other.power.links.addUnique(pos());
                     if (team == other.team) {
                         power.links.addUnique(other.pos());
@@ -343,9 +364,6 @@ public class PowerProtector extends PowerGenerator {
 
             status = -1;
             // The Recovery period is the same as the protection period
-            /**
-             * Recovery period for power growth
-             */
             // How long the recovery period should last
             float rTime = protectionTimer;
             protectionTimer = 0f;
@@ -375,11 +393,11 @@ public class PowerProtector extends PowerGenerator {
 //                tickRPower = Mathf.lerp(lastTickRPower, (float) Mathf.clamp(powerStored / 2 + powerChanged + lastTickRPower,
 //                        Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE), warmup());
                 tickRPower = (float) Mathf.clamp(powerStored.get(self()) / 2 + powerChanged.get(self()) + lastTickRPower,
-                        Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE - 1);
+                        Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE);
 
             } else {
 //                tickRPower = Mathf.lerp(lastTickRPower, Float.MAX_VALUE, warmup());
-                tickRPower = Float.MAX_VALUE - 1;
+                tickRPower = Float.MAX_VALUE;
             }
         }
 
@@ -432,8 +450,15 @@ public class PowerProtector extends PowerGenerator {
 //                if(!linkValid(this, link)) continue;
 
 //            if (link.block instanceof PowerNode && link.id >= id) continue;
-            if (node != null && team.data().buildings.contains(node))
-                ((PowerNode) node.block).drawLaser(x, y, node.x, node.y, size, node.block.size);
+            if (node != null && team.data().buildings.contains(node)) {
+                if (node instanceof PowerNode.PowerNodeBuild p)
+                    ((PowerNode) p.block).drawLaser(x, y, node.x, node.y, size, node.block.size);
+                if (node instanceof BeamNode.BeamNodeBuild p) {
+                    ((BeamNode) p.block).drawLaser(x, y, node.x, node.y, size, node.block.size);
+
+                }
+            }
+
 
             Draw.reset();
         }
@@ -474,10 +499,11 @@ public class PowerProtector extends PowerGenerator {
 //                graphs.add(tile.build.power.graph);
 //            }
 
-            Seq<Building> tree = team.data().buildings;
-            if (tree != null) {
+            Seq<Building> buildings = team.data().buildings;
+            if (buildings != null) {
 //                Log.info(state.teams.get(team).buildings);
-                tree.each(b -> b instanceof PowerNode.PowerNodeBuild p && p.power.links.size < ((PowerNode) p.block).maxNodes, tempBuilds::add);
+                buildings.each(b -> b instanceof PowerNode.PowerNodeBuild p && p.power.links.size < ((PowerNode) p.block).maxNodes, tempBuilds::add);
+                buildings.each(b -> b instanceof BeamNode.BeamNodeBuild p && p.power.links.size < ((PowerNode) p.block).maxNodes, tempBuilds::add);
             }
 
             tempBuilds.sort((a, b) -> {
@@ -527,7 +553,7 @@ public class PowerProtector extends PowerGenerator {
             tickRPower = read.f();
             lastTickRPower = read.f();
             error = read.b() == 1;
-            node = (PowerNode.PowerNodeBuild) TypeIO.readBuilding(read);
+            node = TypeIO.readBuilding(read);
         }
 
 

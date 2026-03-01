@@ -38,17 +38,31 @@ public class GeneratorPump extends LiquidBlock {
     public float powerProduction, powerConsumption;
     /** Pump amount per tile. */
     public float pumpAmount = 0.2f;
+    /**
+     * List of liquids that this pump can extract
+     */
     public Seq<Liquid> canPumpLiquids = Seq.with();
+    /**
+     * Drawing component for rendering
+     */
     public DrawBlock drawer = new DrawDefault();
     /** Interval in-between item consumptions, if applicable. */
     public float consumeTime = 60f * 5f;
 
+    /**
+     * Speed of warmup animation transition
+     */
     public float warmupSpeed = 0.05f;
+    /** Chance of generating visual effects */
     public float effectChance = 0.01f;
+    /** Visual effect to display during generation */
     public Effect generateEffect = Fx.none;
+    /** Range for effect generation */
     public float generateEffectRange = 3f;
 
+    /** Optional item consumption filter */
     public @Nullable ConsumeItemFilter filterItem;
+    /** Optional liquid consumption filter */
     public @Nullable ConsumeLiquidFilter filterLiquid;
 
     public GeneratorPump(String name) {
@@ -74,7 +88,6 @@ public class GeneratorPump extends LiquidBlock {
             outputsLiquid = true;
             hasLiquids = true;
         }
-        //TODO hardcoded
         emitLight = true;
         lightRadius = 65f * size;
         super.init();
@@ -124,14 +137,13 @@ public class GeneratorPump extends LiquidBlock {
         if (findConsumer(f -> f instanceof ConsumeLiquidBase && f.booster) instanceof ConsumeLiquidBase consumeLiquidBase) {
             stats.remove(Stat.booster);
             stats.add(Stat.booster, table -> {
-                boolean strength = false;
                 table.row();
                 table.table(c -> {
                     for(Liquid liquid : content.liquids()){
                         if(!consumeLiquidBase.consumes(liquid)) continue;
 
                         c.table(Styles.grayPanel, b -> {
-                            b.image(liquid.uiIcon).size(40).pad(10f).left().scaling(Scaling.fit).with(i -> withTooltip(i, liquid, false));;
+                            b.image(liquid.uiIcon).size(40).pad(10f).left().scaling(Scaling.fit).with(i -> withTooltip(i, liquid, false));
                             b.table(info -> {
                                 info.add(liquid.localizedName).left().row();
                                 info.add(Strings.autoFixed(consumeLiquidBase.amount * 60f, 2) + StatUnit.perSecond.localized()).left().color(Color.lightGray);
@@ -141,8 +153,8 @@ public class GeneratorPump extends LiquidBlock {
                                 bt.right().defaults().padRight(3).left();
                                 if(powerProduction * 60 != Float.MAX_VALUE)
                                     bt.add("[stat]"
-                                            + Strings.autoFixed(powerProduction * 60 * (strength ? liquid.heatCapacity : 1f)
-                                            + (strength ? 1f : 0f), 2) + "[lightgray]"  + StatUnit.powerUnits.localized()).pad(5);
+                                            + Strings.autoFixed(powerProduction * 60 * 1f
+                                            + 0f, 2) + "[lightgray]" + StatUnit.powerUnits.localized()).pad(5);
                             }).right().grow().pad(10f).padRight(15f);
                         }).growX().pad(5).row();
                     }
@@ -195,6 +207,7 @@ public class GeneratorPump extends LiquidBlock {
     }
 
     public class EasierMdyGeneratorPumpBuild extends LiquidBuild {
+        /** Current warmup progress for animations */
         public float warmup, efficiencyMultiplier = 1f;
         /**
           The efficiency of the producer. An efficiency of 1.0 means 100%
@@ -202,8 +215,11 @@ public class GeneratorPump extends LiquidBlock {
         public float productionEfficiency = 0.0f;
 
         //Pump
+        /** Consumption timer for periodic operations */
         public float consTimer,totalProgress;
+        /** The liquid type being pumped */
         public @Nullable Liquid liquidDrop = null;
+        /** Amount of liquid available for pumping */
         public float amount = 0f;
 
         @Override

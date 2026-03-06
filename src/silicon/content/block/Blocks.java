@@ -1,16 +1,16 @@
-package easierMindustry.content.block;
+package silicon.content.block;
 
-import easierMindustry.world.blocks.distribution.Junction;
-import easierMindustry.world.blocks.power.GeneratorPump;
-import easierMindustry.world.blocks.power.PowerProtector;
-import easierMindustry.world.blocks.power.RollGenerator;
-import easierMindustry.world.blocks.sandbox.PowerSource;
 import mindustry.content.Items;
 import mindustry.content.Liquids;
 import mindustry.type.Category;
 import mindustry.type.ItemStack;
 import mindustry.world.Block;
 import mindustry.world.meta.BuildVisibility;
+import silicon.world.blocks.distribution.Junction;
+import silicon.world.blocks.power.GeneratorPump;
+import silicon.world.blocks.power.PowerProtector;
+import silicon.world.blocks.power.RollGenerator;
+import silicon.world.blocks.sandbox.PowerSource;
 
 import static mindustry.type.ItemStack.with;
 

@@ -1,21 +1,21 @@
 #the mod name as displayed in-game
-displayName: "更简单的像素工厂"
+displayName: "Silicon"
 
 #the internal name of your mod
-name: "easier-mindustry"
+name: "silicon"
 
 #your name
 author: "Xiaobei"
 
 #the fully qualified main class of the mod
-main: "easierMindustry.EasierMindustry"
+main: "silicon.Silicon"
 
 #the mod description as seen in the mod dialog
 #在游戏内显示的模组描述
 description: "一个添加了个人想法的模组"
 
 #the mod version
-version: a0.5.2
+version: a0.5.3
 
 #the minimum game build required to run this mod
 minGameVersion: 155.4

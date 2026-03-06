@@ -1,6 +1,6 @@
 apply plugin: "java"
 
-version '1.0'
+version = '1.0'
 
 sourceSets.main.java.srcDirs = ["src"]
 
@@ -19,6 +19,27 @@ repositories {
     gradlePluginPortal()
     google()
     mavenCentral()
+
+    //Downloads the server-release JAR file from Mindustry releases; does not use any real repository. Surprisingly, this is the most reliable option.
+    ivy {
+        url 'https://github.com/'
+        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/Mindustry.jar' }
+        metadataSources { artifact() }
+    }
+
+    //"Latest" option to depend on BE builds.
+    ivy {
+        url 'https://github.com/'
+        patternLayout { artifact '/[organisation]/[module]/releases/download/master/[revision].jar' }
+        metadataSources { artifact() }
+    }
+
+    //Do the same with jabel
+//    ivy{
+//        url 'https://github.com/'
+//        patternLayout{artifact '/[organisation]/[module]/releases/download/[revision]/jabel.jar'}
+//        metadataSources{ artifact() }
+//    }
 }
 
 java {
@@ -27,9 +48,7 @@ java {
 }
 
 ext{
-    //the build number that this mod is made for
-    mindustryVersion = 'v155.2'
-    arcVersion = 'v155.2'
+    mindustryVersion = 'v156.2' //the build number that this mod is made for
     jabelVersion = "1.0.1"
     //windows sucks
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
@@ -46,20 +65,18 @@ allprojects{
 }
 
 dependencies{
-    compileOnly "com.github.Anuken.Arc:arc-core:$arcVersion"
-//    compileOnly "com.github.Anuken.MindustryJitpack:core:$mindustryVersion"
+    def useLatest = false //set to "true" to always depend on the newest version of mindustry
+
+    compileOnly useLatest ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
+
+    compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
     compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
-
+//    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
+    compileOnly "Anuken:Mindustry:$mindustryVersion"
+//    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
+    // 确保用于编译的注解处理器也被包含
+//    annotationProcessor "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
     annotationProcessor "com.github.bsideup:jabel:$jabelVersion"
-}
-
-//force arc version
-configurations.configureEach {
-    resolutionStrategy.eachDependency { details ->
-        if (details.requested.group == 'com.github.Anuken.Arc') {
-            details.useVersion "$mindustryVersion"
-        }
-    }
 }
 
 tasks.register('jarAndroid') {
@@ -78,13 +95,13 @@ tasks.register('jarAndroid') {
         def d8 = isWindows ? "d8.bat" : "d8"
 
         //dex and desugar files - this requires d8 in your PATH
-        "$d8 $dependencies --min-api 14 --output ${project.archivesBaseName}Android.jar ${project.archivesBaseName}Desktop.jar"
-                .execute(null, new File("$buildDir/libs")).waitForProcessOutput(System.out, System.err)
+        "$d8 $dependencies --min-api 14 --output ${project.name}Android.jar ${project.name}Desktop.jar"
+                .execute(null, new File("build/libs")).waitForProcessOutput(System.out, System.err)
     }
 }
 
 jar{
-    archiveFileName = "${base.archivesBaseName}Desktop.jar"
+    archiveFileName = "${project.name}Desktop.jar"
 
     from{
         configurations.runtimeClasspath.collect{ it.isDirectory() ? it : zipTree(it) }
@@ -102,14 +119,13 @@ jar{
 tasks.register('deploy', Jar) {
     dependsOn jarAndroid
     dependsOn jar
-    archiveFileName = "${base.archivesBaseName}.jar"
+    archiveFileName = "${project.name}.jar"
 
-    from { [zipTree("$buildDir/libs/${project.archivesBaseName}Desktop.jar"), zipTree("$buildDir/libs/${project.archivesBaseName}Android.jar")] }
+    from { [zipTree("build/libs/${project.name}Desktop.jar"), zipTree("build/libs/${project.name}Android.jar")] }
 
     doLast {
         delete {
-            delete "$buildDir/libs/${project.archivesBaseName}Desktop.jar"
-            delete "$buildDir/libs/${project.archivesBaseName}Android.jar"
+            delete "build/libs/${project.name}Android.jar"
         }
     }
 }

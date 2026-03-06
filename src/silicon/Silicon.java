@@ -1,13 +1,13 @@
-package easierMindustry;
+package silicon;
 
 import arc.util.Log;
-import easierMindustry.content.block.Blocks;
-import easierMindustry.content.item.Items;
 import mindustry.mod.Mod;
+import silicon.content.block.Blocks;
+import silicon.content.item.Items;
 
 
-public class EasierMindustry extends Mod {
-    public EasierMindustry() {
+public class Silicon extends Mod {
+    public Silicon() {
 //        Events.on(EventType.ClientLoadEvent.class, event -> {
 //            Time.runTask(10f, () -> {
 //                BaseDialog dialog = new BaseDialog("a title");
@@ -59,11 +59,30 @@ public class EasierMindustry extends Mod {
     public void loadContent() {
         Items.load();
         Blocks.load();
-        Log.info("Loading some easierMindustry content.");
+        Log.info("Loading some silicon content.");
     }
 
     @Override
     public void init() {
+//        Events.run(EventType.Trigger.update,() -> {
+//            if(Vars.net.server()) {
+////                Vars.netServer.addPacketHandler("planc", (p,s) -> {
+////                    silicon.Vars.allPlans.put(p,s);
+////                });
+////                NetClient.clientPacketReliable("plans" ,);
+//
+//            } else if (Vars.net.client()) {
+//                silicon.Vars.allPlans.put(Vars.player, Vars.player.unit().plans);
+//
+//                for (Player player : Groups.player) {
+//
+//                    NetServer.serverPacketReliable(player ,"planc" ,silicon.Vars.allPlans.);
+//                }
+//                Vars.netClient.addPacketHandler("plans",(s) -> {
+//                });
+//            }
+//        });
+
 //        MenuFragment.MenuButton menuButton =
 //                new MenuFragment.MenuButton("1111",new BaseDrawable(),);
 //        ui.menufrag.addButton(menuButton);

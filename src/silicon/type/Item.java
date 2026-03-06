@@ -1,4 +1,4 @@
-package easierMindustry.type;
+package silicon.type;
 
 import arc.Core;
 import arc.graphics.Color;

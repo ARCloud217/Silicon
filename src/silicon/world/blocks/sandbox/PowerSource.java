@@ -1,4 +1,4 @@
-package easierMindustry.world.blocks.sandbox;
+package silicon.world.blocks.sandbox;
 
 import mindustry.gen.Building;
 import mindustry.world.blocks.sandbox.PowerVoid;

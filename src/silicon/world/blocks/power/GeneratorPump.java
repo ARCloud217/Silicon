@@ -1,4 +1,4 @@
-package easierMindustry.world.blocks.power;
+package silicon.world.blocks.power;
 
 import arc.Core;
 import arc.graphics.Color;

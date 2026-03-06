@@ -1,4 +1,4 @@
-package easierMindustry.world.blocks.power;
+package silicon.world.blocks.power;
 
 import arc.Core;
 import arc.func.Boolf;
@@ -33,8 +33,8 @@ import mindustry.world.meta.StatUnit;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static easierMindustry.Vars.*;
 import static mindustry.Vars.world;
+import static silicon.Vars.*;
 
 /**
  * PowerProtector - A block that protects the power network when power drops to 0,
@@ -378,9 +378,9 @@ public class PowerProtector extends PowerGenerator {
                 tickRPower = 0f;
                 return;
             }
-            lastTickRPower = tickRPower; // Store the last tick's recovery amount
+            lastTickRPower = tickRPower * efficiency; // Store the last tick's recovery amount * efficiency
             // Reduce the current spent power by the recovery amount
-            totalSpentPower -= lastTickRPower * efficiency;
+            totalSpentPower -= lastTickRPower; // Reduce the current spent power by the recovery amount * efficiency
 
 
             // Also add interest at 1% per second of remaining spent power

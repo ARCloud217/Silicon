@@ -15,11 +15,11 @@ import silicon.world.blocks.sandbox.PowerSource;
 import static mindustry.type.ItemStack.with;
 
 public class Blocks {
-    public static Block powerGenerationPump, dualPurposeJunction,
+    public static Block powerGeneratorPump, dualPurposeJunction,
             rollGenerator, powerProtector, powerSource;
 
     public static void load() {
-        powerGenerationPump = new GeneratorPump("power-generation-pump") {{
+        powerGeneratorPump = new GeneratorPump("power-generator-pump") {{
             hasItems = false;
             liquidPressure = 1f;
             pumpAmount = 0.22f;

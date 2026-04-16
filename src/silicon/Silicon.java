@@ -1,9 +1,17 @@
 package silicon;
 
+import arc.Core;
+import arc.Events;
 import arc.util.Log;
+import mindustry.core.GameState;
+import mindustry.game.EventType;
+import mindustry.gen.Call;
+import mindustry.input.Binding;
 import mindustry.mod.Mod;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
+
+import static mindustry.Vars.*;
 
 
 public class Silicon extends Mod {
@@ -64,24 +72,16 @@ public class Silicon extends Mod {
 
     @Override
     public void init() {
-//        Events.run(EventType.Trigger.update,() -> {
-//            if(Vars.net.server()) {
-////                Vars.netServer.addPacketHandler("planc", (p,s) -> {
-////                    silicon.Vars.allPlans.put(p,s);
-////                });
-////                NetClient.clientPacketReliable("plans" ,);
-//
-//            } else if (Vars.net.client()) {
-//                silicon.Vars.allPlans.put(Vars.player, Vars.player.unit().plans);
-//
-//                for (Player player : Groups.player) {
-//
-//                    NetServer.serverPacketReliable(player ,"planc" ,silicon.Vars.allPlans.);
-//                }
-//                Vars.netClient.addPacketHandler("plans",(s) -> {
-//                });
-//            }
-//        });
+//        Core.input.getKeyboard().keyDown(Binding.pause.value.key);
+        Events.run(EventType.Trigger.update, () -> {
+            if (!state.isGame()) return;
+            if (net.server()) {
+                netServer.addPacketHandler("pause", (p, s) ->
+                        state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused));
+            } else if (net.client() && Core.input.keyTap(Binding.pause)) {
+                Call.serverPacketReliable("pause", null);
+            }
+        });
 
 //        MenuFragment.MenuButton menuButton =
 //                new MenuFragment.MenuButton("1111",new BaseDrawable(),);

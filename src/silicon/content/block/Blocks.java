@@ -63,7 +63,7 @@ public class Blocks {
             alwaysUnlocked = true;
             size = 1;
             health = 600;
-            powerProduction = Float.MAX_VALUE;
+            powerProduction = Float.MAX_VALUE / 2;
         }};
     }
 }

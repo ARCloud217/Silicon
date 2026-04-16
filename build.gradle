@@ -1,9 +1,20 @@
+plugins {
+    id 'idea'
+}
+
 apply plugin: "java"
 
 version = '1.0'
 
 sourceSets.main.java.srcDirs = ["src"]
 
+idea {
+    module {
+        // 告诉 IDEA 下载所有依赖的源码和 Javadoc
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}
 
 repositories {
     maven { setUrl("https://www.jitpack.io") }
@@ -23,7 +34,10 @@ repositories {
     //Downloads the server-release JAR file from Mindustry releases; does not use any real repository. Surprisingly, this is the most reliable option.
     ivy {
         url 'https://github.com/'
-        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/Mindustry.jar' }
+        patternLayout {
+            artifact '/[organisation]/[module]/releases/download/[revision]/Mindustry.jar'
+//            artifact '/[organisation]/[module]/archive/refs/tags/[revision].[ext]'
+        }
         metadataSources { artifact() }
     }
 
@@ -48,7 +62,7 @@ java {
 }
 
 ext{
-    mindustryVersion = 'v156.2' //the build number that this mod is made for
+    mindustryVersion = 'v157.2' //the build number that this mod is made for
     jabelVersion = "1.0.1"
     //windows sucks
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
@@ -73,6 +87,7 @@ dependencies{
     compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
 //    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
     compileOnly "Anuken:Mindustry:$mindustryVersion"
+//    compileOnly "Anuken:Mindustry:$mindustryVersion:sources@zip"
 //    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
     // 确保用于编译的注解处理器也被包含
 //    annotationProcessor "com.github.Anuken.Mindustry:annotations:$mindustryVersion"

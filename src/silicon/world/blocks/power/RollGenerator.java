@@ -53,6 +53,7 @@ public class RollGenerator extends PowerGenerator {
         solid = true;            // Is solid
         hasPower = true;         // Requires power module
         outputsPower = true;     // Outputs power
+        consumesPower = true;
         size = 3;                // Size of the block
         health = 800;            // Health points
         envEnabled = Env.any;    // Effective in any environment
@@ -85,29 +86,31 @@ public class RollGenerator extends PowerGenerator {
         addBar("power", (RollGeneratorBuild entity) -> new Bar(() ->
                 Core.bundle.format("bar.power1", Strings.fixed((entity.currentPowerProduction * 60 * entity.timeScale()), 1)),
                 () -> Pal.powerBar,
-                () -> entity.currentPowerProduction / entity.maxPowerGeneration));
+                () -> entity.currentPowerProduction / entity.roll));
 //        addBar("4",
 //                (RollGeneratorBuild entity) ->
 //                        new Bar(() -> String.valueOf(entity.efficiency), () -> Color.white, () -> 1f));
 //        addBar("5",
 //                (RollGeneratorBuild entity) ->
 //                        new Bar(() -> String.valueOf(entity.shouldConsume()), () -> Color.white, () -> 1f));
-        addBar("6",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.currentPowerProduction), () -> Color.green, () -> 1f));
-        addBar("7",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(entity.maxPowerGeneration), () -> Color.white, () -> 1f));
-        addBar("8",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(powerStored.get(entity) * powerStoredProductionPercentage / 60 +
-                                powerChanged.get(entity) * powerChangedProductionPercentage / 60), () -> Color.white, () -> 1f));
-        addBar("9",
-                (RollGeneratorBuild entity) ->
-                        new Bar(() -> String.valueOf(powerChanged.get(entity)), () -> Color.white, () -> 1f));
+//        addBar("6",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.currentPowerProduction), () -> Color.green, () -> 1f));
+//        addBar("7",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.maxPowerGeneration), () -> Color.white, () -> 1f));
+//        addBar("8",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.roll), () -> Color.white, () -> 1f));
+//        addBar("9",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(powerChanged.get(entity)), () -> Color.white, () -> 1f));
 //        addBar("10",
 //                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(nonOptionalConsumers[0].efficiency(entity)), () -> Color.white, () -> 1f));
+//                        new Bar(() -> String.valueOf(entity.power.graph.getLastScaledPowerOut()), () -> Color.white, () -> 1f));
+//        addBar("11",
+//                (RollGeneratorBuild entity) ->
+//                        new Bar(() -> String.valueOf(entity.power.graph.getLastScaledPowerIn()), () -> Color.white, () -> 1f));
 
     }
 
@@ -127,6 +130,7 @@ public class RollGenerator extends PowerGenerator {
         /** Previous power production value for smooth transitions */
         private float lastCurrentPowerProduction = 0f;
 //        private float timer = 0f;
+private float roll = 0;
 
         /**
          * Updates the tile each frame
@@ -156,8 +160,8 @@ public class RollGenerator extends PowerGenerator {
             }
             currentPowerProduction = 0f;
 
-            float roll = powerStored.get(self()) * powerStoredProductionPercentage / 60 +
-                    powerChanged.get(self()) * powerChangedProductionPercentage / 60;
+            roll = powerStored.get(self()) * powerStoredProductionPercentage / 60 +
+                    powerChanged.get(self()) * 60 * powerChangedProductionPercentage / 60;
 
             // Calculate power generation every second (based on 1% of current stored power)
             //timer += edelta(); // Use edelta() instead of Time.delta
@@ -168,14 +172,15 @@ public class RollGenerator extends PowerGenerator {
 
             // Get current stored power in the power network
 
-            if (powerChanged.get(self()) <= 0 & maxPowerGeneration <= roll) {
+            if (powerChanged.get(self()) < 0.01f * roll & maxPowerGeneration <= roll) {
                 maxPowerGeneration += Time.delta / 60f;
                 interval.clear();
-            } else if (powerChanged.get(self()) >= 0.01f * roll & powerChanged.get(self()) >= 0) {
+            } else if (powerChanged.get(self()) > 0.01f * roll & powerChanged.get(self()) >= 0) {
                 if (interval.get(60f)) {
                     if (maxPowerGeneration > 0) {
-                        maxPowerGeneration -= (powerChanged.get(self()) - 0.01f * roll) / i * 0.5f;
-                    } else if (maxPowerGeneration < 0) {
+                        maxPowerGeneration -= (powerChanged.get(self()) - 0.01f * roll) / i * warmup();
+                    }
+                    if (maxPowerGeneration < 0) {
                         maxPowerGeneration = 0;
                     }
                     interval.clear();
@@ -207,7 +212,7 @@ public class RollGenerator extends PowerGenerator {
          * @return Negative power consumption when producing power
          */
         public float getPowerConsumptionPerTick() {
-            return (currentPowerProduction < 0) ? currentPowerProduction : 0f;
+            return (currentPowerProduction < 0) ? -currentPowerProduction : 0f;
         }
 
         /**

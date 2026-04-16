@@ -33,11 +33,16 @@ public class PowerSource extends mindustry.world.blocks.sandbox.PowerSource {
          */
         @Override
         public float getPowerProduction() {
+            int i = 0;
             // Check if connected to any PowerVoid blocks
-            for (Building e : power.graph.consumers.items)
+            for (Building e : power.graph.all.items) {
                 if (e != null && e.block instanceof PowerVoid) return 0f;
+                if (e != null && e.block instanceof PowerSource) {
+                    i++;
+                }
+            }
             // Return power production based on enabled state
-            return enabled ? powerProduction : 0f;
+            return enabled ? powerProduction / i / 60 : 0f;
         }
     }
 }

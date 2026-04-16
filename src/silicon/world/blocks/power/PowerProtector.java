@@ -88,7 +88,7 @@ public class PowerProtector extends PowerGenerator {
     public void setStats() {
         super.setStats();
 
-        stats.add(Stat.powerUse, "Protects power network when below 0");
+//        stats.add(Stat.powerUse, "Protects power network when below 0");
         stats.add(Stat.repairTime, protectionTime / (60 * 60), StatUnit.minutes); // Protection time in minutes
     }
 

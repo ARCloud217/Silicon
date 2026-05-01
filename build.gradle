@@ -1,5 +1,5 @@
 plugins {
-    id 'idea'
+//    id 'idea'
 }
 
 apply plugin: "java"
@@ -8,13 +8,13 @@ version = '1.0'
 
 sourceSets.main.java.srcDirs = ["src"]
 
-idea {
-    module {
-        // 告诉 IDEA 下载所有依赖的源码和 Javadoc
-        downloadSources = true
-        downloadJavadoc = true
-    }
-}
+//idea {
+//    module {
+//        // 告诉 IDEA 下载所有依赖的源码和 Javadoc
+//        downloadSources = true
+//        downloadJavadoc = false
+//    }
+//}
 
 repositories {
     maven { setUrl("https://www.jitpack.io") }
@@ -81,12 +81,12 @@ allprojects{
 dependencies{
     def useLatest = false //set to "true" to always depend on the newest version of mindustry
 
-    compileOnly useLatest ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
+//    compileOnly useLatest ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
 
     compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
     compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
 //    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
-    compileOnly "Anuken:Mindustry:$mindustryVersion"
+//    compileOnly "Anuken:Mindustry:$mindustryVersion"
 //    compileOnly "Anuken:Mindustry:$mindustryVersion:sources@zip"
 //    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
     // 确保用于编译的注解处理器也被包含

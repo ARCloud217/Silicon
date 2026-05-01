@@ -10,13 +10,14 @@ import silicon.world.blocks.distribution.Junction;
 import silicon.world.blocks.power.GeneratorPump;
 import silicon.world.blocks.power.PowerProtector;
 import silicon.world.blocks.power.RollGenerator;
+import silicon.world.blocks.production.MineConverter;
 import silicon.world.blocks.sandbox.PowerSource;
 
 import static mindustry.type.ItemStack.with;
 
 public class Blocks {
     public static Block powerGeneratorPump, dualPurposeJunction,
-            rollGenerator, powerProtector, powerSource;
+            rollGenerator, powerProtector, powerSource, mineConverter;
 
     public static void load() {
         powerGeneratorPump = new GeneratorPump("power-generator-pump") {{
@@ -64,6 +65,12 @@ public class Blocks {
             size = 1;
             health = 600;
             powerProduction = Float.MAX_VALUE / 2;
+        }};
+        mineConverter = new MineConverter("mine-converter") {{
+            requirements(Category.crafting, BuildVisibility.shown,
+                    ItemStack.with());
+            consumePower(200f / 60);
+            size = 2;
         }};
     }
 }

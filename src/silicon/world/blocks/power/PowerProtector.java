@@ -30,7 +30,6 @@ import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.StatUnit;
 
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static mindustry.Vars.world;
@@ -327,7 +326,7 @@ public class PowerProtector extends PowerGenerator {
 //                });
                 for (int i : power.links.items) {
                     if (world.build(i) != null && world.build(i) instanceof PowerNode.PowerNodeBuild p && p.power.links.contains(pos())) {
-                        Log.info(Arrays.toString(power.links.items));
+//                        Log.info(Arrays.toString(power.links.items));
                         p.configureAny(pos());
                     }
                 }

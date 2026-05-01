@@ -171,11 +171,11 @@ private float roll = 0;
             //    timer = 0f;
 
             // Get current stored power in the power network
-
-            if (powerChanged.get(self()) < 0.01f * roll & maxPowerGeneration <= roll) {
+            float add = 0.01f * roll * 60;
+            if (powerChanged.get(self()) < add & maxPowerGeneration <= roll) {
                 maxPowerGeneration += Time.delta / 60f;
                 interval.clear();
-            } else if (powerChanged.get(self()) > 0.01f * roll & powerChanged.get(self()) >= 0) {
+            } else if (powerChanged.get(self()) > add & powerChanged.get(self()) >= 0) {
                 if (interval.get(60f)) {
                     if (maxPowerGeneration > 0) {
                         maxPowerGeneration -= (powerChanged.get(self()) - 0.01f * roll) / i * warmup();
@@ -271,7 +271,7 @@ private float roll = 0;
         }
 
         /**
-         * Writes building data to save file
+         * Writes building data to save a file
          * @param write The writer object
          */
         @Override
@@ -283,7 +283,7 @@ private float roll = 0;
         }
 
         /**
-         * Reads building data from save file
+         * Reads building data from a save file
          * @param read The reader object
          * @param revision The save revision
          */

@@ -3,12 +3,10 @@ package silicon.world.blocks.production;
 import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.EnumSet;
-import arc.struct.ObjectFloatMap;
 import arc.util.Log;
 import arc.util.Strings;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
-import mindustry.Vars;
 import mindustry.content.Items;
 import mindustry.gen.Building;
 import mindustry.gen.Sounds;
@@ -18,11 +16,17 @@ import mindustry.ui.Bar;
 import mindustry.world.blocks.ItemSelection;
 import mindustry.world.blocks.production.Drill;
 import mindustry.world.meta.BlockFlag;
+import mindustry.world.meta.Stat;
+import mindustry.world.meta.Stats;
 import silicon.world.blocks.FrameBlock;
+import silicon.world.meta.StatValues;
 
-import static mindustry.Vars.content;
-import static mindustry.Vars.player;
+import java.util.Objects;
+import java.util.TreeMap;
+
+import static mindustry.Vars.*;
 import static mindustry.content.Blocks.blastDrill;
+import static silicon.Vars.costs;
 
 public class MineConverter extends FrameBlock {
     public float craftTime = 60;
@@ -55,16 +59,58 @@ public class MineConverter extends FrameBlock {
                 () -> (b.consumeProgress / consumeTime) > Mathf.FLOAT_ROUNDING_ERROR ? b.consumeProgress / consumeTime : 1f)
         );
         addBar("craft1", (MineConverterBuild b) -> new Bar(
-                () -> b.craft != null ? Strings.fixed(b.craftValue / (b.costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
-                        + "/" + Strings.fixed(b.mineValue / (b.costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
-                        : b.consume != null ? Strings.fixed(b.mineValue / (b.costs.get(b.consume, 0) * (1 + consumptionMultiples)), 2) : "-",
+                () -> b.craft != null ? Strings.fixed(b.craftValue / (costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
+                        + "/" + Strings.fixed(b.mineValue / (costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
+                        : b.consume != null ? Strings.fixed(b.mineValue / (costs.get(b.consume, 0) * (1 + consumptionMultiples)), 2) : "-",
                 () -> Pal.powerBar,
-                () -> b.craft != null ? b.craftValue / (b.costs.get(b.craft, 0) * (1 + consumptionMultiples)) : 0f)
+                () -> b.craft != null ? b.craftValue / (costs.get(b.craft, 0) * (1 + consumptionMultiples)) : 1f)
         );
     }
 
+    public void setStats() {
+        //reset stats
+        stats = new Stats();
+        super.setStats();
+//        stats.add(Stat.basePowerGeneration, "动态变化，基于当前储存电量的1%/秒"); // Display special generation mechanism - actual value varies based on stored power
+        stats.add(Stat.productionTime, "1s"); // Add special note
+        if (!state.isGame()) return;
+        if (costs.size == 0) countWorldCosts();
+//        if (!costs.containsKey(world)) costs.put(world, emptyMap);
+        TreeMap<Float, Item> scaled = new TreeMap<>((o1, o2) -> {
+            if (Objects.equals(o1, o2)) return 0;
+            return o1 > o2 ? 1 : -1;
+        });
+        float max = 0;
+        for (float i : costs.values().toArray().toArray()) {
+            if (i > max) max = i;
+        }
+        float finalMax = max;
+        costs.each((i) -> scaled.put(finalMax / i.value, i.key));
+        stats.add(silicon.world.meta.Stat.itemsScaled, StatValues.itemsScaled(false, scaled));
+        {
+            Log.info(scaled);
+        }
+//        stats.add(Stat.consumeTime, "1s");
+    }
+
+    public void countWorldCosts() {
+        costs.clear();
+//            if (!costs.containsKey(world))costs.put(world, emptyMap);
+        world.tiles.eachTile(tile -> {
+            if (tile.drop() == null) return;
+            costs.increment(tile.drop(), 0, 1);
+        });
+//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
+        costs.each((o) -> {
+            costs.put(o.key, 1e4f / o.value * ((Drill) blastDrill).getDrillTime(o.key));
+        });
+        for (Item i : costs.keys()) {
+            itemFilter[i.id] = true;
+        }
+//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
+    }
+
     public class MineConverterBuild extends FrameBuild {
-        public ObjectFloatMap<Item> costs = new ObjectFloatMap<>();
         public float mineValue = 0;
         public float consumeProgress = 0;
         public float craftValue = 0;
@@ -76,7 +122,8 @@ public class MineConverter extends FrameBlock {
             if (!enabled) return;
 //            test();
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " MineConverterBuild update");
-            if (costs.size == 0) countCosts();
+            if (costs.size == 0) countWorldCosts();
+            block.setStats();
             {
                 if ((consumeProgress >= consumeTime || consume == null)) {
                     consumeProgress = 0;
@@ -139,21 +186,6 @@ public class MineConverter extends FrameBlock {
             return craft != item && !(source instanceof MineConverterBuild && source != self()) && super.acceptItem(source, item);
         }
 
-        private void countCosts() {
-            costs.clear();
-            Vars.world.tiles.eachTile(tile -> {
-                if (tile.drop() == null) return;
-                costs.increment(tile.drop(), 0, 1);
-            });
-//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
-            costs.each((o) -> {
-                costs.put(o.key, 1e4f / o.value * ((Drill) blastDrill).getDrillTime(o.key));
-            });
-            for (Item i : costs.keys()) {
-                block.itemFilter[i.id] = true;
-            }
-//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
-        }
 
         public boolean shouldConsume() {
             return consume != null || craft != null;

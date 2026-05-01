@@ -68,7 +68,7 @@ public class Blocks {
         }};
         mineConverter = new MineConverter("mine-converter") {{
             requirements(Category.crafting, BuildVisibility.shown,
-                    ItemStack.with());
+                    ItemStack.with(Items.graphite, 200, Items.silicon, 250, Items.thorium, 250, Items.plastanium, 100));
             consumePower(200f / 60);
             size = 3;
             frame = 25;

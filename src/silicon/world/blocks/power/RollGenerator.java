@@ -7,7 +7,6 @@ import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
 import arc.struct.Seq;
 import arc.util.Interval;
-import arc.util.Log;
 import arc.util.Strings;
 import arc.util.Time;
 import arc.util.io.Reads;
@@ -151,7 +150,7 @@ private float roll = 0;
             for (Building b : team.data().buildingTypes.get(powerVoid, emptySeq)) {
                 if (b.block instanceof PowerVoid && power.graph.all.contains(b)) return;
             }
-            Log.info(i);
+//            Log.info(i);
             if (Float.isNaN(currentPowerProduction)) {
                 lastCurrentPowerProduction = 0f;
             } else {
@@ -173,14 +172,14 @@ private float roll = 0;
             //    timer = 0f;
 
             // Get current stored power in the power network
-            float add = 0.01f * roll * 60;
-            if (powerChanged.get(self()) < add && maxPowerGeneration <= roll) {
+            float add = roll * 60;
+            if (powerChanged.get(self()) < 0.01 * add && maxPowerGeneration <= roll) {
                 maxPowerGeneration += Time.delta / 60f;
                 interval.clear();
-            } else if (powerChanged.get(self()) > add && powerChanged.get(self()) >= 0) {
+            } else if (powerChanged.get(self()) > 0.02 * add && powerChanged.get(self()) >= 0) {
                 if (interval.get(60f)) {
                     if (maxPowerGeneration > 0) {
-                        maxPowerGeneration -= (powerChanged.get(self()) - add) / i * warmup();
+                        maxPowerGeneration -= (powerChanged.get(self()) - 0.015f * add) / i * warmup();
                     }
                     if (maxPowerGeneration < 0) {
                         maxPowerGeneration = 0;

@@ -1,34 +1,30 @@
 package silicon.world.blocks.production;
 
-import arc.Core;
-import arc.graphics.g2d.Draw;
-import arc.graphics.g2d.TextureRegion;
 import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.EnumSet;
 import arc.struct.ObjectFloatMap;
 import arc.util.Log;
 import arc.util.Strings;
-import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
+import mindustry.content.Items;
 import mindustry.gen.Building;
 import mindustry.gen.Sounds;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
 import mindustry.ui.Bar;
-import mindustry.world.Block;
 import mindustry.world.blocks.ItemSelection;
 import mindustry.world.blocks.production.Drill;
 import mindustry.world.meta.BlockFlag;
+import silicon.world.blocks.FrameBlock;
 
 import static mindustry.Vars.content;
+import static mindustry.Vars.player;
 import static mindustry.content.Blocks.blastDrill;
 
-public class MineConverter extends Block {
-    public int frame, frameTime;
-    private TextureRegion[] frames;
+public class MineConverter extends FrameBlock {
     public float craftTime = 60;
     public float consumeTime = 60;
     public float consumptionMultiples = 0.1f;
@@ -44,6 +40,8 @@ public class MineConverter extends Block {
         ambientSoundVolume = 0.03f;
         flags = EnumSet.of(BlockFlag.factory);
         drawArrow = false;
+        saveConfig = true;
+
 
         config(Item.class, (MineConverterBuild b, Item item) -> b.craft = item);
         configClear((MineConverterBuild b) -> b.craft = null);
@@ -65,18 +63,7 @@ public class MineConverter extends Block {
         );
     }
 
-    @Override
-    public void load() {
-        super.load();
-        frames = new TextureRegion[frame];
-        region = Core.atlas.find(name + "-0");
-        for (int i = 0; i < frame; i++) {
-            frames[i] = Core.atlas.find(name + "-" + i);
-        }
-
-    }
-
-    public class MineConverterBuild extends Building {
+    public class MineConverterBuild extends FrameBuild {
         public ObjectFloatMap<Item> costs = new ObjectFloatMap<>();
         public float mineValue = 0;
         public float consumeProgress = 0;
@@ -86,6 +73,8 @@ public class MineConverter extends Block {
 
         @Override
         public void updateTile() {
+            if (!enabled) return;
+//            test();
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " MineConverterBuild update");
             if (costs.size == 0) countCosts();
             {
@@ -147,7 +136,7 @@ public class MineConverter extends Block {
 
         @Override
         public boolean acceptItem(Building source, Item item) {
-            return craft != item && !(source instanceof MineConverterBuild) && super.acceptItem(source, item);
+            return craft != item && !(source instanceof MineConverterBuild && source != self()) && super.acceptItem(source, item);
         }
 
         private void countCosts() {
@@ -166,13 +155,20 @@ public class MineConverter extends Block {
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
         }
 
-        @Override
-        public void draw() {
-            super.draw();
-            Log.info(Strings.fixed(Time.time, 2));
-            int idx = ((int) (Time.time * frameTime / 60f)) % frame;
-            Draw.rect(frames[idx], x, y);
+        public boolean shouldConsume() {
+            return consume != null || craft != null;
         }
+
+        @Override
+        public Item config() {
+            return craft;
+        }
+
+        @Override
+        public byte version() {
+            return 2;
+        }
+
 
         /**
          * Writes building data to save a file
@@ -187,6 +183,7 @@ public class MineConverter extends Block {
             write.f(consumeProgress);
             write.f(warmup);
             write.s(craft == null ? -1 : craft.id);
+            write.s(consume == null ? -1 : consume.id);
         }
 
         /**
@@ -203,6 +200,15 @@ public class MineConverter extends Block {
             consumeProgress = read.f();
             warmup = read.f();
             craft = read.s() >= 0 ? content.items().get(read.s()) : null;
+            consume = read.s() >= 0 ? content.items().get(read.s()) : null;
+        }
+
+        private void test() {
+            Log.info(acceptStack(Items.lead, 100, player.unit()));
+            Log.info(player.unit().team() == this.team);
+            Log.info(getMaximumAccepted(Items.lead));
+            Log.info(getMaximumAccepted(Items.graphite));
+
         }
     }
 }

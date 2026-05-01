@@ -1,11 +1,15 @@
 package silicon.world.blocks.production;
 
+import arc.Core;
+import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.TextureRegion;
 import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.EnumSet;
 import arc.struct.ObjectFloatMap;
 import arc.util.Log;
 import arc.util.Strings;
+import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
@@ -19,13 +23,12 @@ import mindustry.world.blocks.ItemSelection;
 import mindustry.world.blocks.production.Drill;
 import mindustry.world.meta.BlockFlag;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-
 import static mindustry.Vars.content;
 import static mindustry.content.Blocks.blastDrill;
 
 public class MineConverter extends Block {
+    public int frame, frameTime;
+    private TextureRegion[] frames;
     public float craftTime = 60;
     public float consumeTime = 60;
     public float consumptionMultiples = 0.1f;
@@ -56,10 +59,21 @@ public class MineConverter extends Block {
         addBar("craft1", (MineConverterBuild b) -> new Bar(
                 () -> b.craft != null ? Strings.fixed(b.craftValue / (b.costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
                         + "/" + Strings.fixed(b.mineValue / (b.costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
-                        : "-",
+                        : b.consume != null ? Strings.fixed(b.mineValue / (b.costs.get(b.consume, 0) * (1 + consumptionMultiples)), 2) : "-",
                 () -> Pal.powerBar,
-                () -> b.craft != null ? b.craftValue / (b.costs.get(b.craft, 0) * (1 + consumptionMultiples)) : 1f)
+                () -> b.craft != null ? b.craftValue / (b.costs.get(b.craft, 0) * (1 + consumptionMultiples)) : 0f)
         );
+    }
+
+    @Override
+    public void load() {
+        super.load();
+        frames = new TextureRegion[frame];
+        region = Core.atlas.find(name + "-0");
+        for (int i = 0; i < frame; i++) {
+            frames[i] = Core.atlas.find(name + "-" + i);
+        }
+
     }
 
     public class MineConverterBuild extends Building {
@@ -78,11 +92,6 @@ public class MineConverter extends Block {
                 if ((consumeProgress >= consumeTime || consume == null)) {
                     consumeProgress = 0;
 
-
-                    if (consume != null && items.get(consume) > 0) {
-                        items.remove(consume, 1);
-                        Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " MineConverterBuild consume");
-                    }
                     if (consume == null || items.get(consume) == 0) {
                         consume = null;
                         for (int i = 0; i < items.length(); i++) {
@@ -93,6 +102,10 @@ public class MineConverter extends Block {
 //                            if ((consume == null || a > items.get(consume)) && i != craft && i != consume && items.get(i) != 0)
 //                                consume = i;
 //                        });
+                    }
+                    if (consume != null && items.get(consume) > 0) {
+                        items.remove(consume, 1);
+//                        Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " MineConverterBuild consume");
                     }
                 }
                 if (consume != null) {
@@ -129,7 +142,7 @@ public class MineConverter extends Block {
             ItemSelection.buildTable(MineConverter.this, table, costs.keys().toArray(),
                     () -> craft, this::configure, selectionRows, selectionColumns);
 //            ItemSelection.buildTable(MineConverter.this, table, content.items(), () -> craft, this::configure, selectionRows, selectionColumns);
-            Log.info(costs);
+//            Log.info(costs);
         }
 
         @Override
@@ -143,7 +156,7 @@ public class MineConverter extends Block {
                 if (tile.drop() == null) return;
                 costs.increment(tile.drop(), 0, 1);
             });
-            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
+//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
             costs.each((o) -> {
                 costs.put(o.key, 1e4f / o.value * ((Drill) blastDrill).getDrillTime(o.key));
             });
@@ -151,6 +164,14 @@ public class MineConverter extends Block {
                 block.itemFilter[i.id] = true;
             }
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
+        }
+
+        @Override
+        public void draw() {
+            super.draw();
+            Log.info(Strings.fixed(Time.time, 2));
+            int idx = ((int) (Time.time * frameTime / 60f)) % frame;
+            Draw.rect(frames[idx], x, y);
         }
 
         /**

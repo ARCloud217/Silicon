@@ -33,6 +33,7 @@ import mindustry.world.meta.StatUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static mindustry.Vars.world;
+import static mindustry.content.Blocks.powerVoid;
 import static silicon.Vars.*;
 
 /**
@@ -57,6 +58,8 @@ public class PowerProtector extends PowerGenerator {
      * Speed of warmup animation transition
      */
     public float warmupSpeed = 0.1f;
+
+    private static final Seq<Building> emptySeq = new Seq<>(0);
 
     /**
      * Constructor for PowerProtector
@@ -114,10 +117,10 @@ public class PowerProtector extends PowerGenerator {
 
         // Add protection status bar
         addBar("protection", (PowerProtectorBuild entity) -> new Bar(
-                () -> entity.isInRecoveryMode() ? Core.bundle.get("block.easier-mindustry-power-protector.recovery") :
-                                entity.isError() ? Core.bundle.get("block.easier-mindustry-power-protector.error") :
-                                        entity.isInProtectionMode() ? Core.bundle.get("block.easier-mindustry-power-protector.protection") :
-                                        Core.bundle.get("block.easier-mindustry-power-protector.normal"),
+                () -> entity.isInRecoveryMode() ? Core.bundle.get("block.silicon-power-protector.recovery") :
+                        entity.isError() ? Core.bundle.get("block.silicon-power-protector.error") :
+                                entity.isInProtectionMode() ? Core.bundle.get("block.silicon-power-protector.protection") :
+                                        Core.bundle.get("block.silicon-power-protector.normal"),
                 () -> entity.isInRecoveryMode() ? Color.orange : entity.isError() ? Color.red :
                         entity.isInProtectionMode() ? Color.green : Color.white,
                 () -> 1f)
@@ -223,18 +226,18 @@ public class PowerProtector extends PowerGenerator {
          */
         @Override
         public void updateTile() {
-            if (!enabled) return;
+            {
+                if (!enabled) return;
 //            secondsTimer += Time.delta / 60f;
-            if (power.graph.all.size > 0) {
-                for (Building e : power.graph.all.items) {
-                    if (e instanceof PowerProtectorBuild && e != self()) {
+                for (Building b : team.data().buildingTypes.get(block, emptySeq)) {
+                    if (power.graph.all.contains(b) && b != self()) {
                         error = true;
-                        break;
-                    }
-                    error = false;
-                    if (e != null && e.block instanceof PowerVoid) {
                         return;
                     }
+                }
+                error = false;
+                for (Building b : team.data().buildingTypes.get(powerVoid, emptySeq)) {
+                    if (b.block instanceof PowerVoid && power.graph.all.contains(b)) return;
                 }
             }
 

@@ -5,7 +5,9 @@ import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
+import arc.struct.Seq;
 import arc.util.Interval;
+import arc.util.Log;
 import arc.util.Strings;
 import arc.util.Time;
 import arc.util.io.Reads;
@@ -19,6 +21,7 @@ import mindustry.world.blocks.sandbox.PowerVoid;
 import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
 
+import static mindustry.content.Blocks.powerVoid;
 import static silicon.Vars.powerChanged;
 import static silicon.Vars.powerStored;
 
@@ -40,6 +43,8 @@ public class RollGenerator extends PowerGenerator {
      * Speed of warmup animation transition
      */
     public float warmupSpeed = 0.1f;
+
+    private static final Seq<Building> emptySeq = new Seq<>(0);
 
 
     /**
@@ -140,16 +145,13 @@ private float roll = 0;
         public void updateTile() {
             if (!enabled) return;
             int i = 0;
-            if (power.graph.all.size > 0) {
-                for (Building e : power.graph.all.items) {
-                    if (e != null && e.block instanceof PowerVoid) {
-                        return;
-                    }
-                    if (e != null && e.block instanceof RollGenerator) {
-                        i++;
-                    }
-                }
+            for (Building b : team.data().buildingTypes.get(block, emptySeq)) {
+                if (b.block instanceof RollGenerator && power.graph.all.contains(b)) i++;
             }
+            for (Building b : team.data().buildingTypes.get(powerVoid, emptySeq)) {
+                if (b.block instanceof PowerVoid && power.graph.all.contains(b)) return;
+            }
+            Log.info(i);
             if (Float.isNaN(currentPowerProduction)) {
                 lastCurrentPowerProduction = 0f;
             } else {
@@ -172,13 +174,13 @@ private float roll = 0;
 
             // Get current stored power in the power network
             float add = 0.01f * roll * 60;
-            if (powerChanged.get(self()) < add & maxPowerGeneration <= roll) {
+            if (powerChanged.get(self()) < add && maxPowerGeneration <= roll) {
                 maxPowerGeneration += Time.delta / 60f;
                 interval.clear();
-            } else if (powerChanged.get(self()) > add & powerChanged.get(self()) >= 0) {
+            } else if (powerChanged.get(self()) > add && powerChanged.get(self()) >= 0) {
                 if (interval.get(60f)) {
                     if (maxPowerGeneration > 0) {
-                        maxPowerGeneration -= (powerChanged.get(self()) - 0.01f * roll) / i * warmup();
+                        maxPowerGeneration -= (powerChanged.get(self()) - add) / i * warmup();
                     }
                     if (maxPowerGeneration < 0) {
                         maxPowerGeneration = 0;

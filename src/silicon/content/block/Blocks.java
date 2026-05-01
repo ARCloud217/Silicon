@@ -70,7 +70,9 @@ public class Blocks {
             requirements(Category.crafting, BuildVisibility.shown,
                     ItemStack.with());
             consumePower(200f / 60);
-            size = 2;
+            size = 3;
+            frame = 25;
+            frameTime = 8;
         }};
     }
 }

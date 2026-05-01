@@ -10,6 +10,7 @@ public class Vars implements Loadable {
     public static final Floatf<Building> powerStored = (entity) -> entity.power.graph.getBatteryStored();
     public static final Floatf<Building> powerCapacity = (entity) -> entity.power.graph.getTotalBatteryCapacity();
     public static final Floatf<Building> powerRemained = (entity) -> entity.power.graph.getBatteryCapacity();// Player -> Buildings
+//    public static final ObjectMap<Block, Seq<Building>> blockCount = new ObjectMap<>();
 
 
 }

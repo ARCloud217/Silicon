@@ -2,9 +2,11 @@ package silicon;
 
 import arc.Core;
 import arc.Events;
+import arc.struct.Seq;
 import arc.util.Log;
 import mindustry.core.GameState;
 import mindustry.game.EventType;
+import mindustry.gen.Building;
 import mindustry.gen.Call;
 import mindustry.input.Binding;
 import mindustry.mod.Mod;
@@ -15,6 +17,7 @@ import static mindustry.Vars.*;
 
 
 public class Silicon extends Mod {
+    private static final Seq<Building> emptySeq = new Seq<>(0);
     public Silicon() {
 //        Events.on(EventType.ClientLoadEvent.class, event -> {
 //            Time.runTask(10f, () -> {
@@ -82,6 +85,22 @@ public class Silicon extends Mod {
                 Call.serverPacketReliable("pause", null);
             }
         });
+//        Events.run(EventType.Trigger.update, () -> {
+//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + "blockCount: " + Vars.blockCount);
+//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + "Groups.build.first(): " + Groups.build.first());
+//
+//            Vars.blockCount.clear();
+////            world.tiles.eachTile(tile -> {
+////                if (tile.build != null) {
+////                    Vars.blockCount.get(tile.build.block, emptySeq).add(tile.build);
+////                }
+////            });
+//            Groups.build.each(building -> {
+//                if (building.block != null) {
+//                    Vars.blockCount.get(building.block, emptySeq).add(building);
+//                }
+//            });
+//        });
 
 //        MenuFragment.MenuButton menuButton =
 //                new MenuFragment.MenuButton("1111",new BaseDrawable(),);

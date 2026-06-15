@@ -1,101 +1,64 @@
-plugins {
-//    id 'idea'
-}
-
 apply plugin: "java"
 
 version = '1.0'
 
 sourceSets.main.java.srcDirs = ["src"]
 
-//idea {
-//    module {
-//        // 告诉 IDEA 下载所有依赖的源码和 Javadoc
-//        downloadSources = true
-//        downloadJavadoc = false
-//    }
-//}
-
 repositories {
     maven { setUrl("https://www.jitpack.io") }
     maven { setUrl("https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository") }
-    // 改为阿里云的镜像地址
-    maven { setUrl("https://maven.aliyun.com/repository/central") }
-    maven { setUrl("https://maven.aliyun.com/repository/jcenter") }
-    maven { setUrl("https://maven.aliyun.com/repository/google") }
-    maven { setUrl("https://maven.aliyun.com/repository/gradle-plugin") }
-    maven { setUrl("https://maven.aliyun.com/repository/public") }
-    maven { setUrl("https://maven.aliyun.com/nexus/content/groups/public/") }
-    maven { setUrl("https://maven.aliyun.com/nexus/content/repositories/jcenter") }
-    gradlePluginPortal()
-    google()
     mavenCentral()
 
-    //Downloads the server-release JAR file from Mindustry releases; does not use any real repository. Surprisingly, this is the most reliable option.
+    //Downloads the dependencies JAR file from Mindustry releases; does not use any real repository. Surprisingly, this is the most reliable option.
     ivy {
-        url 'https://github.com/'
-        patternLayout {
-            artifact '/[organisation]/[module]/releases/download/[revision]/Mindustry.jar'
-//            artifact '/[organisation]/[module]/archive/refs/tags/[revision].[ext]'
-        }
+        url = 'https://github.com/'
+        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/dependencies.jar' }
         metadataSources { artifact() }
     }
 
-    //"Latest" option to depend on BE builds.
+    //If the version is set to 'latest', downloads the latest Mindustry *release* as a dependency
     ivy {
-        url 'https://github.com/'
+        url = 'https://github.com/'
+        patternLayout { artifact '/[organisation]/[module]/releases/[revision]/download/dependencies.jar' }
+        metadataSources { artifact() }
+    }
+    ivy {
+        url = 'https://github.com/'
+        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/Mindustry.jar' }
+        metadataSources { artifact() }
+    }
+
+    //For depending on the absolute newest commit for Mindustry
+    ivy {
+        url = 'https://github.com/'
         patternLayout { artifact '/[organisation]/[module]/releases/download/master/[revision].jar' }
         metadataSources { artifact() }
     }
-
-    //Do the same with jabel
-//    ivy{
-//        url 'https://github.com/'
-//        patternLayout{artifact '/[organisation]/[module]/releases/download/[revision]/jabel.jar'}
-//        metadataSources{ artifact() }
-//    }
 }
 
 java {
-    targetCompatibility = 8
+    targetCompatibility = JavaVersion.VERSION_17
     sourceCompatibility = JavaVersion.VERSION_17
 }
 
 ext{
-    mindustryVersion = 'v157.2' //the build number that this mod is made for
-    jabelVersion = "1.0.1"
-    //windows sucks
+    // Mindustry version to depend on.
+    // Valid values:
+    // - latest: depend on the latest release of mindustry
+    // - be: depend on the very latest commit of mindustry
+    // - v<number>: depend on a specific commit
+    mindustryVersion = "v158.1"
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
     sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
 }
 
-//java 8 backwards compatibility flag
-allprojects{
-    tasks.withType(JavaCompile).tap {
-        configureEach {
-            options.compilerArgs.addAll(['--release', '8'])
-        }
-    }
-}
-
 dependencies{
-    def useLatest = false //set to "true" to always depend on the newest version of mindustry
-
-    compileOnly useLatest ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
-
-    compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
-    compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
-//    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
-//    compileOnly "Anuken:Mindustry:$mindustryVersion"
-//    compileOnly "Anuken:Mindustry:$mindustryVersion:sources@zip"
-//    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
-    // 确保用于编译的注解处理器也被包含
-//    annotationProcessor "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
-    annotationProcessor "com.github.bsideup:jabel:$jabelVersion"
+    compileOnly mindustryVersion == "be" ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
 }
 
 tasks.register('jarAndroid') {
     dependsOn "jar"
+    def projectName = project.name
 
     doLast {
         if (!sdkRoot || !new File(sdkRoot).exists()) throw new GradleException("No valid Android SDK found. Ensure that ANDROID_HOME is set to your Android SDK directory.")
@@ -110,7 +73,7 @@ tasks.register('jarAndroid') {
         def d8 = isWindows ? "d8.bat" : "d8"
 
         //dex and desugar files - this requires d8 in your PATH
-        "$d8 $dependencies --min-api 14 --output ${project.name}Android.jar ${project.name}Desktop.jar"
+        "$d8 $dependencies --min-api 14 --output ${projectName}Android.jar ${projectName}Desktop.jar"
                 .execute(null, new File("build/libs")).waitForProcessOutput(System.out, System.err)
     }
 }
@@ -132,15 +95,16 @@ jar{
 }
 
 tasks.register('deploy', Jar) {
+    def projectName = project.name
     dependsOn jarAndroid
     dependsOn jar
-    archiveFileName = "${project.name}.jar"
+    archiveFileName = "${projectName}.jar"
 
-    from { [zipTree("build/libs/${project.name}Desktop.jar"), zipTree("build/libs/${project.name}Android.jar")] }
+    from { [zipTree("build/libs/${projectName}Desktop.jar"), zipTree("build/libs/${projectName}Android.jar")] }
 
     doLast {
         delete {
-            delete "build/libs/${project.name}Android.jar"
+            delete "build/libs/${projectName}Android.jar"
         }
     }
 }

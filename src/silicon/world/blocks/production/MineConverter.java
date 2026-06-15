@@ -18,6 +18,7 @@ import mindustry.world.blocks.production.Drill;
 import mindustry.world.meta.BlockFlag;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.Stats;
+import silicon.util.SiliconLog;
 import silicon.world.blocks.FrameBlock;
 import silicon.world.meta.StatValues;
 
@@ -32,6 +33,10 @@ public class MineConverter extends FrameBlock {
     public float craftTime = 60;
     public float consumeTime = 60;
     public float consumptionMultiples = 0.1f;
+    TreeMap<Float, Item> scaled = new TreeMap<>((o1, o2) -> {
+        if (Objects.equals(o1, o2)) return 0;
+        return o1 > o2 ? 1 : -1;
+    });
 
     public MineConverter(String name) {
         super(name);
@@ -73,23 +78,10 @@ public class MineConverter extends FrameBlock {
         super.setStats();
 //        stats.add(Stat.basePowerGeneration, "动态变化，基于当前储存电量的1%/秒"); // Display special generation mechanism - actual value varies based on stored power
         stats.add(Stat.productionTime, "1s"); // Add special note
-        if (!state.isGame()) return;
-        if (costs.size == 0) countWorldCosts();
-//        if (!costs.containsKey(world)) costs.put(world, emptyMap);
-        TreeMap<Float, Item> scaled = new TreeMap<>((o1, o2) -> {
-            if (Objects.equals(o1, o2)) return 0;
-            return o1 > o2 ? 1 : -1;
-        });
-        float max = 0;
-        for (float i : costs.values().toArray().toArray()) {
-            if (i > max) max = i;
-        }
-        float finalMax = max;
-        costs.each((i) -> scaled.put(finalMax / i.value, i.key));
         stats.add(silicon.world.meta.Stat.itemsScaled, StatValues.itemsScaled(false, scaled));
-        {
-            Log.info(scaled);
-        }
+//        {
+//            Log.info(scaled);
+//        }
 //        stats.add(Stat.consumeTime, "1s");
     }
 
@@ -108,6 +100,14 @@ public class MineConverter extends FrameBlock {
             itemFilter[i.id] = true;
         }
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
+
+        float max = 0;
+        for (float i : costs.values().toArray().toArray()) {
+            if (i > max) max = i;
+        }
+        float finalMax = max;
+        costs.each((i) -> scaled.put(finalMax / i.value, i.key));
+        SiliconLog.info("Recount the number of minerals");
     }
 
     public class MineConverterBuild extends FrameBuild {
@@ -116,10 +116,16 @@ public class MineConverter extends FrameBlock {
         public float craftValue = 0;
         public float warmup;
         public Item craft = null, consume = null;
+        public float lastChange;
 
         @Override
         public void updateTile() {
             if (!enabled) return;
+
+            if (lastChange != world.tileChanges) {
+                lastChange = world.tileChanges;
+                countWorldCosts();
+            }
 //            test();
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " MineConverterBuild update");
             if (costs.size == 0) countWorldCosts();
@@ -167,11 +173,11 @@ public class MineConverter extends FrameBlock {
             dump(craft);
         }
 
-        @Override
-        public void onProximityUpdate() {
+//        @Override
+//        public void onProximityUpdate() {
 //            countCosts();
-            super.onProximityUpdate();
-        }
+//            super.onProximityUpdate();
+//        }
 
         @Override
         public void buildConfiguration(Table table) {
@@ -199,6 +205,12 @@ public class MineConverter extends FrameBlock {
         @Override
         public byte version() {
             return 2;
+        }
+
+        @Override
+        public void drawSelect() {
+            super.drawSelect();
+            drawItemSelection(craft);
         }
 
 

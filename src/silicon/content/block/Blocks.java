@@ -6,6 +6,7 @@ import mindustry.type.Category;
 import mindustry.type.ItemStack;
 import mindustry.world.Block;
 import mindustry.world.meta.BuildVisibility;
+import silicon.world.blocks.defense.Switch;
 import silicon.world.blocks.distribution.Junction;
 import silicon.world.blocks.power.GeneratorPump;
 import silicon.world.blocks.power.PowerProtector;
@@ -17,7 +18,7 @@ import static mindustry.type.ItemStack.with;
 
 public class Blocks {
     public static Block powerGeneratorPump, dualPurposeJunction,
-            rollGenerator, powerProtector, powerSource, mineConverter;
+            rollGenerator, powerProtector, powerSource, mineConverter, theSwitch;
 
     public static void load() {
         powerGeneratorPump = new GeneratorPump("power-generator-pump") {{
@@ -34,10 +35,12 @@ public class Blocks {
             requirements(Category.power, BuildVisibility.shown,
                     ItemStack.with(Items.copper, 60, Items.lead, 30, Items.metaglass, 15, Items.graphite, 40,
                             Items.titanium, 45, Items.thorium, 6, Items.silicon, 40));
+            alwaysUnlocked = true;
         }};
         dualPurposeJunction = new Junction("dual-purpose-junction") {{
             requirements(Category.liquid, BuildVisibility.shown,
                     ItemStack.with(Items.graphite, 2, Items.metaglass, 4, Items.copper, 1));
+            alwaysUnlocked = true;
         }};
 
         // Compound interest generator - generates power based on 1% of existing stored power
@@ -45,6 +48,7 @@ public class Blocks {
             requirements(Category.power, BuildVisibility.shown,
                     ItemStack.with(Items.copper, 40, Items.lead, 24, Items.graphite, 20,
                             Items.silicon, 16, Items.thorium, 16, Items.plastanium, 10));
+            alwaysUnlocked = true;
             size = 1;
 //            health = 800;
             powerStoredProductionPercentage = 0.001f;
@@ -56,6 +60,7 @@ public class Blocks {
             requirements(Category.power, BuildVisibility.shown,
                     ItemStack.with(Items.copper, 150, Items.lead, 100, Items.graphite, 80,
                             Items.silicon, 70, Items.thorium, 50, Items.plastanium, 40, Items.phaseFabric, 20));
+            alwaysUnlocked = true;
             size = 2;
             health = 600;
         }};
@@ -73,6 +78,13 @@ public class Blocks {
             size = 3;
             frame = 25;
             frameTime = 8;
+        }};
+        theSwitch = new Switch("switch") {{
+            requirements(Category.effect, BuildVisibility.shown,
+                    ItemStack.with(Items.graphite, 100, Items.silicon, 100, Items.thorium, 100, Items.plastanium, 100));
+            alwaysUnlocked = true;
+            update = true;
+            solid = true;
         }};
     }
 }

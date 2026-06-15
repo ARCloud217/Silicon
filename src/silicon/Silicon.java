@@ -3,7 +3,6 @@ package silicon;
 import arc.Core;
 import arc.Events;
 import arc.struct.Seq;
-import arc.util.Log;
 import mindustry.core.GameState;
 import mindustry.game.EventType;
 import mindustry.gen.Building;
@@ -12,10 +11,9 @@ import mindustry.input.Binding;
 import mindustry.mod.Mod;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
-import silicon.world.blocks.production.MineConverter;
+import silicon.util.SiliconLog;
 
 import static mindustry.Vars.*;
-import static silicon.content.block.Blocks.mineConverter;
 
 
 public class Silicon extends Mod {
@@ -72,7 +70,7 @@ public class Silicon extends Mod {
     public void loadContent() {
         Items.load();
         Blocks.load();
-        Log.info("Loading some silicon content.");
+        SiliconLog.info("Loading some content.");
     }
 
     @Override
@@ -87,7 +85,7 @@ public class Silicon extends Mod {
                 Call.serverPacketReliable("pause", null);
             }
         });
-        Events.run(EventType.WorldLoadEvent.class, () -> ((MineConverter) mineConverter).countWorldCosts());
+//        Events.run(EventType.WorldLoadEvent.class, () -> ((MineConverter) mineConverter).countWorldCosts());
 //        Events.run(EventType.Trigger.update, () -> {
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + "blockCount: " + Vars.blockCount);
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + "Groups.build.first(): " + Groups.build.first());

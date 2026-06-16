@@ -3,6 +3,7 @@ package silicon;
 import arc.Core;
 import arc.Events;
 import arc.struct.Seq;
+import arc.util.Time;
 import mindustry.core.GameState;
 import mindustry.game.EventType;
 import mindustry.gen.Building;
@@ -18,7 +19,7 @@ import static mindustry.Vars.*;
 
 public class Silicon extends Mod {
     private static final Seq<Building> emptySeq = new Seq<>(0);
-    public Silicon() {
+//    public Silicon() {
 //        Events.on(EventType.ClientLoadEvent.class, event -> {
 //            Time.runTask(10f, () -> {
 //                BaseDialog dialog = new BaseDialog("a title");
@@ -64,7 +65,7 @@ public class Silicon extends Mod {
 //            });
 //
 //        });
-    }
+//    }
 
     @Override
     public void loadContent() {
@@ -75,14 +76,26 @@ public class Silicon extends Mod {
 
     @Override
     public void init() {
+        {
+            netServer.addPacketHandler("pause", (p, s) -> {
+                state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
+                Call.clientPacketReliable(p.con, "paused", s);
+                SiliconLog.info(p.name + " pause");
+            });
+            netClient.addPacketHandler("paused", (s) -> {
+                Vars.pause.complete = true;
+            });
+        }
 //        Core.input.getKeyboard().keyDown(Binding.pause.value.key);
         Events.run(EventType.Trigger.update, () -> {
             if (!state.isGame()) return;
-            if (net.server()) {
-                netServer.addPacketHandler("pause", (p, s) ->
-                        state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused));
-            } else if (net.client() && Core.input.keyTap(Binding.pause)) {
-                Call.serverPacketReliable("pause", null);
+            if (net.client() && Core.input.keyTap(Binding.pause)) {
+                String time = String.valueOf(Time.time);
+                Call.serverPacketReliable("pause", time);
+                Vars.pause = new Vars.Pause(time);
+                SiliconLog.info("pause");
+            } else if (net.server() && !Vars.pause.complete) {
+                Call.serverPacketReliable("pause", Vars.pause.time);
             }
         });
 //        Events.run(EventType.WorldLoadEvent.class, () -> ((MineConverter) mineConverter).countWorldCosts());
@@ -91,11 +104,11 @@ public class Silicon extends Mod {
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + "Groups.build.first(): " + Groups.build.first());
 //
 //            Vars.blockCount.clear();
-////            world.tiles.eachTile(tile -> {
-////                if (tile.build != null) {
-////                    Vars.blockCount.get(tile.build.block, emptySeq).add(tile.build);
-////                }
-////            });
+//            world.tiles.eachTile(tile -> {
+//                if (tile.build != null) {
+//                    Vars.blockCount.get(tile.build.block, emptySeq).add(tile.build);
+//                }
+//            });
 //            Groups.build.each(building -> {
 //                if (building.block != null) {
 //                    Vars.blockCount.get(building.block, emptySeq).add(building);

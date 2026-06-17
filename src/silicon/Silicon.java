@@ -41,15 +41,18 @@ public class Silicon extends Mod {
     @Override
     public void init() {
         Events.on(EventType.ClientLoadEvent.class, e -> {
-            ui.settings.addCategory("@settings.silicon.meta.category.name", new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
+            ui.settings.addCategory("@settings.silicon.meta.category.name",
+                    new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
                 st.checkPref("pause", false);
-            });
+                        SiliconLog.info("Loading settings.");
+                    });
         });
-        SiliconLog.info("Loading settings.");
+
         Events.on(EventType.ClientLoadEvent.class, e -> {
-            netServer.addPacketHandler("pause", (p, s) -> {
+            netServer.addPacketHandler("pause", (p, time) -> {
+                if (!Core.settings.getBool("pause")) return;
                 state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
-                Call.clientPacketReliable(p.con, "paused", s);
+                Call.clientPacketReliable(p.con, "paused", time);
                 SiliconLog.info(p.name + " pause");
             });
             netClient.addPacketHandler("paused", (s) -> {
@@ -58,14 +61,12 @@ public class Silicon extends Mod {
         });
 //        Core.input.getKeyboard().keyDown(Binding.pause.value.key);
         Events.run(EventType.Trigger.update, () -> {
-            if (!state.isGame() || !Core.settings.getBool("pause")) return;
-            if (net.client() && Core.input.keyTap(Binding.pause)) {
+            if (!state.isGame()) return;
+            if (net.client() && (Core.input.keyTap(Binding.pause) || !Vars.pause.complete)) {
                 String time = String.valueOf(Time.time);
                 Call.serverPacketReliable("pause", time);
                 Vars.pause = new Vars.Pause(time);
                 SiliconLog.info("pause");
-            } else if (net.server() && !Vars.pause.complete) {
-                Call.serverPacketReliable("pause", Vars.pause.time);
             }
         });
 //        Events.run(EventType.WorldLoadEvent.class, () -> ((MineConverter) mineConverter).countWorldCosts());

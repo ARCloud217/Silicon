@@ -227,7 +227,9 @@ public class PowerProtector extends PowerGenerator {
         @Override
         public void updateTile() {
             {
-                if (!enabled) return;
+                if (!enabled && status == 0) return;
+                if (!enabled && status == 1) status = -1;
+                if (!enabled && status == -1) enabled = true;
 //            secondsTimer += Time.delta / 60f;
                 for (Building b : team.data().buildingTypes.get(block, emptySeq)) {
                     if (power.graph.all.contains(b) && b != self()) {

@@ -52,7 +52,10 @@ public class MineConverter extends FrameBlock {
         saveConfig = true;
 
 
-        config(Item.class, (MineConverterBuild b, Item item) -> b.craft = item);
+        config(Item.class, (MineConverterBuild b, Item item) -> {
+            b.craft = item;
+            SiliconLog.info(item.name);
+        });
         configClear((MineConverterBuild b) -> b.craft = null);
     }
 
@@ -87,6 +90,7 @@ public class MineConverter extends FrameBlock {
 
     public void countWorldCosts() {
         costs.clear();
+        scaled.clear();
 //            if (!costs.containsKey(world))costs.put(world, emptyMap);
         world.tiles.eachTile(tile -> {
             if (tile.drop() == null) return;
@@ -166,7 +170,7 @@ public class MineConverter extends FrameBlock {
                     dump(craft);
                     return;
                 }
-                float del = Math.min(mineValue, c / craftTime * efficiency);
+                float del = Math.min(mineValue, c / craftTime * edelta());
                 mineValue -= del;
                 craftValue += del;
             }

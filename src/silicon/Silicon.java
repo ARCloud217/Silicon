@@ -2,6 +2,8 @@ package silicon;
 
 import arc.Core;
 import arc.Events;
+import arc.graphics.g2d.TextureRegion;
+import arc.scene.style.TextureRegionDrawable;
 import arc.struct.Seq;
 import arc.util.Time;
 import mindustry.core.GameState;
@@ -10,6 +12,7 @@ import mindustry.gen.Building;
 import mindustry.gen.Call;
 import mindustry.input.Binding;
 import mindustry.mod.Mod;
+import mindustry.mod.Mods;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
 import silicon.util.SiliconLog;
@@ -19,64 +22,31 @@ import static mindustry.Vars.*;
 
 public class Silicon extends Mod {
     private static final Seq<Building> emptySeq = new Seq<>(0);
-//    public Silicon() {
-//        Events.on(EventType.ClientLoadEvent.class, event -> {
-//            Time.runTask(10f, () -> {
-//                BaseDialog dialog = new BaseDialog("a title");
-//                dialog.align(Align.center);
-//                dialog.cont.add("hhhhhhh").row();
-//                dialog.cont.button("what is this?",() -> {
-//                    BaseDialog bd = new BaseDialog("what is GenshinImpact?");
-//                    bd.top();
-//                    bd.cont.add("????").pad(200).row();
-//                    bd.cont.button("exit",bd::hide).size(100,50)
+    public static Mods.LoadedMod MOD;
 
-//                            ;
-//                    bd.cont.button("bye~bye",dialog::hide);
-//                    bd.show();
-//                }).size(100,30)
-//                        .style((Style) new Button.ButtonStyle().checked)
-
-//                        .row();
-//                dialog.cont.button("You can try",() -> {
-//                    Table table = new Table();
-//                    table.button("exit", ()->{}).left().size(100, 50);
-//                    table.fill();
-//                    table.row();
-//                    BaseDialog fd = new FullTextDialog();
-//                    fd.cont.add("text").row();
-//                    fd.cont.button("exit", fd::hide).left().size(100, 50);
-//                    fd.show();
-//                }).size(100,100);
-//                dialog.cont.button(new Button.ButtonStyle().checked,100,() -> {});
-//                dialog.show();
-//
-//            });
-//        });
-//        Events.on(EventType.ClientLoadEvent.class, e -> {
-//            //show dialog upon startup
-//            Time.runTask(20f, () -> {
-//                BaseDialog dialog = new BaseDialog("frog");
-//                dialog.cont.add("behold").row();
-//                //mod sprites are prefixed with the mod name (this mod is called 'example-java-mod' in its config)
-//                dialog.cont.image(Core.atlas.find("easier-mindustry-frog")).pad(20f).row();
-//                dialog.cont.button("I see", dialog::hide).size(100f, 50f);
-//                dialog.show();
-//            });
-//
-//        });
-//    }
+    public Silicon() {
+        Events.on(EventType.ClientLoadEvent.class, e -> {
+            MOD = mods.getMod(Silicon.class);
+            MOD.meta.subtitle = MOD.meta.version;
+        });
+    }
 
     @Override
     public void loadContent() {
         Items.load();
         Blocks.load();
-        SiliconLog.info("Loading some content.");
+        SiliconLog.info("Loading contents.");
     }
 
     @Override
     public void init() {
-        {
+        Events.on(EventType.ClientLoadEvent.class, e -> {
+            ui.settings.addCategory("@settings.silicon.meta.category.name", new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
+                st.checkPref("pause", false);
+            });
+        });
+        SiliconLog.info("Loading settings.");
+        Events.on(EventType.ClientLoadEvent.class, e -> {
             netServer.addPacketHandler("pause", (p, s) -> {
                 state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
                 Call.clientPacketReliable(p.con, "paused", s);
@@ -85,10 +55,10 @@ public class Silicon extends Mod {
             netClient.addPacketHandler("paused", (s) -> {
                 Vars.pause.complete = true;
             });
-        }
+        });
 //        Core.input.getKeyboard().keyDown(Binding.pause.value.key);
         Events.run(EventType.Trigger.update, () -> {
-            if (!state.isGame()) return;
+            if (!state.isGame() || !Core.settings.getBool("pause")) return;
             if (net.client() && Core.input.keyTap(Binding.pause)) {
                 String time = String.valueOf(Time.time);
                 Call.serverPacketReliable("pause", time);
@@ -120,4 +90,5 @@ public class Silicon extends Mod {
 //                new MenuFragment.MenuButton("1111",new BaseDrawable(),);
 //        ui.menufrag.addButton(menuButton);
     }
+
 }

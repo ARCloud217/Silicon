@@ -10,18 +10,18 @@ repositories {
     mavenCentral()
 
     //Downloads the dependencies JAR file from Mindustry releases; does not use any real repository. Surprisingly, this is the most reliable option.
-    ivy {
-        url = 'https://github.com/'
-        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/dependencies.jar' }
-        metadataSources { artifact() }
-    }
-
-    //If the version is set to 'latest', downloads the latest Mindustry *release* as a dependency
-    ivy {
-        url = 'https://github.com/'
-        patternLayout { artifact '/[organisation]/[module]/releases/[revision]/download/dependencies.jar' }
-        metadataSources { artifact() }
-    }
+//    ivy {
+//        url = 'https://github.com/'
+//        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/dependencies.jar' }
+//        metadataSources { artifact() }
+//    }
+//
+//    //If the version is set to 'latest', downloads the latest Mindustry *release* as a dependency
+//    ivy {
+//        url = 'https://github.com/'
+//        patternLayout { artifact '/[organisation]/[module]/releases/[revision]/download/dependencies.jar' }
+//        metadataSources { artifact() }
+//    }
     ivy {
         url = 'https://github.com/'
         patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/Mindustry.jar' }
@@ -47,7 +47,7 @@ ext{
     // - latest: depend on the latest release of mindustry
     // - be: depend on the very latest commit of mindustry
     // - v<number>: depend on a specific commit
-    mindustryVersion = "v158.1"
+    mindustryVersion = "v159.7"
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
     sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
 }

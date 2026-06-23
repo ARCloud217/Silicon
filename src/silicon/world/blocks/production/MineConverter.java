@@ -106,7 +106,7 @@ public class MineConverter extends FrameBlock {
 //            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
 
         float max = 0;
-        for (float i : costs.values().toArray().toArray()) {
+        for (float i : costs.values().toSeq().toArray()) {
             if (i > max) max = i;
         }
         float finalMax = max;
@@ -185,7 +185,7 @@ public class MineConverter extends FrameBlock {
 
         @Override
         public void buildConfiguration(Table table) {
-            ItemSelection.buildTable(MineConverter.this, table, costs.keys().toArray(),
+            ItemSelection.buildTable(MineConverter.this, table, costs.keys().toSeq(),
                     () -> craft, this::configure, selectionRows, selectionColumns);
 //            ItemSelection.buildTable(MineConverter.this, table, content.items(), () -> craft, this::configure, selectionRows, selectionColumns);
 //            Log.info(costs);

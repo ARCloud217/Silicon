@@ -16,7 +16,6 @@ public class Vars implements Loadable {
     public static final Floatf<Building> powerRemained = (entity) -> entity.power.graph.getBatteryCapacity();// Player -> Buildings
     public static final ObjectFloatMap<Item> costs = new ObjectFloatMap<>();
     public static volatile Pause pause = new Pause("", true);
-    public ObjectFloatMap<Item> emptyObjectFloatMap = new ObjectFloatMap<>();
 
     public static int pauseMode = 0;
     public static Seq<String> pauseWhitelist = new Seq<>();

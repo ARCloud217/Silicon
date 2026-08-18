@@ -113,7 +113,11 @@ public class Silicon extends Mod {
         Events.run(EventType.Trigger.update, () -> {
             if (!state.isGame()) return;
             if (net.client() && Core.settings.getBool("pauseRequest", true)) {
-                if (Core.input.keyTap(Binding.pause) || !Vars.pause.complete) {
+                if (Core.input.keyTap(Binding.pause)) {
+                    String time = String.valueOf((long) Time.time);
+                    Call.serverPacketReliable("pause", time);
+                    Vars.pause = new Vars.Pause(time);
+                } else if (!Vars.pause.complete && Time.time - Float.parseFloat(Vars.pause.time) > 60f) {
                     String time = String.valueOf((long) Time.time);
                     Call.serverPacketReliable("pause", time);
                     Vars.pause = new Vars.Pause(time);

@@ -34,9 +34,9 @@ public class ItemTransferHub extends Block {
         public void addLinks(Building[] other) {
             for (Building b : other) {
                 if (b instanceof ItemTransferHub.ItemTransferHubBuild hubBuild)
-                    data.hubs.add(hubBuild);
+                    data.add(hubBuild);
                 else
-                    data.buildings.add(b);
+                    data.add(b);
             }
         }
 

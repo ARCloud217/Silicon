@@ -155,7 +155,8 @@ public class RollGenerator extends PowerGenerator {
             }
 
             // Update warmup progress
-            warmupProgress = Mathf.approachDelta(warmupProgress, currentPowerProduction > 0 ? 1f : 0f, warmupSpeed);
+            float target = Math.min(roll, maxPowerGeneration);
+            warmupProgress = Mathf.approachDelta(warmupProgress, target > 0 ? 1f : 0f, warmupSpeed);
 
             // Calculate new power generation: 1% per second = 1% / 60 per tick
             // Limit minimum power generation to avoid stopping

@@ -71,7 +71,7 @@ public class PowerProtector extends PowerGenerator {
         update = true;           // Needs updating
         solid = true;            // Is solid
         consumesPower = true;
-        outputsPower = true;     // Doesn't output power
+        outputsPower = true;     // Outputs power
         size = 2;                // Size of the block
         health = 600;            // Health points
         envEnabled = Env.any;    // Effective in any environment

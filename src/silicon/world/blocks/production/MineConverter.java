@@ -55,7 +55,6 @@ public class MineConverter extends FrameBlock {
         config(Item.class, (MineConverterBuild b, Item item) -> {
             b.craft = item;
             if (b.consume == item) b.consume = null;
-            SiliconLog.info(item.name);
         });
         configClear((MineConverterBuild b) -> b.craft = null);
     }

@@ -73,8 +73,13 @@ tasks.register('jarAndroid') {
         def d8 = isWindows ? "d8.bat" : "d8"
 
         //dex and desugar files - this requires d8 in your PATH
-        "$d8 $dependencies --min-api 14 --output ${projectName}Android.jar ${projectName}Desktop.jar"
-                .execute(null, new File("build/libs")).waitForProcessOutput(System.out, System.err)
+        def process =         "$d8 --no-desugaring $dependencies --min-api 14 --output ${projectName}Android.jar ${projectName}Desktop.jar"
+                .execute(null, new File("build/libs"))
+        process.consumeProcessOutput(System.out, System.err)
+        process.waitFor()
+        if (process.exitValue() != 0) {
+            throw new GradleException("d8 dexing failed with exit code ${process.exitValue()}")
+        }
     }
 }
 

@@ -4,11 +4,9 @@ import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.EnumSet;
 import arc.struct.ObjectFloatMap;
-import arc.util.Log;
 import arc.util.Strings;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
-import mindustry.content.Items;
 import mindustry.gen.Building;
 import mindustry.gen.Sounds;
 import mindustry.graphics.Pal;
@@ -34,6 +32,7 @@ public class MineConverter extends FrameBlock {
     public float craftTime = 60;
     public float consumeTime = 60;
     public float consumptionMultiples = 0.1f;
+    private static long lastCostsWorldChange = -1;
     TreeMap<Float, Item> scaled = new TreeMap<>((o1, o2) -> {
         if (Objects.equals(o1, o2)) return 0;
         return o1 > o2 ? 1 : -1;
@@ -55,6 +54,7 @@ public class MineConverter extends FrameBlock {
 
         config(Item.class, (MineConverterBuild b, Item item) -> {
             b.craft = item;
+            if (b.consume == item) b.consume = null;
             SiliconLog.info(item.name);
         });
         configClear((MineConverterBuild b) -> b.craft = null);
@@ -90,43 +90,48 @@ public class MineConverter extends FrameBlock {
         );
     }
 
+    @Override
     public void setStats() {
-        //reset stats
         stats = new Stats();
         super.setStats();
-//        stats.add(Stat.basePowerGeneration, "动态变化，基于当前储存电量的1%/秒"); // Display special generation mechanism - actual value varies based on stored power
-        stats.add(Stat.productionTime, "1s"); // Add special note
+        stats.add(Stat.productionTime, "1s");
         stats.add(silicon.world.meta.Stat.itemsScaled, StatValues.itemsScaled(false, scaled));
-//        {
-//            Log.info(scaled);
-//        }
-//        stats.add(Stat.consumeTime, "1s");
     }
 
     public boolean countWorldCosts() {
+        if (lastCostsWorldChange == world.tileChanges) return false;
+        lastCostsWorldChange = world.tileChanges;
         ObjectFloatMap<Item> oldCosts = new ObjectFloatMap<>(costs);
         costs.clear();
         scaled.clear();
-//            if (!costs.containsKey(world))costs.put(world, emptyMap);
+        for (Item i : oldCosts.keys()) {
+            itemFilter[i.id] = false;
+        }
         world.tiles.eachTile(tile -> {
             if (tile.drop() == null) return;
             costs.increment(tile.drop(), 0, 1);
         });
-//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
+        ObjectFloatMap<Item> newCosts = new ObjectFloatMap<>();
         costs.each((o) -> {
-            costs.put(o.key, 1e4f / o.value * ((Drill) blastDrill).getDrillTime(o.key));
+            newCosts.put(o.key, 1e4f / o.value * ((Drill) blastDrill).getDrillTime(o.key));
         });
+        costs.clear();
+        newCosts.each((o) -> costs.put(o.key, o.value));
         for (Item i : costs.keys()) {
             itemFilter[i.id] = true;
         }
-//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " Counting costs" + costs);
 
         float max = 0;
         for (float i : costs.values().toSeq().toArray()) {
             if (i > max) max = i;
         }
         float finalMax = max;
-        costs.each((i) -> scaled.put(finalMax / i.value, i.key));
+        costs.each((i) -> {
+            float key = finalMax / i.value;
+            if (!scaled.containsKey(key)) {
+                scaled.put(key, i.key);
+            }
+        });
         SiliconLog.info("Recount the number of minerals");
         return !oldCosts.equals(costs);
     }
@@ -164,14 +169,9 @@ public class MineConverter extends FrameBlock {
                             if ((consume == null || items.get(i) > items.get(consume)) && content.item(i) != null && content.item(i) != craft && items.get(i) != 0)
                                 consume = content.item(i);
                         }
-//                        items.each((i, a) -> {
-//                            if ((consume == null || a > items.get(consume)) && i != craft && i != consume && items.get(i) != 0)
-//                                consume = i;
-//                        });
                     }
                     if (consume != null && items.get(consume) > 0) {
                         items.remove(consume, 1);
-//                        Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " MineConverterBuild consume");
                     }
                 }
                 if (consume != null) {
@@ -197,18 +197,10 @@ public class MineConverter extends FrameBlock {
             dump(craft);
         }
 
-//        @Override
-//        public void onProximityUpdate() {
-//            countCosts();
-//            super.onProximityUpdate();
-//        }
-
         @Override
         public void buildConfiguration(Table table) {
             ItemSelection.buildTable(MineConverter.this, table, costs.keys().toSeq(),
                     () -> craft, this::configure, selectionRows, selectionColumns);
-//            ItemSelection.buildTable(MineConverter.this, table, content.items(), () -> craft, this::configure, selectionRows, selectionColumns);
-//            Log.info(costs);
         }
 
         @Override
@@ -217,6 +209,7 @@ public class MineConverter extends FrameBlock {
         }
 
 
+        @Override
         public boolean shouldConsume() {
             return consume != null || craft != null;
         }
@@ -267,16 +260,10 @@ public class MineConverter extends FrameBlock {
             craftValue = read.f();
             consumeProgress = read.f();
             warmup = read.f();
-            craft = read.s() >= 0 ? content.items().get(read.s()) : null;
-            consume = read.s() >= 0 ? content.items().get(read.s()) : null;
-        }
-
-        private void test() {
-            Log.info(acceptStack(Items.lead, 100, player.unit()));
-            Log.info(player.unit().team() == this.team);
-            Log.info(getMaximumAccepted(Items.lead));
-            Log.info(getMaximumAccepted(Items.graphite));
-
+            short craftId = read.s();
+            craft = craftId >= 0 ? content.items().get(craftId) : null;
+            short consumeId = read.s();
+            consume = consumeId >= 0 ? content.items().get(consumeId) : null;
         }
     }
 }

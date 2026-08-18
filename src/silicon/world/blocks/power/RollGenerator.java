@@ -132,7 +132,9 @@ public class RollGenerator extends PowerGenerator {
         /** Maximum allowed power generation */
         private float maxPowerGeneration = 0;
         /** Previous power production value for smooth transitions */
-        private float lastCurrentPowerProduction = 0f;
+        private float lastCurrentPowerProduction = 0;
+        /** Warmup progress 0-1 */
+        private float warmupProgress = 0;
 //        private float timer = 0f;
 private float roll = 0;
 
@@ -178,7 +180,7 @@ private float roll = 0;
                 interval.clear();
             } else if (powerChanged.get(self()) > 0.02 * add && powerChanged.get(self()) >= 0) {
                 if (interval.get(60f)) {
-                    if (maxPowerGeneration > 0) {
+                    if (maxPowerGeneration > 0 && i > 0) {
                         maxPowerGeneration -= (powerChanged.get(self()) - 0.015f * add) / i * warmup();
                     }
                     if (maxPowerGeneration < 0) {
@@ -189,9 +191,12 @@ private float roll = 0;
                 }
             }
 
+            // Update warmup progress
+            warmupProgress = Mathf.approachDelta(warmupProgress, currentPowerProduction > 0 ? 1f : 0f, warmupSpeed);
+
             // Calculate new power generation: 1% per second = 1% / 60 per tick
             // Limit minimum power generation to avoid stopping
-            currentPowerProduction = Mathf.lerp(lastCurrentPowerProduction, Math.min(roll, maxPowerGeneration), warmup());
+            currentPowerProduction = Mathf.lerp(lastCurrentPowerProduction, Math.min(roll, maxPowerGeneration), warmupProgress);
 
             // Update efficiency
 //            power.status = currentPowerProduction > 0 ? currentPowerProduction / (maxPowerGeneration / 60f) : 0f;
@@ -231,7 +236,7 @@ private float roll = 0;
          */
         @Override
         public float warmup() {
-            return warmupSpeed;
+            return warmupProgress;
         }
 
         /**

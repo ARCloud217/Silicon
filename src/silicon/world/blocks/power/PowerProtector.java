@@ -139,7 +139,7 @@ public class PowerProtector extends PowerGenerator {
 
     @Override
     public boolean canBreak(Tile tile) {
-        return ((PowerProtectorBuild) tile.build).status == 0;
+        return tile.build instanceof PowerProtectorBuild b && b.status == 0;
     }
 
     @Override
@@ -228,8 +228,7 @@ public class PowerProtector extends PowerGenerator {
         public void updateTile() {
             {
                 if (!enabled && status == 0) return;
-                if (!enabled && status == 1) status = -1;
-                if (!enabled && status == -1) enabled = true;
+                if (!enabled && status != 0) { status = 0; enabled = true; }
 //            secondsTimer += Time.delta / 60f;
                 for (Building b : team.data().buildingTypes.get(block, emptySeq)) {
                     if (power.graph.all.contains(b) && b != self()) {
@@ -369,7 +368,7 @@ public class PowerProtector extends PowerGenerator {
             status = -1;
             // The Recovery period is the same as the protection period
             // How long the recovery period should last
-            float rTime = protectionTimer;
+            float rTime = Math.max(protectionTimer, 1f);
             protectionTimer = 0f;
             rPowerPrincipal = totalSpentPower / rTime; // Convert ticks to seconds
         }
@@ -484,8 +483,8 @@ public class PowerProtector extends PowerGenerator {
         }
 
         private void getLink(Team team, Cons<Building> others) {
-            Boolf<Building> valid = other -> powerCapacity.get(other) > Mathf.FLOAT_ROUNDING_ERROR &&
-                    powerStored.get(other) > Mathf.FLOAT_ROUNDING_ERROR ||
+            Boolf<Building> valid = other -> (powerCapacity.get(other) > Mathf.FLOAT_ROUNDING_ERROR &&
+                    powerStored.get(other) > Mathf.FLOAT_ROUNDING_ERROR) ||
                     powerChanged.get(other) > Mathf.FLOAT_ROUNDING_ERROR;
 
             tempBuilds.clear();
@@ -525,7 +524,6 @@ public class PowerProtector extends PowerGenerator {
             if (tempBuilds.size > 0 && tempBuilds.first() instanceof PowerNode.PowerNodeBuild p) {
                 others.get(p);
             }
-            Log.info(tempBuilds);
         }
 
         @Override

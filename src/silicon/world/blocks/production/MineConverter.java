@@ -67,11 +67,25 @@ public class MineConverter extends FrameBlock {
                 () -> (b.consumeProgress / consumeTime) > Mathf.FLOAT_ROUNDING_ERROR ? b.consumeProgress / consumeTime : 1f)
         );
         addBar("craft1", (MineConverterBuild b) -> new Bar(
-                () -> b.craft != null ? Strings.fixed(b.craftValue / (costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
-                        + "/" + Strings.fixed(b.mineValue / (costs.get(b.craft, 0) * (1 + consumptionMultiples)), 2)
-                        : b.consume != null ? Strings.fixed(b.mineValue / (costs.get(b.consume, 0) * (1 + consumptionMultiples)), 2) : "-",
+                () -> {
+                    if (b.craft != null) {
+                        float divisor = costs.get(b.craft, 0) * (1 + consumptionMultiples);
+                        return divisor > 0 ? Strings.fixed(b.craftValue / divisor, 2)
+                                + "/" + Strings.fixed(b.mineValue / divisor, 2) : "-";
+                    } else if (b.consume != null) {
+                        float divisor = costs.get(b.consume, 0) * (1 + consumptionMultiples);
+                        return divisor > 0 ? Strings.fixed(b.mineValue / divisor, 2) : "-";
+                    }
+                    return "-";
+                },
                 () -> Pal.powerBar,
-                () -> b.craft != null ? b.craftValue / (costs.get(b.craft, 0) * (1 + consumptionMultiples)) : 1f)
+                () -> {
+                    if (b.craft != null) {
+                        float divisor = costs.get(b.craft, 0) * (1 + consumptionMultiples);
+                        return divisor > 0 ? b.craftValue / divisor : 1f;
+                    }
+                    return 1f;
+                })
         );
     }
 
@@ -88,7 +102,8 @@ public class MineConverter extends FrameBlock {
 //        stats.add(Stat.consumeTime, "1s");
     }
 
-    public void countWorldCosts() {
+    public boolean countWorldCosts() {
+        ObjectFloatMap<Item> oldCosts = new ObjectFloatMap<>(costs);
         costs.clear();
         scaled.clear();
 //            if (!costs.containsKey(world))costs.put(world, emptyMap);
@@ -112,6 +127,7 @@ public class MineConverter extends FrameBlock {
         float finalMax = max;
         costs.each((i) -> scaled.put(finalMax / i.value, i.key));
         SiliconLog.info("Recount the number of minerals");
+        return !oldCosts.equals(costs);
     }
 
     public class MineConverterBuild extends FrameBuild {
@@ -128,12 +144,15 @@ public class MineConverter extends FrameBlock {
 
             if (lastChange != world.tileChanges) {
                 lastChange = world.tileChanges;
-                countWorldCosts();
+                if (countWorldCosts()) {
+                    block.setStats();
+                }
             }
-//            test();
-//            Log.info(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " MineConverterBuild update");
-            if (costs.size == 0) countWorldCosts();
-            block.setStats();
+            if (costs.size == 0) {
+                if (countWorldCosts()) {
+                    block.setStats();
+                }
+            }
             {
                 if ((consumeProgress >= consumeTime || consume == null)) {
                     consumeProgress = 0;

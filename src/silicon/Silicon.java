@@ -51,9 +51,11 @@ public class Silicon extends Mod {
         Events.on(EventType.ClientLoadEvent.class, e -> {
             netServer.addPacketHandler("pause", (p, time) -> {
                 if (!Core.settings.getBool("pause")) return;
-                state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
-                Call.clientPacketReliable(p.con, "paused", time);
-                SiliconLog.info(p.name + " pause");
+                if (p.admin || p.name.equals(state.map.author())) {
+                    state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
+                    Call.clientPacketReliable(p.con, "paused", time);
+                    SiliconLog.info(p.name + " pause");
+                }
             });
             netClient.addPacketHandler("paused", (s) -> {
                 Vars.pause.complete = true;

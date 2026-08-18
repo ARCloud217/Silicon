@@ -14,10 +14,14 @@ import mindustry.world.consumers.ConsumeItems;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ItemTransferHubNetwork {
-    public static int total = 1;
+    private static int total = 1;
     public int id;
     public Seq<ItemTransferHub.ItemTransferHubBuild> hubs = new Seq<>();
     public int version = 0;
+
+    public static void resetIdCounter() {
+        total = 1;
+    }
 
     public ItemTransferHubNetwork() {
         id = total++;

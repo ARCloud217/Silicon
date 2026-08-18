@@ -75,9 +75,9 @@ public class Switch extends Block {
             fE = read.bool();
         }
 
-//        @Override
-//        public Boolean config() {
-//            return front().enabled;
-//        }
+        @Override
+        public Boolean config() {
+            return front() != null && front().enabled;
+        }
     }
 }

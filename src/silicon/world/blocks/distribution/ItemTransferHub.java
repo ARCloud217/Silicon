@@ -45,12 +45,15 @@ public class ItemTransferHub extends Block {
         }
 
         public void removeLink(ItemTransferHubBuild other) {
-
+            data.hubs.remove(other);
+            other.data.hubs.remove(this);
+            network.remove(other);
         }
 
         @Override
         public void updateTile() {
             super.updateTile();
+            // TODO: Implement item transfer logic
         }
     }
 }

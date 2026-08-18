@@ -89,7 +89,7 @@ public class RollGenerator extends PowerGenerator {
         addBar("power", (RollGeneratorBuild entity) -> new Bar(() ->
                 Core.bundle.format("bar.power1", Strings.fixed((entity.currentPowerProduction * 60 * entity.timeScale()), 1)),
                 () -> Pal.powerBar,
-                () -> entity.currentPowerProduction / entity.roll));
+                () -> entity.roll > 0 ? entity.currentPowerProduction / entity.roll : 0f));
     }
 
     /**

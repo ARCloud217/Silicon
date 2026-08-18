@@ -18,10 +18,9 @@ public class Vars implements Loadable {
     public static volatile Pause pause = new Pause("", true);
     public ObjectFloatMap<Item> emptyObjectFloatMap = new ObjectFloatMap<>();
 
-    public static int pauseMode = 0; // 0=OFF, 1=ADMINS, 2=CUSTOM
+    public static int pauseMode = 0;
     public static Seq<String> pauseWhitelist = new Seq<>();
 
-    //    public static final ObjectMap<Block, Seq<Building>> blockCount = new ObjectMap<>();
     public static class Pause {
         String time;
         boolean complete;

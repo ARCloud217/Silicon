@@ -236,13 +236,6 @@ public class PowerProtector extends PowerGenerator {
             Log.info("Power Protector entered protection mode.");
         }
 
-//        public boolean shouldConsumePower() {
-//            return shouldConsumePower = inRecoveryMode;
-//        }
-
-        /**
-         * Handles protection mode logic
-         */
         private void handleProtectionMode() {
             protectionTimer += Time.delta;
             lastTickPPower = tickPPower;
@@ -272,10 +265,6 @@ public class PowerProtector extends PowerGenerator {
             if (interval.get(60f) && (powerStored.get(self()) <= Mathf.FLOAT_ROUNDING_ERROR ||
                     powerChanged.get(self()) + tickRPower <= Mathf.FLOAT_ROUNDING_ERROR)) {
                 lastTickRPower = 0;
-//                graphs.clear();
-//                state.teams.get(team).buildings.each(b -> {
-//                    if (b.block.hasPower) graphs.add(b.power.graph);
-//                });
                 for (int i : power.links.items) {
                     if (world.build(i) != null && world.build(i) instanceof PowerNode.PowerNodeBuild p && p.power.links.contains(pos())) {
                         p.configureAny(pos());
@@ -333,11 +322,8 @@ public class PowerProtector extends PowerGenerator {
             totalSpentPower += interestPerTick;
             double dP = rPowerPrincipal + interestPerTick;
             if (dP < Float.MAX_VALUE) {
-//                tickRPower = Mathf.lerp(lastTickRPower, (float) Mathf.clamp(powerStored / 2 + powerChanged + lastTickRPower,
-//                        Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE), warmup());
                 tickRPower = (float) Mathf.clamp(powerStored.get(self()) / 2 + powerChanged.get(self()) + lastTickRPower,
                         Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE);
-
             } else {
                 tickRPower = Float.MAX_VALUE;
             }
@@ -387,11 +373,6 @@ public class PowerProtector extends PowerGenerator {
             Draw.z(Layer.power);
             setupColor(power.graph.getSatisfaction());
 
-//            Building link = world.build(power.links.get(i));
-
-//                if(!linkValid(this, link)) continue;
-
-//            if (link.block instanceof PowerNode && link.id >= id) continue;
             if (node != null && team.data().buildings.contains(node)) {
                 if (node instanceof PowerNode.PowerNodeBuild p)
                     ((PowerNode) p.block).drawLaser(x, y, node.x, node.y, size, node.block.size);

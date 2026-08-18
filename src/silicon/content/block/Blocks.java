@@ -50,7 +50,6 @@ public class Blocks {
                             Items.silicon, 16, Items.thorium, 16, Items.plastanium, 10));
             alwaysUnlocked = true;
             size = 1;
-//            health = 800;
             powerStoredProductionPercentage = 0.001f;
             powerChangedProductionPercentage = 0.005f;
         }};

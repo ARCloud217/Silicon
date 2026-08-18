@@ -86,7 +86,6 @@ public class ItemTransferHubNetwork {
         }
         hub.data.clear();
         clear();
-        if (hub.data.hubs.size < 2) return;
     }
 
 

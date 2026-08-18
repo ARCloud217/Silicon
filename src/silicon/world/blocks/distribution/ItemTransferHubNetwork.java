@@ -4,6 +4,7 @@ import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import mindustry.Vars;
 import mindustry.gen.Building;
+import mindustry.type.Item;
 import mindustry.type.ItemStack;
 import mindustry.world.blocks.defense.turrets.ItemTurret;
 import mindustry.world.blocks.production.GenericCrafter;
@@ -18,6 +19,9 @@ public class ItemTransferHubNetwork {
     public int id;
     public Seq<ItemTransferHub.ItemTransferHubBuild> hubs = new Seq<>();
     public int version = 0;
+
+    public boolean enableDemandPull = true;
+    public boolean enableSurplusPush = true;
 
     public static void resetIdCounter() {
         total = 1;
@@ -142,8 +146,14 @@ public class ItemTransferHubNetwork {
             }
             for (Building building : buildings) {
                 if (building instanceof CoreBlock.CoreBuild) continue;
-                if (building.block instanceof ItemTurret turret)
-                    turret.ammoTypes.keys().toSeq().each(item -> needs[item.id] += turret.itemCapacity - building.items.get(item));
+                if (building.items == null) continue;
+
+                if (building.block instanceof ItemTurret turret) {
+                    turret.ammoTypes.keys().toSeq().each(item ->
+                            needs[item.id] += turret.itemCapacity - building.items.get(item));
+                    continue;
+                }
+
                 if (building.block instanceof GenericCrafter genericCrafter) {
                     for (Consume consumer : building.block.consumers) {
                         if (consumer instanceof ConsumeItems itemConsume)
@@ -153,11 +163,24 @@ public class ItemTransferHubNetwork {
                             }
                     }
                     if (genericCrafter.outputItem != null) {
-                        costs[genericCrafter.outputItem.item.id]
-                                += genericCrafter.itemCapacity - building.items.get(genericCrafter.outputItem.item);
+                        Item out = genericCrafter.outputItem.item;
+                        if (building.items.get(out) >= building.block.itemCapacity) {
+                            costs[out.id] += building.items.get(out);
+                        }
                     }
+                    continue;
                 }
 
+                for (int i = 0; i < Vars.content.items().size; i++) {
+                    Item item = Vars.content.item(i);
+                    if (item == null) continue;
+                    if (!building.acceptItem(building, item)) continue;
+                    int current = building.items.get(item);
+                    int capacity = building.block.itemCapacity;
+                    if (current < capacity) {
+                        needs[item.id] += capacity - current;
+                    }
+                }
             }
         }
 

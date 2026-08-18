@@ -122,16 +122,12 @@ public class GeneratorPump extends LiquidBlock {
                     () -> Pal.powerBar,
                     () -> entity.productionEfficiency)
             );
-
-//            addBar("liquidoutput", new Bar(Core.bundle.format("bar.liquid-output",),Pal.li));
         }
     }
 
     @Override
     public void setStats() {
         super.setStats();
-
-//        stats.add(Stat.basePowerGeneration, powerProduction * 60.0f, StatUnit.powerSecond);
         stats.add(Stat.powerUse, powerConsumption * 60f, StatUnit.powerSecond);
         if (hasItems) {
             stats.add(Stat.productionTime, consumeTime / 60f, StatUnit.seconds);
@@ -240,14 +236,6 @@ public class GeneratorPump extends LiquidBlock {
                 generateEffect.at(x + Mathf.range(generateEffectRange), y + Mathf.range(generateEffectRange));
             }
 
-            //take in items periodically
-//            if (hasItems && valid && generateTime <= 0f) {
-//                consume();
-//                consumeEffect.at(x + Mathf.range(generateEffectRange), y + Mathf.range(generateEffectRange));
-//                generateTime = 1f;
-//            }
-
-            //Pump
             if (valid && liquidDrop != null) {
                 float maxPump = Math.min(liquidCapacity - liquids.get(liquidDrop), amount * pumpAmount * edelta());
                 liquids.add(liquidDrop, maxPump);
@@ -269,9 +257,6 @@ public class GeneratorPump extends LiquidBlock {
                     && liquids.get(boosterLiquid.liquid) > boosterLiquid.amount) {
                 dumpLiquid(liquids.current());
             }
-
-            //generation time always goes down, but only at the end so consumeTriggerValid doesn't assume fake items
-//            generateTime -= delta() / itemDuration;
         }
 
         @Override

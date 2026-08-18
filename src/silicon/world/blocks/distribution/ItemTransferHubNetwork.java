@@ -60,13 +60,14 @@ public class ItemTransferHubNetwork {
         for (ItemTransferHub.ItemTransferHubBuild other : hub.data.hubs) {
             other.data.remove(hub);
         }
-        Seq<ItemTransferHub.ItemTransferHubBuild> rebuilds;
+        Seq<ItemTransferHub.ItemTransferHubBuild> remaining = new Seq<>(hub.data.hubs);
+        remaining.remove(hub);
 
-        if (hub.data.hubs.get(1) != null) {
+        if (remaining.size >= 1) {
 
             ObjectMap<ItemTransferHub.ItemTransferHubBuild, Seq<ItemTransferHub.ItemTransferHubBuild>> rebuildss = new ObjectMap<>();
 
-            rebuildss.put(hub.data.hubs.get(1), rebuilds(hub.data.hubs.get(1)));
+            rebuildss.put(remaining.first(), rebuilds(remaining.first()));
 
             for (ItemTransferHub.ItemTransferHubBuild other : hub.data.hubs) {
                 AtomicBoolean found = new AtomicBoolean(false);
@@ -85,6 +86,7 @@ public class ItemTransferHubNetwork {
         }
         hub.data.clear();
         clear();
+        if (hub.data.hubs.size < 2) return;
     }
 
 
@@ -151,8 +153,10 @@ public class ItemTransferHubNetwork {
                                         += genericCrafter.itemCapacity - building.items.get(itemStack.item);
                             }
                     }
-                    costs[genericCrafter.outputItem.item.id]
-                            += genericCrafter.itemCapacity - building.items.get(genericCrafter.outputItem.item);
+                    if (genericCrafter.outputItem != null) {
+                        costs[genericCrafter.outputItem.item.id]
+                                += genericCrafter.itemCapacity - building.items.get(genericCrafter.outputItem.item);
+                    }
                 }
 
             }

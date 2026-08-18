@@ -75,8 +75,7 @@ public class RollGenerator extends PowerGenerator {
     @Override
     public void setStats() {
         super.setStats();
-//        stats.add(Stat.basePowerGeneration, "动态变化，基于当前储存电量的1%/秒"); // Display special generation mechanism - actual value varies based on stored power
-        stats.add(Stat.productionTime, "1s"); // Add special note
+        stats.add(Stat.productionTime, "1s");
     }
 
     /**
@@ -91,31 +90,6 @@ public class RollGenerator extends PowerGenerator {
                 Core.bundle.format("bar.power1", Strings.fixed((entity.currentPowerProduction * 60 * entity.timeScale()), 1)),
                 () -> Pal.powerBar,
                 () -> entity.currentPowerProduction / entity.roll));
-//        addBar("4",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.efficiency), () -> Color.white, () -> 1f));
-//        addBar("5",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.shouldConsume()), () -> Color.white, () -> 1f));
-//        addBar("6",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.currentPowerProduction), () -> Color.green, () -> 1f));
-//        addBar("7",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.maxPowerGeneration), () -> Color.white, () -> 1f));
-//        addBar("8",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.roll), () -> Color.white, () -> 1f));
-//        addBar("9",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(powerChanged.get(entity)), () -> Color.white, () -> 1f));
-//        addBar("10",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.power.graph.getLastScaledPowerOut()), () -> Color.white, () -> 1f));
-//        addBar("11",
-//                (RollGeneratorBuild entity) ->
-//                        new Bar(() -> String.valueOf(entity.power.graph.getLastScaledPowerIn()), () -> Color.white, () -> 1f));
-
     }
 
     /**
@@ -133,10 +107,8 @@ public class RollGenerator extends PowerGenerator {
         private float maxPowerGeneration = 0;
         /** Previous power production value for smooth transitions */
         private float lastCurrentPowerProduction = 0;
-        /** Warmup progress 0-1 */
         private float warmupProgress = 0;
-//        private float timer = 0f;
-private float roll = 0;
+        private float roll = 0;
 
         /**
          * Updates the tile each frame
@@ -152,7 +124,6 @@ private float roll = 0;
             for (Building b : team.data().buildingTypes.get(powerVoid, emptySeq)) {
                 if (b.block instanceof PowerVoid && power.graph.all.contains(b)) return;
             }
-//            Log.info(i);
             if (Float.isNaN(currentPowerProduction)) {
                 lastCurrentPowerProduction = 0f;
             } else {
@@ -166,14 +137,6 @@ private float roll = 0;
             roll = powerStored.get(self()) * powerStoredProductionPercentage / 60 +
                     powerChanged.get(self()) * 60 * powerChangedProductionPercentage / 60;
 
-            // Calculate power generation every second (based on 1% of current stored power)
-            //timer += edelta(); // Use edelta() instead of Time.delta
-            // Update interval in game ticks (1 second)
-            //float UPDATE_INTERVAL = 60f;
-            //if (timer >= UPDATE_INTERVAL) { // Trigger once per second
-            //    timer = 0f;
-
-            // Get current stored power in the power network
             float add = roll * 60;
             if (powerChanged.get(self()) < 0.01 * add && maxPowerGeneration <= roll) {
                 maxPowerGeneration += Time.delta / 60f;
@@ -197,10 +160,6 @@ private float roll = 0;
             // Calculate new power generation: 1% per second = 1% / 60 per tick
             // Limit minimum power generation to avoid stopping
             currentPowerProduction = Mathf.lerp(lastCurrentPowerProduction, Math.min(roll, maxPowerGeneration), warmupProgress);
-
-            // Update efficiency
-//            power.status = currentPowerProduction > 0 ? currentPowerProduction / (maxPowerGeneration / 60f) : 0f;
-            //}
         }
 
         /**

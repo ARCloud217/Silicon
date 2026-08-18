@@ -76,7 +76,7 @@ public class Blocks {
                     ItemStack.with(Items.graphite, 200, Items.silicon, 250, Items.thorium, 250, Items.plastanium, 100));
             consumePower(200f / 60);
             size = 3;
-            frame = 25;
+            frame = 18;
             frameTime = 8;
         }};
         theSwitch = new Switch("switch") {{

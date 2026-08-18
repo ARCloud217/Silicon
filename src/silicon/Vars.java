@@ -3,6 +3,7 @@ package silicon;
 import arc.assets.Loadable;
 import arc.func.Floatf;
 import arc.struct.ObjectFloatMap;
+import arc.struct.Seq;
 import mindustry.gen.Building;
 import mindustry.type.Item;
 
@@ -16,6 +17,9 @@ public class Vars implements Loadable {
     public static final ObjectFloatMap<Item> costs = new ObjectFloatMap<>();
     public static volatile Pause pause = new Pause("", true);
     public ObjectFloatMap<Item> emptyObjectFloatMap = new ObjectFloatMap<>();
+
+    public static int pauseMode = 0; // 0=OFF, 1=ADMINS, 2=CUSTOM
+    public static Seq<String> pauseWhitelist = new Seq<>();
 
     //    public static final ObjectMap<Block, Seq<Building>> blockCount = new ObjectMap<>();
     public static class Pause {

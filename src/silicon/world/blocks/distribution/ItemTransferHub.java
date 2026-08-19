@@ -1,13 +1,18 @@
 package silicon.world.blocks.distribution;
 
 import arc.Core;
+import arc.graphics.Color;
+import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.Lines;
+import arc.scene.ui.layout.Table;
 import arc.struct.IntSeq;
 import arc.struct.Seq;
-import arc.scene.ui.layout.Table;
+import arc.math.Mathf;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
 import mindustry.gen.Unit;
+import mindustry.graphics.Drawf;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
 import mindustry.ui.Bar;
@@ -17,8 +22,11 @@ import mindustry.world.blocks.storage.CoreBlock;
 import mindustry.world.meta.BlockGroup;
 
 import static mindustry.Vars.content;
+import static mindustry.Vars.world;
 
 public class ItemTransferHub extends Block {
+    public float connectionRange = 20f;
+
     public ItemTransferHub(String name) {
         super(name);
         hasItems = false;
@@ -28,25 +36,61 @@ public class ItemTransferHub extends Block {
         conductivePower = false;
         solid = true;
         update = true;
-        size = 2;
+        size = 3;
         configurable = true;
         group = BlockGroup.transportation;
     }
 
     @Override
     public void setBars() {
-        super.setBars();
+        addBar("health", (ItemTransferHubBuild b) -> new Bar(
+                () -> Core.bundle.format("stat.health"),
+                () -> Pal.health,
+                () -> b.healthf()
+        ).blink(Color.white));
         addBar("silicon-hub-power", (ItemTransferHubBuild b) -> new Bar(
                 () -> Core.bundle.format("bar.silicon-hub-power"),
                 () -> Pal.powerBar,
                 () -> b.power != null ? b.power.status : 0f
         ));
+        addBar("silicon-hub-power-cost", (ItemTransferHubBuild b) -> new Bar(
+                () -> Core.bundle.format("bar.silicon-hub-power-cost"),
+                () -> Pal.accent,
+                () -> Math.min(b.powerPerSecond / 100f, 1f)
+        ));
+    }
+
+    @Override
+    public void drawPlace(int tx, int ty, int rotation, boolean valid) {
+        super.drawPlace(tx, ty, rotation, valid);
+
+        float range = connectionRange * 8f;
+        float cx = tx * 8f + offset;
+        float cy = ty * 8f + offset;
+
+        Drawf.dashCircle(cx, cy, range, Pal.accent);
+
+        for (int ix = tx - (int) connectionRange; ix <= tx + (int) connectionRange; ix++) {
+            for (int iy = ty - (int) connectionRange; iy <= ty + (int) connectionRange; iy++) {
+                Building b = world.build(ix, iy);
+                if (b != null && b.team == mindustry.Vars.player.team()) {
+                    float dist = Mathf.dst(cx, cy, b.x, b.y);
+                    if (dist <= range) {
+                        Drawf.square(b.x, b.y, b.block.size * 8f / 2f + 2f, Pal.place);
+                    }
+                }
+            }
+        }
+
+        Draw.reset();
     }
 
     public class ItemTransferHubBuild extends Building {
         public ItemTransferHubNetwork network = new ItemTransferHubNetwork();
         public ItemTransferHubNetwork.HubData data;
         public float powerConsumed = 0f;
+        public float powerPerSecond = 0f;
+        private float powerAccumulator = 0f;
 
         public ItemTransferHubBuild() {
             super();
@@ -96,6 +140,12 @@ public class ItemTransferHub extends Block {
             updateTopology();
         }
 
+        @Override
+        public void created() {
+            super.created();
+            updateTopology();
+        }
+
         private void updateTopology() {
             boolean hubChanged = false;
 
@@ -136,8 +186,15 @@ public class ItemTransferHub extends Block {
                 data.update();
             }
 
+            if (timer(3, 60)) {
+                powerPerSecond = powerAccumulator;
+                powerAccumulator = 0f;
+            }
+
             if (network.enableDemandPull) pullOnDemand();
             if (network.enableSurplusPush) pushSurplusToCore();
+
+            powerAccumulator += powerConsumed;
         }
 
         private void pullOnDemand() {
@@ -268,6 +325,25 @@ public class ItemTransferHub extends Block {
             supplier.items.remove(item, 1);
             powerConsumed += 10f;
             return true;
+        }
+
+        @Override
+        public void drawSelect() {
+            super.drawSelect();
+
+            Lines.stroke(2f);
+            for (ItemTransferHubBuild hub : data.hubs) {
+                Draw.color(Color.blue);
+                Lines.line(x, y, hub.x, hub.y);
+            }
+
+            Draw.color(Color.blue, 0.5f);
+            Lines.stroke(1f);
+            for (Building b : data.buildings) {
+                Drawf.dashLine(Color.blue, x, y, b.x, b.y, 8);
+            }
+
+            Draw.reset();
         }
 
         @Override

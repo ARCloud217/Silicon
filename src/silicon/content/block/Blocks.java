@@ -88,9 +88,10 @@ public class Blocks {
         }};
         itemTransferHub = new ItemTransferHub("item-transfer-hub") {{
             requirements(Category.distribution, BuildVisibility.shown,
-                    ItemStack.with(Items.copper, 40, Items.lead, 20, Items.metaglass, 10));
+                    ItemStack.with(Items.copper, 80, Items.lead, 40, Items.metaglass, 20,
+                            Items.graphite, 30, Items.silicon, 25, Items.titanium, 15));
             alwaysUnlocked = true;
-            size = 2;
+            size = 3;
         }};
     }
 }

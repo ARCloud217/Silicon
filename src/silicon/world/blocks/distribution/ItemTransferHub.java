@@ -48,6 +48,7 @@ public class ItemTransferHub extends Block {
         solid = true;
         update = true;
         size = 3;
+        timers = 4;
         configurable = true;
         group = BlockGroup.transportation;
 

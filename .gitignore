@@ -156,3 +156,5 @@ gradle-app.setting
 .DS_Store
 Thumbs.db
 android/libs/
+AGENTS.md
+Silicon.mod.jar

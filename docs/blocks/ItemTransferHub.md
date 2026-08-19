@@ -85,13 +85,9 @@
 
 ### 网络级开关
 
-两个模式可独立启用/关闭：
+两个模式始终启用（无 Pull/Push 切换按钮）：
 - `enableDemandPull`: 按需拉取（默认true）
 - `enableSurplusPush`: 满产推送（默认true）
-
-配置UI中的按钮：
-- "拉取" / "Pull": 切换按需拉取
-- "推送" / "Push": 切换满产推送
 
 ## Proxy转移机制
 
@@ -117,7 +113,12 @@ supplier.items.remove(item, 1);       // 扣除
 ## 绘制
 
 ### draw() - 常驻绘制
-- 手动连接的建筑：蓝色实线（hub↔hub）/ 蓝色虚线（hub↔building）
+- `super.draw()` 先绘制方块贴图
+- 仅在 `Renderer.laserOpacity > 0` 且非 payload 时绘制连线
+- 绘制层级 `Draw.z(Layer.power)`（电力层，高于方块层）
+- Hub↔Hub：蓝色实线（边缘到边缘，`Lines.line`）
+- Hub→Building：蓝色虚线（边缘到边缘，`Drawf.dashLine`）
+- 去重：Hub对之间只画一次（`other.id >= id` 跳过）
 
 ### drawSelect() - 选中时绘制
 - 蓝色虚线范围圈
@@ -134,11 +135,20 @@ supplier.items.remove(item, 1);       // 扣除
 
 - **health**: 生命值
 - **silicon-hub-power**: 电力状态
-- **silicon-hub-power-cost**: 每秒电力消耗
+- **silicon-hub-power-cost**: 每秒电力消耗（显示实际数值，如 `Power Cost: 10.0/s`）
 
 ## 序列化
 
-保存字段: network.id, network.version, enableDemandPull, enableSurplusPush, links
+保存字段: network.id, network.version, links
+
+## 暂停白名单 UI
+
+通过 Silicon 设置 → "管理暂停白名单" 按钮打开白名单管理对话框：
+- 显示当前白名单玩家列表
+- 支持输入玩家名添加
+- 支持点击移除按钮删除
+- 多人模式下通过 `pause-grant`/`pause-revoke` 包同步到服务器
+- 也可通过聊天命令管理：`!pause grant/revoke/list`
 
 ## 版本历史
 
@@ -149,3 +159,5 @@ supplier.items.remove(item, 1);       // 扣除
 | a0.8.2.2 | 修复拓扑/可视化/国际化/按钮显示 |
 | a0.8.2.3 | 改为电力节点式操作：自动扫描+点击连接+常驻连线绘制 |
 | a0.8.3.0 | 连接过滤白名单（仅生产+存储）、网络内重复连接检查、电力节点式双击逻辑 |
+| a0.8.3.1 | 修复双击断连 bug、删除 Pull/Push 按钮（两模式始终启用）、修复状态栏 {0}、暂停描述 |
+| a0.8.3.2 | 修复连线不可见（edge-to-edge + Layer.power）、修复 pullOnDemand 不传输物品、耗电量显示实际数值、添加暂停白名单 UI |

@@ -4,16 +4,22 @@ import arc.Core;
 import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
+import arc.math.Angles;
 import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.IntSeq;
 import arc.struct.Seq;
+import arc.util.Strings;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
 import mindustry.gen.Unit;
+import mindustry.game.Team;
+import mindustry.core.Renderer;
+import mindustry.core.Renderer;
 import mindustry.graphics.Drawf;
+import mindustry.graphics.Layer;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
 import mindustry.ui.Bar;
@@ -158,7 +164,7 @@ public class ItemTransferHub extends Block {
                 () -> b.power != null ? b.power.status : 0f
         ));
         addBar("silicon-hub-power-cost", (ItemTransferHubBuild b) -> new Bar(
-                () -> Core.bundle.format("bar.silicon-hub-power-cost"),
+                () -> Core.bundle.format("bar.silicon-hub-power-cost", Strings.fixed(b.powerPerSecond, 1)),
                 () -> Pal.accent,
                 () -> Math.min(b.powerPerSecond / 100f, 1f)
         ));
@@ -303,7 +309,6 @@ public class ItemTransferHub extends Block {
                 for (int i = 0; i < content.items().size; i++) {
                     Item item = content.item(i);
                     if (item == null) continue;
-                    if (!consumer.acceptItem(this, item)) continue;
                     if (consumer.items.get(item) >= consumer.block.itemCapacity) continue;
 
                     Building supplier = findNearestSupplier(consumer, item);
@@ -430,16 +435,34 @@ public class ItemTransferHub extends Block {
         public void draw() {
             super.draw();
 
+            if(Mathf.zero(Renderer.laserOpacity) || isPayload() || team == Team.derelict) return;
+
+            Draw.z(Layer.power);
+            Draw.color(Color.blue);
+
             Lines.stroke(2f);
             links.each(pos -> {
                 Building other = world.build(pos);
                 if (other == null || !other.isValid()) return;
 
+                if (other instanceof ItemTransferHubBuild && other.id >= id) return;
+
+                float angle = Angles.angle(x, y, other.x, other.y);
+                float cos = Mathf.cosDeg(angle);
+                float sin = Mathf.sinDeg(angle);
+
+                float len1 = block.size * tilesize / 2f;
+                float len2 = other.block.size * tilesize / 2f;
+
+                float x1 = x + cos * len1;
+                float y1 = y + sin * len1;
+                float x2 = other.x - cos * len2;
+                float y2 = other.y - sin * len2;
+
                 if (other instanceof ItemTransferHubBuild) {
-                    Draw.color(Color.blue);
-                    Lines.line(x, y, other.x, other.y, false);
+                    Lines.line(x1, y1, x2, y2, false);
                 } else {
-                    Drawf.dashLine(Color.blue, x, y, other.x, other.y, 8);
+                    Drawf.dashLine(Color.blue, x1, y1, x2, y2, 8);
                 }
             });
             Draw.reset();

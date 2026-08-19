@@ -30,6 +30,7 @@
 - `outputsPower`: false
 - `conductivePower`: true
 - `consumePower`: 5f/s（空闲功耗）
+- `consumePowerBuffered`: 50f（电力缓冲容量）
 - `update`: true
 - `solid`: true
 - `configurable`: true
@@ -49,14 +50,17 @@
 | 纯存储 | `CoreBlock` | 核心，储存是主要功能 |
 | 纯存储 | `StorageBlock` | 箱子/仓库，储存是主要功能 |
 | 弹药消耗 | `ItemTurret` | 炮塔需要弹药输入 |
+| 物品传输 | `ItemTransferHub` | 中枢之间手动链接 |
 
 ### 点击连接（电力节点式）
 
-支持手动点击连接/断开，参考 PowerNode 实现：
+完全模仿 PowerNode 的链接行为：
 
 - **单击有效建筑** → 连接/断开切换（`config(Integer.class, pos)`）
 - **双击自身（无连接时）** → 自动连接范围内所有有效建筑
-- **双击自身（有连接时）** → 清除所有手动连接
+- **双击自身（有连接时）** → 清除所有连接
+- **单击无效建筑** → 退出配置模式
+- **放置时** → 自动连接范围内所有有效建筑
 - 手动连接存储在 `links`（IntSeq）中
 - 手动连接的建筑会加入网络拓扑
 
@@ -64,14 +68,10 @@
 
 `linkValid()` 检查：
 1. 不是同一建筑
-2. 同一队伍
-3. 调用方是 ItemTransferHub（防止 ClassCastException）
+2. 调用方是 ItemTransferHub（防止 ClassCastException）
+3. 同一队伍
 4. 是可连接的建筑类型（`shouldConnect()`）
 5. 在连接范围内（`connectionRange * tilesize`）
-
-### 网络检查
-
-连接前通过 `isInSameNetwork()` BFS 检查目标是否已在同一网络中，已在则跳过。
 
 ## 传输模式
 
@@ -120,15 +120,14 @@ supplier.items.remove(item, 1);       // 扣除
 - `super.draw()` 先绘制方块贴图
 - 仅在 `Renderer.laserOpacity > 0` 且非 payload 时绘制连线
 - 绘制层级 `Draw.z(Layer.power)`（电力层，高于方块层）
+- 只遍历 `links`（手动连接），不再有 `data.hubs` 自动发现连线
 - Hub↔Hub：蓝色实线（边缘到边缘，`Lines.line`）
 - Hub→Building：蓝色虚线（边缘到边缘，`Drawf.dashLine`）
 - 去重：Hub对之间只画一次（`other.id >= id` 跳过）
+- `linkValid` 验证每个链接有效性
 
 ### drawSelect() - 选中时绘制
-- 蓝色虚线范围圈
-- 自动扫描范围内的建筑：淡色方框
-- 手动连接的建筑：强调色方框
-- 已连接的中枢：蓝色方框
+- 蓝色虚线范围圈（电力节点式）
 
 ### drawConfigure() - 配置模式绘制
 - 脉冲圆圈（自身）
@@ -138,8 +137,9 @@ supplier.items.remove(item, 1);       // 扣除
 ## 状态栏 (Bars)
 
 - **health**: 生命值
-- **silicon-hub-power**: 电力状态
+- **silicon-hub-power**: 电力状态（缓冲区电量 / 缓冲区容量）
 - **silicon-hub-power-cost**: 每秒电力消耗（显示实际数值，如 `Power Cost: 10.0/s`）
+- **silicon-hub-connections**: 连接数（当前连接数 / 最大连接数）
 
 ## 序列化
 
@@ -167,3 +167,5 @@ supplier.items.remove(item, 1);       // 扣除
 | a0.8.3.2 | 修复连线不可见（edge-to-edge + Layer.power）、修复 pullOnDemand 不传输物品、耗电量显示实际数值、添加暂停白名单 UI |
 | a0.8.4.0 | 修复 hub-to-hub 连线不显示（draw 增加 data.hubs 遍历）、修复电力系统接入（conductivePower=true + consumePower(5f)） |
 | a0.8.5.0 | 添加 MineConverter 到连接白名单、linkValid 添加 ClassCastException 保护、代码健壮性全面改进 |
+| a0.8.5.1 | 修复 timers 数组大小不足导致的崩溃 |
+| a0.8.5.2 | 完全模仿电力节点链接行为：hub-to-hub 手动链接、移除自动发现扫描、放置时自动连接、配置模式点击无效目标退出、修复白色连线（Draw.reset 问题）、添加连接数限制显示、添加电力缓冲（50f） |

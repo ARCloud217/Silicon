@@ -17,7 +17,6 @@ import mindustry.graphics.Drawf;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
 import mindustry.ui.Bar;
-import mindustry.ui.Styles;
 import mindustry.world.Block;
 import mindustry.world.blocks.defense.turrets.ItemTurret;
 import mindustry.world.blocks.production.Drill;
@@ -507,7 +506,7 @@ public class ItemTransferHub extends Block {
                     links.each(pos -> {
                         Building b = world.build(pos);
                         if (b instanceof ItemTransferHubBuild hub) {
-                            hub.links.removeValue(pos);
+                            hub.links.removeValue(this.pos());
                         }
                     });
                     links.clear();
@@ -528,32 +527,7 @@ public class ItemTransferHub extends Block {
                 return false;
             }
 
-            return true;
-        }
-
-        @Override
-        public void buildConfiguration(Table table) {
-            super.buildConfiguration(table);
-            table.defaults().size(120f, 40f);
-            table.button(Core.bundle.get("hubPull"), Styles.clearTogglet, () -> {
-                network.enableDemandPull = !network.enableDemandPull;
-                configure(new Object[]{0, network.enableDemandPull});
-            }).checked(b -> network.enableDemandPull);
-            table.row();
-            table.button(Core.bundle.get("hubPush"), Styles.clearTogglet, () -> {
-                network.enableSurplusPush = !network.enableSurplusPush;
-                configure(new Object[]{1, network.enableSurplusPush});
-            }).checked(b -> network.enableSurplusPush);
-        }
-
-        @Override
-        public void configured(Unit unit, Object value) {
-            if (value instanceof Object[] arr && arr.length >= 2) {
-                if (arr[0] instanceof Integer mode && arr[1] instanceof Boolean state) {
-                    if (mode == 0) network.enableDemandPull = state;
-                    else if (mode == 1) network.enableSurplusPush = state;
-                }
-            }
+            return false;
         }
 
         @Override
@@ -561,8 +535,6 @@ public class ItemTransferHub extends Block {
             super.write(write);
             write.i(network.id);
             write.i(network.version);
-            write.bool(network.enableDemandPull);
-            write.bool(network.enableSurplusPush);
             write.s(links.size);
             for (int i = 0; i < links.size; i++) {
                 write.i(links.get(i));
@@ -574,8 +546,6 @@ public class ItemTransferHub extends Block {
             super.read(read, revision);
             int netId = read.i();
             int ver = read.i();
-            network.enableDemandPull = read.bool();
-            network.enableSurplusPush = read.bool();
             short linkCount = read.s();
             links.clear();
             for (int i = 0; i < linkCount; i++) {

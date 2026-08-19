@@ -53,6 +53,8 @@ public class MineConverter extends FrameBlock {
         flags = EnumSet.of(BlockFlag.factory);
         drawArrow = false;
         saveConfig = true;
+        selectionRows = 6;
+        selectionColumns = 6;
 
         Events.on(mindustry.game.EventType.WorldLoadEvent.class, e -> {
             costsDirty = true;

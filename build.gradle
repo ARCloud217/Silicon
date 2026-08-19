@@ -71,9 +71,10 @@ tasks.register('jarAndroid') {
         def classpathDeps = (configurations.compileClasspath.asList() + configurations.runtimeClasspath.asList()).collect { "--classpath $it.path" }.join(" ")
         def androidLib = "--lib ${new File(platformRoot, "android.jar").path}"
 
-        def d8 = isWindows ? "d8.bat" : "d8"
+        def d8File = new File("$sdkRoot/build-tools/34.0.0/${isWindows ? 'd8.bat' : 'd8'}")
+        if (!d8File.exists()) throw new GradleException("d8 not found at ${d8File.path}. Ensure build-tools 34.0.0 is installed.")
+        def d8 = d8File.path
 
-        //dex and desugar files - this requires d8 in your PATH
         def process =         "$d8 $classpathDeps $androidLib --min-api 21 --output ${projectName}Android.jar ${projectName}Desktop.jar"
                 .execute(null, new File("build/libs"))
         process.consumeProcessOutput(System.out, System.err)

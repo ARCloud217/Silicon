@@ -2,6 +2,9 @@ name: Build Mod
 
 on: [push, pull_request, workflow_dispatch]
 
+permissions:
+  contents: write
+
 jobs:
   buildJar:
     runs-on: ubuntu-latest
@@ -28,3 +31,21 @@ jobs:
       with:
         name: silicon-${{ steps.version.outputs.mod_version }}-v159.7
         path: build/libs/silicon-${{ steps.version.outputs.mod_version }}-v159.7.jar
+    - name: Delete old pre-releases
+      if: github.event_name == 'push' && github.ref == 'refs/heads/test'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release list --repo ${{ github.repository }} --json tagName,isPrerelease \
+        | jq -r '.[] | select(.isPrerelease) | .tagName' \
+        | xargs -I {} gh release delete {} --repo ${{ github.repository }} --yes --cleanup-tag
+    - name: Create pre-release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/test'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "v${{ steps.version.outputs.mod_version }}" \
+          --repo ${{ github.repository }} \
+          --title "Silicon ${{ steps.version.outputs.mod_version }}" \
+          --prerelease \
+          "build/libs/silicon-${{ steps.version.outputs.mod_version }}-v159.7.jar"

@@ -1,5 +1,6 @@
 package silicon.world.blocks.production;
 
+import arc.Events;
 import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.EnumSet;
@@ -34,6 +35,7 @@ public class MineConverter extends FrameBlock {
     public float consumeTime = 60;
     public float consumptionMultiples = 0.1f;
     private static long lastCostsWorldChange = -1;
+    private static boolean costsDirty = true;
     TreeMap<Float, Item> scaled = new TreeMap<>((o1, o2) -> {
         if (Objects.equals(o1, o2)) return 0;
         return o1 > o2 ? 1 : -1;
@@ -51,6 +53,12 @@ public class MineConverter extends FrameBlock {
         flags = EnumSet.of(BlockFlag.factory);
         drawArrow = false;
         saveConfig = true;
+
+        Events.on(mindustry.game.EventType.WorldLoadEvent.class, e -> {
+            costsDirty = true;
+            lastCostsWorldChange = -1;
+            costs.clear();
+        });
 
 
         config(Item.class, (MineConverterBuild b, Item item) -> {
@@ -99,7 +107,8 @@ public class MineConverter extends FrameBlock {
     }
 
     public boolean countWorldCosts() {
-        if (lastCostsWorldChange == world.tileChanges) return false;
+        if (!costsDirty && lastCostsWorldChange == world.tileChanges) return false;
+        costsDirty = false;
         lastCostsWorldChange = world.tileChanges;
         ObjectFloatMap<Item> oldCosts = new ObjectFloatMap<>(costs);
         costs.clear();

@@ -43,11 +43,7 @@ public class Silicon extends Mod {
                     new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
                 st.checkPref("pauseRequest", true);
                 st.sliderPref("pauseMode", 0, 0, 2, 1,
-                        i -> switch (i) {
-                            case 1 -> "Admins";
-                            case 2 -> "Custom";
-                            default -> "OFF";
-                        },
+                        i -> Core.bundle.get("setting.pauseMode.value." + i, String.valueOf(i)),
                         i -> {
                             Vars.pauseMode = i;
                             if (net.client()) Call.serverPacketReliable("pause-setmode", String.valueOf(i));

@@ -148,24 +148,37 @@ public class ItemTransferHub extends Block {
 
         private void updateTopology() {
             boolean hubChanged = false;
+            float range = connectionRange * 8f;
+            int rangeTiles = (int) connectionRange;
 
-            for (Building other : proximity) {
-                if (other == null || !other.isValid()) continue;
-                if (other instanceof ItemTransferHubBuild hub) {
-                    if (!data.hubs.contains(hub)) {
-                        data.add(hub);
-                        hub.data.add(this);
-                        hubChanged = true;
-                    }
-                } else {
-                    if (!data.buildings.contains(other)) {
-                        data.add(other);
+            Seq<Building> nearbyBuildings = new Seq<>();
+
+            for (int ix = tile.x - rangeTiles; ix <= tile.x + rangeTiles; ix++) {
+                for (int iy = tile.y - rangeTiles; iy <= tile.y + rangeTiles; iy++) {
+                    Building b = world.build(ix, iy);
+                    if (b == null || !b.isValid() || b == this) continue;
+                    if (b.team != team) continue;
+                    float dist = Mathf.dst(x, y, b.x, b.y);
+                    if (dist > range) continue;
+
+                    nearbyBuildings.add(b);
+
+                    if (b instanceof ItemTransferHubBuild hub) {
+                        if (!data.hubs.contains(hub)) {
+                            data.add(hub);
+                            hub.data.add(this);
+                            hubChanged = true;
+                        }
+                    } else {
+                        if (!data.buildings.contains(b)) {
+                            data.add(b);
+                        }
                     }
                 }
             }
 
-            data.buildings.removeAll(b -> !b.isValid() || !proximity.contains(b));
-            data.hubs.removeAll(h -> !h.isValid() || !proximity.contains(h));
+            data.buildings.removeAll(b -> !nearbyBuildings.contains(b));
+            data.hubs.removeAll(h -> !nearbyBuildings.contains(h));
 
             if (hubChanged) {
                 network.version++;
@@ -349,18 +362,22 @@ public class ItemTransferHub extends Block {
         @Override
         public void buildConfiguration(Table table) {
             super.buildConfiguration(table);
-            table.button("Pull", Styles.clearTogglet, () -> configure(new Object[]{0}))
-                    .checked(b -> network.enableDemandPull);
-            table.button("Push", Styles.clearTogglet, () -> configure(new Object[]{1}))
-                    .checked(b -> network.enableSurplusPush);
+            table.button(Core.bundle.get("hubPull"), Styles.clearTogglet, () -> {
+                network.enableDemandPull = !network.enableDemandPull;
+                configure(new Object[]{0, network.enableDemandPull});
+            }).checked(b -> network.enableDemandPull);
+            table.button(Core.bundle.get("hubPush"), Styles.clearTogglet, () -> {
+                network.enableSurplusPush = !network.enableSurplusPush;
+                configure(new Object[]{1, network.enableSurplusPush});
+            }).checked(b -> network.enableSurplusPush);
         }
 
         @Override
         public void configured(Unit unit, Object value) {
-            if (value instanceof Object[] arr && arr.length > 0) {
-                if (arr[0] instanceof Integer i) {
-                    if (i == 0) network.enableDemandPull = !network.enableDemandPull;
-                    else if (i == 1) network.enableSurplusPush = !network.enableSurplusPush;
+            if (value instanceof Object[] arr && arr.length >= 2) {
+                if (arr[0] instanceof Integer mode && arr[1] instanceof Boolean state) {
+                    if (mode == 0) network.enableDemandPull = state;
+                    else if (mode == 1) network.enableSurplusPush = state;
                 }
             }
         }

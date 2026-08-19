@@ -25,7 +25,7 @@ jobs:
         chmod +x ./gradlew
         ./gradlew deploy
         find build/ -name "*.jar" -ls
-        JAR_PATH=$(find build/ -name "silicon-*-v*.jar" 2>/dev/null | head -1)
+        JAR_PATH=$(find build/ -iname "silicon-*-v*.jar" 2>/dev/null | head -1)
         echo "jar_path=${JAR_PATH}" >> $GITHUB_OUTPUT
         echo "Found jar: ${JAR_PATH}"
     - name: Get mod version

@@ -2,8 +2,10 @@ package silicon;
 
 import arc.Core;
 import arc.Events;
+import arc.graphics.Color;
 import arc.graphics.g2d.TextureRegion;
 import arc.scene.style.TextureRegionDrawable;
+import arc.scene.ui.TextField;
 import arc.util.Time;
 import mindustry.core.GameState;
 import mindustry.game.EventType;
@@ -12,6 +14,8 @@ import mindustry.gen.Player;
 import mindustry.input.Binding;
 import mindustry.mod.Mod;
 import mindustry.mod.Mods;
+import mindustry.ui.Styles;
+import mindustry.ui.dialogs.BaseDialog;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
 import silicon.util.SiliconLog;
@@ -48,6 +52,8 @@ public class Silicon extends Mod {
                             Vars.pauseMode = i;
                             if (net.client()) Call.serverPacketReliable("pause-setmode", String.valueOf(i));
                         });
+                st.row();
+                st.button(Core.bundle.get("setting.pauseWhitelist.name"), Styles.flatBordert, Silicon::showWhitelistDialog).width(200f).padTop(6f);
 
                 SiliconLog.info("Loading settings.");
             });
@@ -126,6 +132,53 @@ public class Silicon extends Mod {
             if (msg == null || !msg.startsWith("!pause")) return;
             handlePauseCommand(e.player, msg);
         });
+    }
+
+    public static void showWhitelistDialog() {
+        BaseDialog dialog = new BaseDialog(Core.bundle.get("hubWhitelist.title"));
+        dialog.cont.top();
+
+        final Runnable[] rebuild = new Runnable[1];
+        rebuild[0] = () -> {
+            dialog.cont.clearChildren();
+            dialog.cont.top();
+
+            if (Vars.pauseWhitelist.isEmpty()) {
+                dialog.cont.add(Core.bundle.get("hubWhitelist.empty")).color(Color.lightGray).pad(16f);
+            } else {
+                for (int i = 0; i < Vars.pauseWhitelist.size; i++) {
+                    String name = Vars.pauseWhitelist.get(i);
+                    dialog.cont.row();
+                    dialog.cont.table(t -> {
+                        t.add(name).growX().left();
+                        t.button(Core.bundle.get("hubWhitelist.remove"), Styles.flatBordert, () -> {
+                            Vars.pauseWhitelist.remove(name);
+                            if (net.client()) Call.serverPacketReliable("pause-revoke", name);
+                            rebuild[0].run();
+                        }).padLeft(8f);
+                    }).fillX().pad(4f).padLeft(8f).padRight(8f);
+                }
+            }
+
+            dialog.cont.row();
+            dialog.cont.table(t -> {
+                TextField field = t.field("", text -> {}).growX().pad(8f).get();
+                field.setMessageText(Core.bundle.get("hubWhitelist.placeholder"));
+                t.button(Core.bundle.get("hubWhitelist.add"), Styles.flatBordert, () -> {
+                    String input = field.getText().trim();
+                    if (!input.isEmpty() && !Vars.pauseWhitelist.contains(input)) {
+                        Vars.pauseWhitelist.add(input);
+                        if (net.client()) Call.serverPacketReliable("pause-grant", input);
+                        field.clearText();
+                        rebuild[0].run();
+                    }
+                }).padLeft(8f);
+            }).fillX().pad(8f);
+        };
+
+        rebuild[0].run();
+        dialog.closeOnBack();
+        dialog.show();
     }
 
     private void handlePauseCommand(Player p, String msg) {

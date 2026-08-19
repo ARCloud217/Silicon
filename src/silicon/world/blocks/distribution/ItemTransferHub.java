@@ -5,7 +5,6 @@ import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
-import arc.math.geom.Point2;
 import arc.scene.ui.layout.Table;
 import arc.struct.IntSeq;
 import arc.struct.Seq;
@@ -20,6 +19,7 @@ import mindustry.type.Item;
 import mindustry.ui.Bar;
 import mindustry.ui.Styles;
 import mindustry.world.Block;
+import mindustry.world.blocks.defense.turrets.ItemTurret;
 import mindustry.world.blocks.production.Drill;
 import mindustry.world.blocks.production.GenericCrafter;
 import mindustry.world.blocks.storage.CoreBlock;
@@ -60,6 +60,7 @@ public class ItemTransferHub extends Block {
                 rebuildData(entity);
             } else {
                 if (entity.links.size >= maxConnections) return;
+                if (other instanceof ItemTransferHubBuild && isInSameNetwork(entity, other)) return;
                 entity.links.addUnique(pos);
                 if (other instanceof ItemTransferHubBuild otherHub) {
                     if (!otherHub.links.contains(entity.pos()) && otherHub.links.size < maxConnections) {
@@ -79,6 +80,7 @@ public class ItemTransferHub extends Block {
         if (b instanceof StorageBlock) return true;
         if (b instanceof GenericCrafter) return true;
         if (b instanceof Drill) return true;
+        if (b instanceof ItemTurret) return true;
         return false;
     }
 
@@ -229,8 +231,6 @@ public class ItemTransferHub extends Block {
             float range = connectionRange * tilesize;
             int rangeTiles = (int) connectionRange;
 
-            Seq<Building> nearbyBuildings = new Seq<>();
-
             for (int ix = tile.x - rangeTiles; ix <= tile.x + rangeTiles; ix++) {
                 for (int iy = tile.y - rangeTiles; iy <= tile.y + rangeTiles; iy++) {
                     Building b = world.build(ix, iy);
@@ -238,8 +238,6 @@ public class ItemTransferHub extends Block {
                     if (b.team != team) continue;
                     float dist = Mathf.dst(x, y, b.x, b.y);
                     if (dist > range) continue;
-
-                    nearbyBuildings.add(b);
 
                     if (b instanceof ItemTransferHubBuild hub) {
                         if (!data.hubs.contains(hub)) {
@@ -509,7 +507,7 @@ public class ItemTransferHub extends Block {
                     links.each(pos -> {
                         Building b = world.build(pos);
                         if (b instanceof ItemTransferHubBuild hub) {
-                            hub.links.removeValue(pos());
+                            hub.links.removeValue(pos);
                         }
                     });
                     links.clear();

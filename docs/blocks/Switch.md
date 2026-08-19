@@ -28,7 +28,7 @@
 - `conductivePower`: false
 - `update`: true
 - `solid`: true
-- `configurable`: true（有配置处理器）
+- `configurable`: false（使用 tapped() 切换，非配置模式）
 - `rotate`: true
 - `alwaysUnlocked`: true
 

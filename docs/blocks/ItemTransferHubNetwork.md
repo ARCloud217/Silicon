@@ -32,7 +32,6 @@
 | `hubs` | Seq<ItemTransferHubBuild> | 相邻的hub建筑 |
 | `needs` | int[] | 每种物品的需求量 |
 | `costs` | int[] | 每种物品的供给量 |
-| `cache` | Seq<Path> | 路径缓存 |
 
 ### 需求/供给计算 (update)
 
@@ -43,6 +42,7 @@
    - needs = 每种消耗物品的(容量 - 当前)
    - costs = 输出物品满时的数量
 3. **其他建筑**: 通用计算，检查acceptItem和容量
+4. **CoreBlock**: 跳过（核心不参与 needs/costs 计算）
 
 ### 网络级开关
 
@@ -53,30 +53,7 @@
 
 ### 网络合并策略
 
-两个hub合并网络时，取较大网络的设置：
-```java
-if (this.hubs.size >= other.hubs.size) {
-    result.enableDemandPull = this.enableDemandPull;
-    result.enableSurplusPush = this.enableSurplusPush;
-} else {
-    result.enableDemandPull = other.enableDemandPull;
-    result.enableSurplusPush = other.enableSurplusPush;
-}
-```
-
-### 路径缓存 (Path)
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `path` | Seq<ItemTransferHubBuild> | 路径上的hub序列 |
-| `version` | int | 创建时的网络版本号 |
-
-- `isValid()`: 检查缓存是否与当前网络版本匹配
-- `length()`: 返回路径长度（hub跳数）
-
-## 序列化
-
-- 无独立序列化（由ItemTransferHub序列化network设置）
+两个hub合并网络时，保留较大网络的对象（包括其 `enableDemandPull` 和 `enableSurplusPush` 设置），较小网络的 hub 被转移到较大网络中。
 
 ## 版本历史
 
@@ -84,3 +61,4 @@ if (this.hubs.size >= other.hubs.size) {
 |------|------|
 | a0.8.1 | 初始创建 |
 | a0.8.2.0 | HubData.update()通用化，添加网络开关 |
+| a0.8.5.0 | 删除未使用的 Path/cache 死代码、修正合并策略文档 |

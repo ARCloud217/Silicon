@@ -63,7 +63,7 @@ GeneratorPump 是一个结合液体泵送和电力生产的复合方块。从环
 
 ## 电力系统
 
-- **消耗方式**: `consumePower` 静态消耗（泵送时）
+- **消耗方式**: `consPower(0)` 无电网消耗，`powerConsumption` 从产出公式中扣除
 - **产出方式**: `getPowerProduction` 动态产出
 - **公式**: `(lerp(0, powerProduction, optionalEfficiency) - powerConsumption * (泵送中)) * productionEfficiency`
 

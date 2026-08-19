@@ -44,11 +44,11 @@
 | 功能 | 具体类 | 说明 |
 |------|--------|------|
 | 合成消耗 | `GenericCrafter` | 合成器需要原料输入 |
+| 矿物转化 | `MineConverter` | 矿物转换器需要输入矿物 |
 | 钻探消耗 | `Drill` | 钻头需要物品才能工作 |
 | 纯存储 | `CoreBlock` | 核心，储存是主要功能 |
 | 纯存储 | `StorageBlock` | 箱子/仓库，储存是主要功能 |
-
-**拒绝连接**：传送带、路由器、桥接、炮塔、电力节点等所有其他类型。
+| 弹药消耗 | `ItemTurret` | 炮塔需要弹药输入 |
 
 ### 点击连接（电力节点式）
 
@@ -65,8 +65,9 @@
 `linkValid()` 检查：
 1. 不是同一建筑
 2. 同一队伍
-3. 是可连接的建筑类型（`shouldConnect()`）
-4. 在连接范围内（`connectionRange * tilesize`）
+3. 调用方是 ItemTransferHub（防止 ClassCastException）
+4. 是可连接的建筑类型（`shouldConnect()`）
+5. 在连接范围内（`connectionRange * tilesize`）
 
 ### 网络检查
 
@@ -165,3 +166,4 @@ supplier.items.remove(item, 1);       // 扣除
 | a0.8.3.1 | 修复双击断连 bug、删除 Pull/Push 按钮（两模式始终启用）、修复状态栏 {0}、暂停描述 |
 | a0.8.3.2 | 修复连线不可见（edge-to-edge + Layer.power）、修复 pullOnDemand 不传输物品、耗电量显示实际数值、添加暂停白名单 UI |
 | a0.8.4.0 | 修复 hub-to-hub 连线不显示（draw 增加 data.hubs 遍历）、修复电力系统接入（conductivePower=true + consumePower(5f)） |
+| a0.8.5.0 | 添加 MineConverter 到连接白名单、linkValid 添加 ClassCastException 保护、代码健壮性全面改进 |

@@ -29,7 +29,7 @@ public class Silicon extends Mod {
     public Silicon() {
         Events.on(EventType.ClientLoadEvent.class, e -> {
             MOD = mods.getMod(Silicon.class);
-            MOD.meta.subtitle = MOD.meta.version;
+            if (MOD != null) MOD.meta.subtitle = MOD.meta.version;
         });
     }
 

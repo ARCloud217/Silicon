@@ -1,5 +1,6 @@
 package silicon.world.blocks.production;
 
+import arc.Core;
 import arc.Events;
 import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
@@ -72,30 +73,29 @@ public class MineConverter extends FrameBlock {
 
     @Override
     public void setBars() {
-        addBar("consume", (MineConverterBuild b) -> new Bar(
-                () -> Strings.fixed(b.consumeProgress / consumeTime, 2),
-                () -> Pal.powerBar,
-                () -> (b.consumeProgress / consumeTime) > Mathf.FLOAT_ROUNDING_ERROR ? b.consumeProgress / consumeTime : 1f)
+        super.setBars();
+        addBar("mine-progress", (MineConverterBuild b) -> new Bar(
+                () -> Core.bundle.get("bar.mine-progress"),
+                () -> Pal.accent,
+                () -> b.consume != null ? Math.min(b.consumeProgress / consumeTime, 1f) : 0f)
         );
-        addBar("craft1", (MineConverterBuild b) -> new Bar(
+        addBar("craft-progress", (MineConverterBuild b) -> new Bar(
                 () -> {
                     if (b.craft != null) {
                         float divisor = costs.get(b.craft, 0) * (1 + consumptionMultiples);
-                        return divisor > 0 ? Strings.fixed(b.craftValue / divisor, 2)
-                                + "/" + Strings.fixed(b.mineValue / divisor, 2) : "-";
-                    } else if (b.consume != null) {
-                        float divisor = costs.get(b.consume, 0) * (1 + consumptionMultiples);
-                        return divisor > 0 ? Strings.fixed(b.mineValue / divisor, 2) : "-";
+                        return divisor > 0 ? Core.bundle.format("bar.craft-progress",
+                                Strings.fixed(b.craftValue / divisor, 1),
+                                Strings.fixed(b.mineValue / divisor, 1)) : Core.bundle.get("bar.craft-progress.waiting");
                     }
-                    return "-";
+                    return Core.bundle.get("bar.craft-progress.waiting");
                 },
                 () -> Pal.powerBar,
                 () -> {
                     if (b.craft != null) {
                         float divisor = costs.get(b.craft, 0) * (1 + consumptionMultiples);
-                        return divisor > 0 ? b.craftValue / divisor : 1f;
+                        return divisor > 0 ? Math.min(b.craftValue / divisor, 1f) : 0f;
                     }
-                    return 1f;
+                    return 0f;
                 })
         );
     }
@@ -137,12 +137,14 @@ public class MineConverter extends FrameBlock {
             if (i > max) max = i;
         }
         float finalMax = max;
-        costs.each((i) -> {
-            float key = finalMax / i.value;
-            if (!scaled.containsKey(key)) {
-                scaled.put(key, i.key);
-            }
-        });
+        if (finalMax > 0) {
+            costs.each((i) -> {
+                float key = finalMax / i.value;
+                if (!scaled.containsKey(key)) {
+                    scaled.put(key, i.key);
+                }
+            });
+        }
         SiliconLog.info("Recount the number of minerals");
         return !oldCosts.equals(costs);
     }
@@ -153,10 +155,11 @@ public class MineConverter extends FrameBlock {
         public float craftValue = 0;
         public float warmup;
         public Item craft = null, consume = null;
-        public float lastChange;
+        public int lastChange;
 
         @Override
         public void updateTile() {
+            super.updateTile();
             if (!enabled) return;
 
             if (lastChange != world.tileChanges) {

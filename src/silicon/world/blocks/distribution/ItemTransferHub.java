@@ -4,10 +4,11 @@ import arc.Core;
 import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
+import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.IntSeq;
 import arc.struct.Seq;
-import arc.math.Mathf;
+import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
@@ -22,10 +23,12 @@ import mindustry.world.blocks.storage.CoreBlock;
 import mindustry.world.meta.BlockGroup;
 
 import static mindustry.Vars.content;
+import static mindustry.Vars.tilesize;
 import static mindustry.Vars.world;
 
 public class ItemTransferHub extends Block {
     public float connectionRange = 20f;
+    public int maxConnections = 50;
 
     public ItemTransferHub(String name) {
         super(name);
@@ -39,6 +42,70 @@ public class ItemTransferHub extends Block {
         size = 3;
         configurable = true;
         group = BlockGroup.transportation;
+
+        config(Integer.class, (ItemTransferHubBuild entity, Integer pos) -> {
+            Building other = world.build(pos);
+            if (other == null || !other.isValid() || other == entity) return;
+            if (!linkValid(entity, other)) return;
+
+            if (entity.links.contains(pos)) {
+                entity.links.removeValue(pos);
+                if (other instanceof ItemTransferHubBuild otherHub) {
+                    otherHub.links.removeValue(entity.pos());
+                }
+                rebuildData(entity);
+            } else {
+                if (entity.links.size >= maxConnections) return;
+                entity.links.addUnique(pos);
+                if (other instanceof ItemTransferHubBuild otherHub) {
+                    if (!otherHub.links.contains(entity.pos()) && otherHub.links.size < maxConnections) {
+                        otherHub.links.addUnique(entity.pos());
+                    }
+                }
+                rebuildData(entity);
+            }
+        });
+    }
+
+    public static boolean linkValid(Building tile, Building link) {
+        if (tile == link || link == null) return false;
+        if (tile.team != link.team) return false;
+        float range = ((ItemTransferHub) tile.block).connectionRange * tilesize;
+        float dist = Mathf.dst(tile.x, tile.y, link.x, link.y);
+        return dist <= range;
+    }
+
+    private static void rebuildData(ItemTransferHubBuild hub) {
+        hub.data.clear();
+        float range = ((ItemTransferHub) hub.block).connectionRange * tilesize;
+        int rangeTiles = (int) ((ItemTransferHub) hub.block).connectionRange;
+
+        for (int ix = hub.tile.x - rangeTiles; ix <= hub.tile.x + rangeTiles; ix++) {
+            for (int iy = hub.tile.y - rangeTiles; iy <= hub.tile.y + rangeTiles; iy++) {
+                Building b = world.build(ix, iy);
+                if (b == null || !b.isValid() || b == hub) continue;
+                if (b.team != hub.team) continue;
+                float dist = Mathf.dst(hub.x, hub.y, b.x, b.y);
+                if (dist > range) continue;
+
+                if (b instanceof ItemTransferHubBuild otherHub) {
+                    hub.data.add(otherHub);
+                } else {
+                    hub.data.add(b);
+                }
+            }
+        }
+
+        // Add manually linked buildings that may be outside auto-scan range
+        hub.links.each(pos -> {
+            Building b = world.build(pos);
+            if (b == null || !b.isValid() || b == hub) return;
+            if (b instanceof ItemTransferHubBuild otherHub) {
+                if (!hub.data.hubs.contains(otherHub)) hub.data.add(otherHub);
+            } else {
+                if (!hub.data.buildings.contains(b)) hub.data.add(b);
+            }
+        });
     }
 
     @Override
@@ -88,6 +155,7 @@ public class ItemTransferHub extends Block {
     public class ItemTransferHubBuild extends Building {
         public ItemTransferHubNetwork network = new ItemTransferHubNetwork();
         public ItemTransferHubNetwork.HubData data;
+        public IntSeq links = new IntSeq();
         public float powerConsumed = 0f;
         public float powerPerSecond = 0f;
         private float powerAccumulator = 0f;
@@ -100,33 +168,6 @@ public class ItemTransferHub extends Block {
         public void merge(ItemTransferHubBuild other) {
             network = network.merge(other.network);
             other.network = network;
-        }
-
-        public void addLink(ItemTransferHubBuild other) {
-            merge(other);
-        }
-
-        public void addLink(Building other) {
-            data.buildings.add(other);
-        }
-
-        public void addLinks(Building[] other) {
-            for (Building b : other) {
-                if (b instanceof ItemTransferHub.ItemTransferHubBuild hubBuild)
-                    data.add(hubBuild);
-                else
-                    data.add(b);
-            }
-        }
-
-        public void addLinks(Seq<Building> other) {
-            addLinks(other.items);
-        }
-
-        public void removeLink(ItemTransferHubBuild other) {
-            data.hubs.remove(other);
-            other.data.hubs.remove(this);
-            network.remove(other);
         }
 
         @Override
@@ -147,7 +188,6 @@ public class ItemTransferHub extends Block {
         }
 
         private void updateTopology() {
-            boolean hubChanged = false;
             float range = connectionRange * 8f;
             int rangeTiles = (int) connectionRange;
 
@@ -167,7 +207,6 @@ public class ItemTransferHub extends Block {
                         if (!data.hubs.contains(hub)) {
                             data.add(hub);
                             hub.data.add(this);
-                            hubChanged = true;
                         }
                     } else {
                         if (!data.buildings.contains(b)) {
@@ -177,12 +216,26 @@ public class ItemTransferHub extends Block {
                 }
             }
 
-            data.buildings.removeAll(b -> !nearbyBuildings.contains(b));
-            data.hubs.removeAll(h -> !nearbyBuildings.contains(h));
+            // Add manually linked buildings
+            links.each(pos -> {
+                Building b = world.build(pos);
+                if (b == null || !b.isValid() || b == this) return;
+                if (!nearbyBuildings.contains(b)) nearbyBuildings.add(b);
 
-            if (hubChanged) {
-                network.version++;
-            }
+                if (b instanceof ItemTransferHubBuild hub) {
+                    if (!data.hubs.contains(hub)) {
+                        data.add(hub);
+                        hub.data.add(this);
+                    }
+                } else {
+                    if (!data.buildings.contains(b)) {
+                        data.add(b);
+                    }
+                }
+            });
+
+            data.buildings.removeAll(b -> !b.isValid());
+            data.hubs.removeAll(h -> !h.isValid());
         }
 
         @Override
@@ -341,31 +394,110 @@ public class ItemTransferHub extends Block {
         }
 
         @Override
+        public void draw() {
+            super.draw();
+
+            // Draw permanent lines for manually linked buildings
+            Lines.stroke(2f);
+            links.each(pos -> {
+                Building other = world.build(pos);
+                if (other == null || !other.isValid()) return;
+
+                if (other instanceof ItemTransferHubBuild) {
+                    Draw.color(Color.blue);
+                    Lines.line(x, y, other.x, other.y, false);
+                } else {
+                    Drawf.dashLine(Color.blue, x, y, other.x, other.y, 8);
+                }
+            });
+            Draw.reset();
+        }
+
+        @Override
         public void drawSelect() {
             super.drawSelect();
 
-            Lines.stroke(2f);
-            for (ItemTransferHubBuild hub : data.hubs) {
-                Draw.color(Color.blue);
-                Lines.line(x, y, hub.x, hub.y);
-            }
+            // Draw range circle
+            Drawf.dashCircle(x, y, connectionRange * 8f, Pal.accent);
 
-            Draw.color(Color.blue, 0.5f);
+            // Highlight auto-scanned buildings
             Lines.stroke(1f);
             for (Building b : data.buildings) {
-                Drawf.dashLine(Color.blue, x, y, b.x, b.y, 8);
+                if (links.contains(b.pos())) continue;
+                Drawf.square(b.x, b.y, b.block.size * 8f / 2f + 1f, Pal.place);
+            }
+
+            // Highlight manually linked buildings with different color
+            for (int i = 0; i < links.size; i++) {
+                Building b = world.build(links.get(i));
+                if (b == null || !b.isValid()) continue;
+                Drawf.square(b.x, b.y, b.block.size * 8f / 2f + 2f, Pal.accent);
+            }
+
+            // Highlight connected hubs
+            for (ItemTransferHubBuild hub : data.hubs) {
+                Drawf.square(hub.x, hub.y, hub.block.size * 8f / 2f + 2f, Color.blue);
             }
 
             Draw.reset();
         }
 
         @Override
+        public void drawConfigure() {
+            super.drawConfigure();
+
+            // Pulsing circle around this hub
+            Drawf.circles(x, y, block.size * tilesize / 2f + 1f + Mathf.absin(Time.time, 4f, 1f));
+
+            // Range circle
+            Drawf.circles(x, y, connectionRange * tilesize);
+
+            // Highlight linked buildings
+            links.each(pos -> {
+                Building other = world.build(pos);
+                if (other != null && other.isValid() && linkValid(this, other)) {
+                    Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 1f, Pal.place);
+                }
+            });
+
+            Draw.reset();
+        }
+
+        @Override
+        public boolean onConfigureBuildTapped(Building other) {
+            if (other == this) {
+                // Double-tap: clear all manual links
+                if (links.size > 0) {
+                    links.each(pos -> {
+                        Building b = world.build(pos);
+                        if (b instanceof ItemTransferHubBuild hub) {
+                            hub.links.removeValue(pos());
+                        }
+                    });
+                    links.clear();
+                    rebuildData(this);
+                }
+                deselect();
+                return false;
+            }
+
+            if (linkValid(this, other)) {
+                configure(other.pos());
+                return false;
+            }
+
+            return true;
+        }
+
+        @Override
         public void buildConfiguration(Table table) {
             super.buildConfiguration(table);
+            table.defaults().size(120f, 40f);
             table.button(Core.bundle.get("hubPull"), Styles.clearTogglet, () -> {
                 network.enableDemandPull = !network.enableDemandPull;
                 configure(new Object[]{0, network.enableDemandPull});
             }).checked(b -> network.enableDemandPull);
+            table.row();
             table.button(Core.bundle.get("hubPush"), Styles.clearTogglet, () -> {
                 network.enableSurplusPush = !network.enableSurplusPush;
                 configure(new Object[]{1, network.enableSurplusPush});
@@ -389,6 +521,10 @@ public class ItemTransferHub extends Block {
             write.i(network.version);
             write.bool(network.enableDemandPull);
             write.bool(network.enableSurplusPush);
+            write.s(links.size);
+            for (int i = 0; i < links.size; i++) {
+                write.i(links.get(i));
+            }
         }
 
         @Override
@@ -398,6 +534,13 @@ public class ItemTransferHub extends Block {
             int ver = read.i();
             network.enableDemandPull = read.bool();
             network.enableSurplusPush = read.bool();
+            short linkCount = read.s();
+            links.clear();
+            for (int i = 0; i < linkCount; i++) {
+                int pos = read.i();
+                links.add(pos);
+            }
+            rebuildData(this);
         }
     }
 }

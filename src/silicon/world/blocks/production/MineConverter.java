@@ -4,6 +4,7 @@ import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
 import arc.struct.EnumSet;
 import arc.struct.ObjectFloatMap;
+import arc.struct.Seq;
 import arc.util.Strings;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
@@ -198,7 +199,11 @@ public class MineConverter extends FrameBlock {
 
         @Override
         public void buildConfiguration(Table table) {
-            ItemSelection.buildTable(MineConverter.this, table, costs.keys().toSeq(),
+            if (costs.size == 0) {
+                countWorldCosts();
+            }
+            Seq<Item> items = costs.size > 0 ? costs.keys().toSeq() : content.items().copy();
+            ItemSelection.buildTable(MineConverter.this, table, items,
                     () -> craft, this::configure, selectionRows, selectionColumns);
         }
 

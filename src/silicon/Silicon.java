@@ -2,7 +2,9 @@ package silicon;
 
 import arc.Core;
 import arc.Events;
+import arc.graphics.Texture;
 import arc.graphics.g2d.TextureRegion;
+import arc.scene.style.Drawable;
 import arc.scene.style.TextureRegionDrawable;
 import arc.struct.Seq;
 import arc.util.Time;
@@ -13,8 +15,10 @@ import mindustry.gen.Call;
 import mindustry.input.Binding;
 import mindustry.mod.Mod;
 import mindustry.mod.Mods;
+import mindustry.ui.Styles;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
+import silicon.ui.BlockSearch;
 import silicon.util.SiliconLog;
 
 import static mindustry.Vars.*;
@@ -40,9 +44,13 @@ public class Silicon extends Mod {
 
     @Override
     public void init() {
+        BlockSearch.init();
+
         Events.on(EventType.ClientLoadEvent.class, e -> {
+            Texture iconTexture = MOD != null ? MOD.iconTexture : null;
+            Drawable iconDrawable = iconTexture != null ? new TextureRegionDrawable(new TextureRegion(iconTexture)) : Styles.black6;
             ui.settings.addCategory("@settings.silicon.meta.category.name",
-                    new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
+                    iconDrawable, st -> {
                 st.checkPref("pause", false);
                         SiliconLog.info("Loading settings.");
                     });

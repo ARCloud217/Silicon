@@ -20,9 +20,14 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
     - name: Build mod jar
+      id: build
       run: |
         chmod +x ./gradlew
         ./gradlew deploy
+        find build/ -name "*.jar" -ls
+        JAR_PATH=$(find build/ -name "silicon-*-v*.jar" 2>/dev/null | head -1)
+        echo "jar_path=${JAR_PATH}" >> $GITHUB_OUTPUT
+        echo "Found jar: ${JAR_PATH}"
     - name: Get mod version
       id: version
       run: echo "mod_version=$(grep '^version:' mod.hjson | cut -d':' -f2 | tr -d ' ')" >> $GITHUB_OUTPUT
@@ -30,7 +35,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: silicon-${{ steps.version.outputs.mod_version }}-v159.7
-        path: build/libs/silicon-${{ steps.version.outputs.mod_version }}-v159.7.jar
+        path: ${{ steps.build.outputs.jar_path }}
     - name: Delete old pre-releases
       if: github.event_name == 'push' && github.ref == 'refs/heads/test'
       env:
@@ -48,4 +53,4 @@ jobs:
           --repo ${{ github.repository }} \
           --title "Silicon ${{ steps.version.outputs.mod_version }}" \
           --prerelease \
-          "build/libs/silicon-${{ steps.version.outputs.mod_version }}-v159.7.jar"
+          "${{ steps.build.outputs.jar_path }}"

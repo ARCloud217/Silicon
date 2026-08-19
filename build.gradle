@@ -50,6 +50,12 @@ ext{
     mindustryVersion = "v159.7"
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
     sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+
+    // Parse mod version from mod.hjson for artifact naming
+    def hjsonText = file("mod.hjson").text
+    def versionLine = hjsonText.readLines().find { it.trim().startsWith("version:") }
+    modVersion = versionLine ? versionLine.split(":", 2)[1].trim() : "unknown"
+    gameVersion = mindustryVersion
 }
 
 dependencies{
@@ -105,7 +111,7 @@ tasks.register('deploy', Jar) {
     def projectName = project.name
     dependsOn jarAndroid
     dependsOn jar
-    archiveFileName = "${projectName}.jar"
+    archiveFileName = "${projectName}-${modVersion}-${gameVersion}.jar"
 
     from { [zipTree("build/libs/${projectName}Desktop.jar"), zipTree("build/libs/${projectName}Android.jar")] }
 

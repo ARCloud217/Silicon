@@ -6,7 +6,6 @@ import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
 import arc.math.Angles;
 import arc.math.Mathf;
-import arc.scene.ui.layout.Table;
 import arc.struct.IntSeq;
 import arc.struct.Seq;
 import arc.util.Strings;
@@ -14,9 +13,7 @@ import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
-import mindustry.gen.Unit;
 import mindustry.game.Team;
-import mindustry.core.Renderer;
 import mindustry.core.Renderer;
 import mindustry.graphics.Drawf;
 import mindustry.graphics.Layer;
@@ -45,7 +42,8 @@ public class ItemTransferHub extends Block {
         hasPower = true;
         consumesPower = true;
         outputsPower = false;
-        conductivePower = false;
+        conductivePower = true;
+        consumePower(5f);
         solid = true;
         update = true;
         size = 3;
@@ -464,6 +462,21 @@ public class ItemTransferHub extends Block {
                 } else {
                     Drawf.dashLine(Color.blue, x1, y1, x2, y2, 8);
                 }
+            });
+
+            data.hubs.each(other -> {
+                if (other == null || !other.isValid()) return;
+                if (other.id >= id) return;
+
+                float angle = Angles.angle(x, y, other.x, other.y);
+                float cos = Mathf.cosDeg(angle);
+                float sin = Mathf.sinDeg(angle);
+
+                float len1 = block.size * tilesize / 2f;
+                float len2 = other.block.size * tilesize / 2f;
+
+                Lines.line(x + cos * len1, y + sin * len1,
+                        other.x - cos * len2, other.y - sin * len2, false);
             });
             Draw.reset();
         }

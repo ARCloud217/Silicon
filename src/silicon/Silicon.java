@@ -47,6 +47,7 @@ public class Silicon extends Mod {
         Events.on(EventType.ClientLoadEvent.class, e -> {
             ui.settings.addCategory("@settings.silicon.meta.category.name",
                     new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
+                st.checkPref("pause", false);
                 st.checkPref("pauseRequest", true);
 
                 st.button("@setting.pause-manage.name", Styles.flatt, () -> {

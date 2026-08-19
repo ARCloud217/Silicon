@@ -7,16 +7,20 @@
 | 类名 | `ItemTransferHub` |
 | 父类 | `Block` |
 | 分类 | Category.distribution |
-| 尺寸 | 2x2 |
-| 血量 | 默认 |
+| 尺寸 | 3x3 |
+| 连接范围 | 20格 |
+| 最大连接数 | 50 |
 
 ## 合成配方
 
 | 材料 | 数量 |
 |------|------|
-| Copper | 40 |
-| Lead | 20 |
-| Metaglass | 10 |
+| Copper | 80 |
+| Lead | 40 |
+| Metaglass | 20 |
+| Graphite | 30 |
+| Silicon | 25 |
+| Titanium | 15 |
 
 ## Block 属性
 
@@ -30,34 +34,54 @@
 - `configurable`: true
 - `alwaysUnlocked`: true
 
-## 机制说明
+## 连接机制
 
-### 核心机制
+### 自动扫描
 
-物品传输中枢，是整个物品物流网络的核心节点。采用零缓冲设计，不存储任何物品，仅作为路由器协调建筑间的物品传输。
+放置后自动扫描 `connectionRange`（20格）范围内的所有建筑，自动建立连接：
+- 范围内的建筑自动加入 `data.buildings`
+- 范围内的其他中枢自动加入 `data.hubs`
+- 每30 tick 重新扫描一次
+- 建筑被摧毁时自动移除
 
-### 两种传输模式
+### 点击连接（电力节点式）
 
-#### 1. 按需拉取 (Demand-Pull)
-- 每个hub检查相邻建筑需要什么物品
-- 遍历网络中所有建筑，找到需要某物品的消费者
+支持手动点击连接/断开，类似电力节点操作：
+- 选中中枢后点击范围内的建筑 → 连接/断开切换
+- 双击中枢自身 → 清除所有手动连接
+- 手动连接存储在 `links`（IntSeq）中
+- 手动连接的建筑会加入网络拓扑
+
+### 连接验证
+
+`linkValid()` 检查：
+- 不是同一建筑
+- 同一队伍
+- 在连接范围内（`connectionRange * tilesize`）
+
+## 传输模式
+
+### 1. 按需拉取 (Demand-Pull)
+- 检查网络中每个建筑的物品需求
 - BFS搜索全网最近的有该物品的供应商
 - 执行proxy转移（直接操作双方inventory）
 
-#### 2. 满产推送 (Surplus-Push)
+### 2. 满产推送 (Surplus-Push)
 - 检查生产建筑的输出是否已满（≥90%容量）
 - BFS搜索全网最近的核心（CoreBlock）
 - 将多余物品推送到核心
 
 ### 网络级开关
 
-两个模式可独立启用/关闭，设置存储在 `ItemTransferHubNetwork` 上，全网共享：
+两个模式可独立启用/关闭：
 - `enableDemandPull`: 按需拉取（默认true）
 - `enableSurplusPush`: 满产推送（默认true）
 
-玩家可通过右键点击hub切换这两个开关。
+配置UI中的按钮：
+- "拉取" / "Pull": 切换按需拉取
+- "推送" / "Push": 切换满产推送
 
-### Proxy转移机制
+## Proxy转移机制
 
 零缓冲的核心实现 - 不经过hub中转，直接操作双方inventory：
 ```java
@@ -65,56 +89,44 @@ consumer.handleItem(supplier, item);  // 交付
 supplier.items.remove(item, 1);       // 扣除
 ```
 
-Mindustry的`acceptItem()`和`handleItem()`默认实现不检查source邻接关系，因此proxy转移完全可行。
-
-### BFS最近搜索
+## BFS最近搜索
 
 从本hub开始BFS遍历网络，找到第一个有目标物品的建筑即为最近：
 - 本地（距离0）: 10电力/物品
 - 1跳（距离1）: 20电力/物品
-- 2跳（距离2）: 30电力/物品
 - ...
 
-距离越近耗电越少，BFS保证找到最近的供应商/核心。
-
-### 拓扑更新
-
-覆写 `onProximityUpdate()`，engine自动维护proximity列表：
-- 扫描proximity，更新data.buildings / data.hubs
-- 移除已移除的建筑（`!isValid()`）
-- Hub连接变更时触发network.merge()
-
-### 电力消耗
+## 电力消耗
 
 - 每个物品经过每个中枢消耗10电力
-- 用 `consumePowerDynamic` 实现
-- 无速度限制，能传多少传多少，电力自然限速
+- 无速度限制，电力是唯一的自然限速
 - 无电 → 停止工作
 
-## 电力系统
+## 绘制
 
-- **消耗方式**: `consumePowerDynamic` 动态消耗
-- **公式**: `powerConsumed = 10 * 物品数`
-- **无速度限制**: 电力是唯一的自然限速
+### draw() - 常驻绘制
+- 手动连接的建筑：蓝色实线（hub↔hub）/ 蓝色虚线（hub↔building）
 
-## 物品处理
+### drawSelect() - 选中时绘制
+- 蓝色虚线范围圈
+- 自动扫描范围内的建筑：淡色方框
+- 手动连接的建筑：强调色方框
+- 已连接的中枢：蓝色方框
 
-- **输入**: 不接受任何物品（acceptItem返回false）
-- **输出**: 通过proxy转移协调网络中的物品流动
-- **缓冲**: 无（零缓冲设计）
-
-## 配置
-
-- **Pull按钮**: 切换按需拉取模式
-- **Push按钮**: 切换满产推送模式
+### drawConfigure() - 配置模式绘制
+- 脉冲圆圈（自身）
+- 范围圆圈
+- 已链接建筑高亮
 
 ## 状态栏 (Bars)
 
-- **Power**: 显示当前电力状态
+- **health**: 生命值
+- **silicon-hub-power**: 电力状态
+- **silicon-hub-power-cost**: 每秒电力消耗
 
 ## 序列化
 
-- 保存字段: network.id, network.version, enableDemandPull, enableSurplusPush
+保存字段: network.id, network.version, enableDemandPull, enableSurplusPush, links
 
 ## 版本历史
 
@@ -122,3 +134,5 @@ Mindustry的`acceptItem()`和`handleItem()`默认实现不检查source邻接关�
 |------|------|
 | a0.8.1 | 初始创建（框架代码） |
 | a0.8.2.0 | 完善传输逻辑：proxy转移、BFS搜索、网络开关 |
+| a0.8.2.2 | 修复拓扑/可视化/国际化/按钮显示 |
+| a0.8.2.3 | 改为电力节点式操作：自动扫描+点击连接+常驻连线绘制 |

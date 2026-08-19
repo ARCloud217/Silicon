@@ -80,7 +80,6 @@ tasks.register('jarAndroid') {
 
 jar{
     archiveFileName = "${project.name}Desktop.jar"
-    destinationDirectory = file("C:/dsh/new")
 
     from{
         configurations.runtimeClasspath.collect{ it.isDirectory() ? it : zipTree(it) }
@@ -88,7 +87,6 @@ jar{
 
     from(projectDir){
         include "mod.hjson"
-        include "icon.png"
         include "pinyin.txt"
     }
 

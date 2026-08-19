@@ -112,6 +112,7 @@ tasks.register('deploy', Jar) {
     dependsOn jarAndroid
     dependsOn jar
     archiveFileName = "${projectName}-${modVersion}-${gameVersion}.jar"
+    destinationDirectory = file("build/libs")
 
     from { [zipTree("build/libs/${projectName}Desktop.jar"), zipTree("build/libs/${projectName}Android.jar")] }
 

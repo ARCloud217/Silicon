@@ -2,22 +2,16 @@ package silicon;
 
 import arc.Core;
 import arc.Events;
-import arc.graphics.Color;
 import arc.graphics.g2d.TextureRegion;
 import arc.scene.style.TextureRegionDrawable;
-import arc.struct.Seq;
 import arc.util.Time;
 import mindustry.core.GameState;
 import mindustry.game.EventType;
 import mindustry.gen.Call;
-import mindustry.gen.Groups;
 import mindustry.gen.Player;
-import mindustry.gen.Tex;
 import mindustry.input.Binding;
 import mindustry.mod.Mod;
 import mindustry.mod.Mods;
-import mindustry.ui.Styles;
-import mindustry.ui.dialogs.BaseDialog;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
 import silicon.util.SiliconLog;
@@ -47,12 +41,17 @@ public class Silicon extends Mod {
         Events.on(EventType.ClientLoadEvent.class, e -> {
             ui.settings.addCategory("@settings.silicon.meta.category.name",
                     new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
-                st.checkPref("pause", false);
                 st.checkPref("pauseRequest", true);
-
-                st.button("@setting.pause-manage.name", Styles.flatt, () -> {
-                    showPauseManageDialog();
-                }).width(280f).height(50f).padTop(7f).fillX().left().row();
+                st.sliderPref("pauseMode", 0, 0, 2, 1,
+                        i -> switch (i) {
+                            case 1 -> "Admins";
+                            case 2 -> "Custom";
+                            default -> "OFF";
+                        },
+                        i -> {
+                            Vars.pauseMode = i;
+                            if (net.client()) Call.serverPacketReliable("pause-setmode", String.valueOf(i));
+                        });
 
                 SiliconLog.info("Loading settings.");
             });
@@ -175,52 +174,5 @@ public class Silicon extends Mod {
                 Call.infoMessage(p.con, "[accent]Whitelist: " + list);
                 break;
         }
-    }
-
-    private void showPauseManageDialog() {
-        BaseDialog dialog = new BaseDialog("@setting.pause-manage.name");
-        dialog.addCloseButton();
-
-        dialog.cont.pane(pane -> {
-            pane.background(Tex.button);
-            pane.defaults().size(300f, 50f).left().pad(4f);
-
-            pane.button("[  OFF  ]", Styles.flatt, () -> {
-                Vars.pauseMode = 0;
-                if (net.client()) Call.serverPacketReliable("pause-setmode", "0");
-            }).marginLeft(8).padTop(4);
-            pane.button("[ ADMINS ]", Styles.flatt, () -> {
-                Vars.pauseMode = 1;
-                if (net.client()) Call.serverPacketReliable("pause-setmode", "1");
-            }).marginLeft(8).padTop(4);
-            pane.button("[ CUSTOM ]", Styles.flatt, () -> {
-                Vars.pauseMode = 2;
-                if (net.client()) Call.serverPacketReliable("pause-setmode", "2");
-            }).marginLeft(8).padTop(4);
-            pane.row();
-
-            pane.image().width(280f).color(Color.darkGray).padTop(8f).padBottom(8f).row();
-
-            pane.label(() -> "[accent]Whitelist:[] " + (Vars.pauseWhitelist.isEmpty() ? "(empty)" : Vars.pauseWhitelist.toString(", "))).left().padLeft(8f).row();
-
-            pane.image().width(280f).color(Color.darkGray).padTop(8f).padBottom(8f).row();
-
-            if (net.server()) {
-                Groups.player.each(p -> {
-                    if (p.con == null) return;
-                    boolean hasPerm = Vars.pauseWhitelist.contains(p.name);
-                    pane.button(p.name + (hasPerm ? " [green][V]" : " [red][X]"), Styles.flatt, () -> {
-                        if (hasPerm) {
-                            Vars.pauseWhitelist.remove(p.name);
-                        } else {
-                            Vars.pauseWhitelist.add(p.name);
-                        }
-                    }).marginLeft(8);
-                    pane.row();
-                });
-            }
-        });
-
-        dialog.show();
     }
 }

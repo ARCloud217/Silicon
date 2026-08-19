@@ -5,6 +5,7 @@ import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
+import arc.math.geom.Point2;
 import arc.scene.ui.layout.Table;
 import arc.struct.IntSeq;
 import arc.struct.Seq;
@@ -19,7 +20,10 @@ import mindustry.type.Item;
 import mindustry.ui.Bar;
 import mindustry.ui.Styles;
 import mindustry.world.Block;
+import mindustry.world.blocks.production.Drill;
+import mindustry.world.blocks.production.GenericCrafter;
 import mindustry.world.blocks.storage.CoreBlock;
+import mindustry.world.blocks.storage.StorageBlock;
 import mindustry.world.meta.BlockGroup;
 
 import static mindustry.Vars.content;
@@ -67,12 +71,45 @@ public class ItemTransferHub extends Block {
         });
     }
 
+    /** Only connect to buildings that consume items or store items as primary function. */
+    private static boolean shouldConnect(Building other) {
+        if (other == null) return false;
+        Block b = other.block;
+        if (b instanceof CoreBlock) return true;
+        if (b instanceof StorageBlock) return true;
+        if (b instanceof GenericCrafter) return true;
+        if (b instanceof Drill) return true;
+        return false;
+    }
+
     public static boolean linkValid(Building tile, Building link) {
         if (tile == link || link == null) return false;
         if (tile.team != link.team) return false;
+        if (!shouldConnect(link)) return false;
         float range = ((ItemTransferHub) tile.block).connectionRange * tilesize;
         float dist = Mathf.dst(tile.x, tile.y, link.x, link.y);
         return dist <= range;
+    }
+
+    /** BFS check whether two hubs are already in the same network. */
+    private static boolean isInSameNetwork(ItemTransferHubBuild a, Building b) {
+        if (!(b instanceof ItemTransferHubBuild hubB)) return false;
+        Seq<ItemTransferHubBuild> visited = new Seq<>();
+        Seq<ItemTransferHubBuild> queue = new Seq<>();
+        queue.add(a);
+        visited.add(a);
+        for (int i = 0; i < queue.size; i++) {
+            ItemTransferHubBuild current = queue.get(i);
+            for (int j = 0; j < current.data.hubs.size; j++) {
+                ItemTransferHubBuild neighbor = current.data.hubs.get(j);
+                if (neighbor == hubB) return true;
+                if (!visited.contains(neighbor)) {
+                    visited.add(neighbor);
+                    queue.add(neighbor);
+                }
+            }
+        }
+        return false;
     }
 
     private static void rebuildData(ItemTransferHubBuild hub) {
@@ -90,19 +127,18 @@ public class ItemTransferHub extends Block {
 
                 if (b instanceof ItemTransferHubBuild otherHub) {
                     hub.data.add(otherHub);
-                } else {
+                } else if (shouldConnect(b)) {
                     hub.data.add(b);
                 }
             }
         }
 
-        // Add manually linked buildings that may be outside auto-scan range
         hub.links.each(pos -> {
             Building b = world.build(pos);
             if (b == null || !b.isValid() || b == hub) return;
             if (b instanceof ItemTransferHubBuild otherHub) {
                 if (!hub.data.hubs.contains(otherHub)) hub.data.add(otherHub);
-            } else {
+            } else if (shouldConnect(b)) {
                 if (!hub.data.buildings.contains(b)) hub.data.add(b);
             }
         });
@@ -131,9 +167,9 @@ public class ItemTransferHub extends Block {
     public void drawPlace(int tx, int ty, int rotation, boolean valid) {
         super.drawPlace(tx, ty, rotation, valid);
 
-        float range = connectionRange * 8f;
-        float cx = tx * 8f + offset;
-        float cy = ty * 8f + offset;
+        float range = connectionRange * tilesize;
+        float cx = tx * tilesize + offset;
+        float cy = ty * tilesize + offset;
 
         Drawf.dashCircle(cx, cy, range, Pal.accent);
 
@@ -141,9 +177,11 @@ public class ItemTransferHub extends Block {
             for (int iy = ty - (int) connectionRange; iy <= ty + (int) connectionRange; iy++) {
                 Building b = world.build(ix, iy);
                 if (b != null && b.team == mindustry.Vars.player.team()) {
-                    float dist = Mathf.dst(cx, cy, b.x, b.y);
-                    if (dist <= range) {
-                        Drawf.square(b.x, b.y, b.block.size * 8f / 2f + 2f, Pal.place);
+                    if (b instanceof ItemTransferHubBuild || shouldConnect(b)) {
+                        float dist = Mathf.dst(cx, cy, b.x, b.y);
+                        if (dist <= range) {
+                            Drawf.square(b.x, b.y, b.block.size * tilesize / 2f + 2f, Pal.place);
+                        }
                     }
                 }
             }
@@ -188,7 +226,7 @@ public class ItemTransferHub extends Block {
         }
 
         private void updateTopology() {
-            float range = connectionRange * 8f;
+            float range = connectionRange * tilesize;
             int rangeTiles = (int) connectionRange;
 
             Seq<Building> nearbyBuildings = new Seq<>();
@@ -208,7 +246,7 @@ public class ItemTransferHub extends Block {
                             data.add(hub);
                             hub.data.add(this);
                         }
-                    } else {
+                    } else if (shouldConnect(b)) {
                         if (!data.buildings.contains(b)) {
                             data.add(b);
                         }
@@ -216,18 +254,16 @@ public class ItemTransferHub extends Block {
                 }
             }
 
-            // Add manually linked buildings
             links.each(pos -> {
                 Building b = world.build(pos);
                 if (b == null || !b.isValid() || b == this) return;
-                if (!nearbyBuildings.contains(b)) nearbyBuildings.add(b);
 
                 if (b instanceof ItemTransferHubBuild hub) {
                     if (!data.hubs.contains(hub)) {
                         data.add(hub);
                         hub.data.add(this);
                     }
-                } else {
+                } else if (shouldConnect(b)) {
                     if (!data.buildings.contains(b)) {
                         data.add(b);
                     }
@@ -397,7 +433,6 @@ public class ItemTransferHub extends Block {
         public void draw() {
             super.draw();
 
-            // Draw permanent lines for manually linked buildings
             Lines.stroke(2f);
             links.each(pos -> {
                 Building other = world.build(pos);
@@ -417,26 +452,21 @@ public class ItemTransferHub extends Block {
         public void drawSelect() {
             super.drawSelect();
 
-            // Draw range circle
-            Drawf.dashCircle(x, y, connectionRange * 8f, Pal.accent);
+            Drawf.dashCircle(x, y, connectionRange * tilesize, Pal.accent);
 
-            // Highlight auto-scanned buildings
-            Lines.stroke(1f);
             for (Building b : data.buildings) {
                 if (links.contains(b.pos())) continue;
-                Drawf.square(b.x, b.y, b.block.size * 8f / 2f + 1f, Pal.place);
+                Drawf.square(b.x, b.y, b.block.size * tilesize / 2f + 1f, Pal.place);
             }
 
-            // Highlight manually linked buildings with different color
             for (int i = 0; i < links.size; i++) {
                 Building b = world.build(links.get(i));
                 if (b == null || !b.isValid()) continue;
-                Drawf.square(b.x, b.y, b.block.size * 8f / 2f + 2f, Pal.accent);
+                Drawf.square(b.x, b.y, b.block.size * tilesize / 2f + 2f, Pal.accent);
             }
 
-            // Highlight connected hubs
             for (ItemTransferHubBuild hub : data.hubs) {
-                Drawf.square(hub.x, hub.y, hub.block.size * 8f / 2f + 2f, Color.blue);
+                Drawf.square(hub.x, hub.y, hub.block.size * tilesize / 2f + 2f, Color.blue);
             }
 
             Draw.reset();
@@ -446,27 +476,35 @@ public class ItemTransferHub extends Block {
         public void drawConfigure() {
             super.drawConfigure();
 
-            // Pulsing circle around this hub
             Drawf.circles(x, y, block.size * tilesize / 2f + 1f + Mathf.absin(Time.time, 4f, 1f));
 
-            // Range circle
             Drawf.circles(x, y, connectionRange * tilesize);
 
-            // Highlight linked buildings
-            links.each(pos -> {
-                Building other = world.build(pos);
-                if (other != null && other.isValid() && linkValid(this, other)) {
-                    Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 1f, Pal.place);
+            int rangeTiles = (int) connectionRange;
+            for (int ix = tile.x - rangeTiles - 2; ix <= tile.x + rangeTiles + 2; ix++) {
+                for (int iy = tile.y - rangeTiles - 2; iy <= tile.y + rangeTiles + 2; iy++) {
+                    Building link = world.build(ix, iy);
+                    if (link == this || link == null) continue;
+                    boolean linked = links.contains(link.pos());
+                    if (linked && linkValid(this, link)) {
+                        Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.place);
+                    } else if (!linked && linkValid(this, link)) {
+                        Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.accent);
+                    }
                 }
-            });
+            }
 
             Draw.reset();
         }
 
         @Override
         public boolean onConfigureBuildTapped(Building other) {
-            if (other == this) {
-                // Double-tap: clear all manual links
+            if (linkValid(this, other)) {
+                configure(other.pos());
+                return false;
+            }
+
+            if (this == other) {
                 if (links.size > 0) {
                     links.each(pos -> {
                         Building b = world.build(pos);
@@ -476,13 +514,19 @@ public class ItemTransferHub extends Block {
                     });
                     links.clear();
                     rebuildData(this);
+                } else {
+                    int rangeTiles = (int) connectionRange;
+                    for (int ix = tile.x - rangeTiles; ix <= tile.x + rangeTiles; ix++) {
+                        for (int iy = tile.y - rangeTiles; iy <= tile.y + rangeTiles; iy++) {
+                            Building b = world.build(ix, iy);
+                            if (b != null && b != this && linkValid(this, b)
+                                    && !links.contains(b.pos()) && links.size < maxConnections) {
+                                configure(b.pos());
+                            }
+                        }
+                    }
                 }
                 deselect();
-                return false;
-            }
-
-            if (linkValid(this, other)) {
-                configure(other.pos());
                 return false;
             }
 

@@ -145,8 +145,9 @@ public class BlockSearch{
         }
         if(blockCatTable.getChildren().size != 2) return;
 
-        //search row: magnifier + text field + clear button + history toggle,
-        //and a collapsible history list below (empty = blank, no layout gap)
+        //search row: magnifier + text field + clear button + history button,
+        //and a collapsible history list below (empty = blank, no layout gap);
+        //hovering the history button shows its tooltip; clicking toggles the list
         searchRow = new Table();
         searchRow.name = searchRowName;
         searchRow.top().left().margin(6f, 6f, 2f, 6f);
@@ -419,6 +420,11 @@ public class BlockSearch{
 
     static void toggleHistory(){
         if(historyList == null) return;
+        //when the search box is blank, show nothing
+        if(field == null || field.getText().trim().isEmpty()){
+            closeHistory();
+            return;
+        }
         if(historyList.getChildren().size > 0){
             closeHistory();
         }else{
@@ -446,6 +452,7 @@ public class BlockSearch{
             String fq = q;
             historyList.button(q, Styles.flatBordert, () -> {
                 if(field != null) field.setText(fq);
+                applyFilter(fq); //apply directly — TextField.setText does not fire the change listener
                 closeHistory();
             }).growX().pad(3f);
             historyList.row();

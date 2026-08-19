@@ -28,7 +28,8 @@
 - `hasPower`: true
 - `consumesPower`: true
 - `outputsPower`: false
-- `conductivePower`: false
+- `conductivePower`: true
+- `consumePower`: 5f/s（空闲功耗）
 - `update`: true
 - `solid`: true
 - `configurable`: true
@@ -106,9 +107,11 @@ supplier.items.remove(item, 1);       // 扣除
 
 ## 电力消耗
 
+- 空闲功耗：5 电力/秒（维持电力模块运行）
 - 每个物品经过每个中枢消耗10电力
 - 无速度限制，电力是唯一的自然限速
 - 无电 → 停止工作
+- `conductivePower = true` → 可通过邻近电力源或电力节点供电
 
 ## 绘制
 
@@ -161,3 +164,4 @@ supplier.items.remove(item, 1);       // 扣除
 | a0.8.3.0 | 连接过滤白名单（仅生产+存储）、网络内重复连接检查、电力节点式双击逻辑 |
 | a0.8.3.1 | 修复双击断连 bug、删除 Pull/Push 按钮（两模式始终启用）、修复状态栏 {0}、暂停描述 |
 | a0.8.3.2 | 修复连线不可见（edge-to-edge + Layer.power）、修复 pullOnDemand 不传输物品、耗电量显示实际数值、添加暂停白名单 UI |
+| a0.8.4.0 | 修复 hub-to-hub 连线不显示（draw 增加 data.hubs 遍历）、修复电力系统接入（conductivePower=true + consumePower(5f)） |

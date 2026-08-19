@@ -20,8 +20,11 @@ jobs:
       run: |
         chmod +x ./gradlew
         ./gradlew deploy
+    - name: Get mod version
+      id: version
+      run: echo "mod_version=$(grep '^version:' mod.hjson | cut -d':' -f2 | tr -d ' ')" >> $GITHUB_OUTPUT
     - name: Upload built jar file
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ github.event.repository.name }}
-        path: build/libs/${{ github.event.repository.name }}.jar
+        name: silicon-${{ steps.version.outputs.mod_version }}-v159.7
+        path: build/libs/silicon-${{ steps.version.outputs.mod_version }}-v159.7.jar

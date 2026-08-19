@@ -45,6 +45,7 @@ public class Switch extends Block {
 
         @Override
         public void updateTile() {
+            super.updateTile();
             if (front() != null && front().enabled != fE) front().enabled = fE;
         }
 

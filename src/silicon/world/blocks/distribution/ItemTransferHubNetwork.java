@@ -102,7 +102,6 @@ public class ItemTransferHubNetwork {
         public final Seq<ItemTransferHub.ItemTransferHubBuild> hubs = new Seq<>();
         public final int[] needs = new int[Vars.content.items().size];
         public final int[] costs = new int[Vars.content.items().size];
-        public final Seq<Path> cache = new Seq<>();
 
         public HubData(Seq<Building> buildings) {
             this.buildings = buildings;
@@ -131,8 +130,6 @@ public class ItemTransferHubNetwork {
         public void clear() {
             buildings.clear();
             hubs.clear();
-            for (Path path : cache) path.clear();
-            cache.clear();
             for (int i = 0; i < Vars.content.items().size; i++) {
                 needs[i] = 0;
                 costs[i] = 0;
@@ -188,29 +185,6 @@ public class ItemTransferHubNetwork {
             for (int i = 0; i < Vars.content.items().size; i++) {
                 needs[i] = 0;
                 costs[i] = 0;
-            }
-        }
-
-        public record Path(Seq<ItemTransferHub.ItemTransferHubBuild> path, int version) {
-            public int length() {
-                return path.size;
-            }
-
-            public boolean isValid(ItemTransferHubNetwork network) {
-                return version == network.version;
-            }
-
-            public ItemTransferHub.ItemTransferHubBuild get(int index) {
-                return path.get(index);
-            }
-
-            public ItemTransferHub.ItemTransferHubBuild getLast() {
-                return get(path.size - 1);
-            }
-
-
-            public void clear() {
-                path.clear();
             }
         }
     }

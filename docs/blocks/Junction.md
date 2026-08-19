@@ -20,7 +20,7 @@
 
 ## Block 属性
 
-- `hasItems`: true
+- `hasItems`: false（使用 DirectionalItemBuffer，非标准物品容器）
 - `hasPower`: false
 - `consumesPower`: false
 - `outputsPower`: false

@@ -67,8 +67,10 @@
 
 ## 状态栏 (Bars)
 
-1. **Consume Progress**: 显示消耗进度
-2. **Craft Progress**: 显示制作进度（craftValue/cost比值）
+1. **Health**: 生命值（super.setBars）
+2. **Power**: 电力状态（super.setBars）
+3. **Mining**: 消耗进度，显示当前矿物消耗进度
+4. **Craft Progress**: 制作进度，格式 `已完成/需要`，未选择产物时显示 "选择产物"
 
 ## 配置
 
@@ -78,9 +80,11 @@
 
 - 版本: 2
 - 保存字段: mineValue, craftValue, consumeProgress, warmup, craft(物品ID), consume(物品ID)
+- 注意: lastChange 字段未序列化，world cost 在加载时通过 costsDirty 重新计算
 
 ## 版本历史
 
 | 版本 | 变更 |
 |------|------|
 | a0.8.0 | 初始创建 |
+| a0.8.5.0 | 修复 super.updateTile() 缺失、添加 super.setBars() 恢复生命值/电力条、改进条格式为带标签的中文显示、修复 lastChange 类型(float→int)、修复 world cost 除零保护 |

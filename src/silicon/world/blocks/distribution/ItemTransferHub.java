@@ -24,6 +24,7 @@ import mindustry.world.Block;
 import mindustry.world.blocks.defense.turrets.ItemTurret;
 import mindustry.world.blocks.production.Drill;
 import mindustry.world.blocks.production.GenericCrafter;
+import silicon.world.blocks.production.MineConverter;
 import mindustry.world.blocks.storage.CoreBlock;
 import mindustry.world.blocks.storage.StorageBlock;
 import mindustry.world.meta.BlockGroup;
@@ -82,6 +83,7 @@ public class ItemTransferHub extends Block {
         if (b instanceof CoreBlock) return true;
         if (b instanceof StorageBlock) return true;
         if (b instanceof GenericCrafter) return true;
+        if (b instanceof MineConverter) return true;
         if (b instanceof Drill) return true;
         if (b instanceof ItemTurret) return true;
         return false;
@@ -90,6 +92,7 @@ public class ItemTransferHub extends Block {
     public static boolean linkValid(Building tile, Building link) {
         if (tile == link || link == null) return false;
         if (tile.team != link.team) return false;
+        if (!(tile.block instanceof ItemTransferHub)) return false;
         if (!shouldConnect(link)) return false;
         float range = ((ItemTransferHub) tile.block).connectionRange * tilesize;
         float dist = Mathf.dst(tile.x, tile.y, link.x, link.y);

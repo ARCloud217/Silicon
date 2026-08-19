@@ -29,6 +29,7 @@ import mindustry.world.blocks.sandbox.PowerVoid;
 import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.StatUnit;
+import silicon.util.SiliconLog;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -191,7 +192,7 @@ public class PowerProtector extends PowerGenerator {
         public void updateTile() {
             {
                 if (!enabled && status == 0) return;
-                if (!enabled && status != 0) { status = 0; enabled = true; }
+                if (!enabled && status != 0) { status = 0; }
                 for (Building b : team.data().buildingTypes.get(block, emptySeq)) {
                     if (power.graph.all.contains(b) && b != self()) {
                         error = true;
@@ -233,7 +234,7 @@ public class PowerProtector extends PowerGenerator {
         private void enterProtectionMode() {
             lastTickPPower = tickPPower = tickRPower = lastTickRPower = growthTimer = protectionTimer = 0f;
             status = 1;
-            Log.info("Power Protector entered protection mode.");
+            SiliconLog.info("Power Protector entered protection mode.");
         }
 
         private void handleProtectionMode() {

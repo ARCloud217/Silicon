@@ -51,6 +51,8 @@ public class Silicon extends Mod {
             ui.settings.addCategory("@settings.silicon.meta.category.name",
                     new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
                 st.checkPref("pauseRequest", true);
+                st.add(Core.bundle.get("setting.blocksearch.group")).color(Color.gray).left().padTop(6f);
+                st.row();
                 st.checkPref("blocksearch.showHistory", true);
                 st.checkPref("blocksearch.clearOnSelect", true);
                 st.sliderPref("pauseMode", 0, 0, 2, 1,

@@ -19,6 +19,7 @@ import mindustry.ui.dialogs.BaseDialog;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
 import silicon.util.SiliconLog;
+import silicon.world.blocks.production.MineConverter;
 
 import static mindustry.Vars.*;
 
@@ -42,6 +43,8 @@ public class Silicon extends Mod {
 
     @Override
     public void init() {
+        MineConverter.initNetworking();
+
         Events.on(EventType.ClientLoadEvent.class, e -> {
             ui.settings.addCategory("@settings.silicon.meta.category.name",
                     new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {

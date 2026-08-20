@@ -122,9 +122,9 @@ public class BlockSearch{
             return;
         }
 
-        //when the search box is blank nothing must be shown: never leave a stale history list open
+        //a blank search box drops any stale result grid; the history list may still be
+        //opened explicitly via the history button, so it is not force-closed here
         if(field != null && field.getText().trim().isEmpty()){
-            closeHistory();
             if(searching) restore(); //drop any stale result grid as well
             return;
         }
@@ -163,14 +163,18 @@ public class BlockSearch{
             .name("silicon-search-field").maxTextLength(64).get();
         field.setMessageText(Core.bundle.get("blocksearch.hint"));
         searchRow.button(Icon.cancel, Styles.clearNoneTogglei, BlockSearch::clearSearch).size(38f).padLeft(6f).name("silicon-search-clear");
-        searchRow.button(Icon.downOpen, Styles.clearNonei, BlockSearch::toggleHistory).size(38f).padLeft(4f)
-            .name("silicon-search-history").tooltip(Core.bundle.get("blocksearch.history"));
+        if(showHistoryEnabled()){
+            searchRow.button(Icon.downOpen, Styles.clearNonei, BlockSearch::toggleHistory).size(38f).padLeft(4f)
+                .name("silicon-search-history").tooltip(Core.bundle.get("blocksearch.history"));
+        }
         searchRow.row();
 
-        historyList = new Table(Tex.pane2);
-        historyList.name = "silicon-search-history-list";
-        historyList.top().left();
-        searchRow.add(historyList).colspan(4).growX().padTop(2f);
+        if(showHistoryEnabled()){
+            historyList = new Table(Tex.pane2);
+            historyList.name = "silicon-search-history-list";
+            historyList.top().left();
+            searchRow.add(historyList).colspan(4).growX().padTop(2f);
+        }
 
         //re-parent the vanilla tables so the search bar sits on top of the block grid
         Table blocksSelect = (Table)blockCatTable.getChildren().get(0);
@@ -375,7 +379,10 @@ public class BlockSearch{
             addHistory(field.getText().trim());
         }
 
-        clearSearch();
+        //only clear the input/results when the player asked for it
+        if(clearOnSelectEnabled()){
+            clearSearch();
+        }
     }
 
     static void clearSearch(){
@@ -400,6 +407,17 @@ public class BlockSearch{
         });
     }
 
+    //---- settings ----
+    //whether the recent-search feature is enabled at all
+    static boolean showHistoryEnabled(){
+        return Core.settings.getBool("blocksearch.showHistory", true);
+    }
+
+    //whether picking a block from the results clears the search input
+    static boolean clearOnSelectEnabled(){
+        return Core.settings.getBool("blocksearch.clearOnSelect", true);
+    }
+
     //---- recent search history (repeat searches) ----
 
     static Seq<String> history(){
@@ -416,6 +434,7 @@ public class BlockSearch{
     }
 
     static void addHistory(String q){
+        if(!showHistoryEnabled()) return;
         Seq<String> h = history();
         if(q.isEmpty()) return;
         h.remove(q);
@@ -431,8 +450,7 @@ public class BlockSearch{
 
     static void toggleHistory(){
         if(historyList == null) return;
-        //when the search box is blank, show nothing
-        if(field == null || field.getText().trim().isEmpty()){
+        if(!showHistoryEnabled()){
             closeHistory();
             return;
         }

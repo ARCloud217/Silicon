@@ -10,7 +10,11 @@ import arc.struct.Seq;
 import arc.util.Strings;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+import mindustry.game.EventType;
 import mindustry.gen.Building;
+import mindustry.gen.Call;
+import mindustry.gen.Groups;
+import mindustry.gen.Player;
 import mindustry.gen.Sounds;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
@@ -24,6 +28,11 @@ import silicon.util.SiliconLog;
 import silicon.world.blocks.FrameBlock;
 import silicon.world.meta.StatValues;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.Objects;
 import java.util.TreeMap;
 
@@ -42,6 +51,17 @@ public class MineConverter extends FrameBlock {
         return o1 > o2 ? 1 : -1;
     });
 
+    // The world costs must be identical on every machine, otherwise the host and the other
+    // players show different bars/selection lists and even simulate the machine differently.
+    // They are therefore computed once on the server (which has the authoritative world) and
+    // broadcast to every client; clients only use the received data.
+    private static MineConverter instance;
+    private static boolean costsSynced = false; // true once authoritative costs arrived from the server
+    private static boolean networkingInitialized, clientHandlerRegistered, serverHandlerRegistered;
+
+    public static final String costsPacket = "silicon-mine-converter-costs";
+    public static final String costsRequestPacket = "silicon-mine-converter-costs-request";
+
     public MineConverter(String name) {
         super(name);
         configurable = true;
@@ -57,18 +77,79 @@ public class MineConverter extends FrameBlock {
         selectionRows = 6;
         selectionColumns = 6;
 
-        Events.on(mindustry.game.EventType.WorldLoadEvent.class, e -> {
-            costsDirty = true;
-            lastCostsWorldChange = -1;
-            costs.clear();
-        });
+        instance = this;
 
+        // A new map must never inherit the previous map's mineral costs or the item the player
+        // last picked (Block.lastConfig would otherwise be applied to newly placed converters).
+        // The server immediately recomputes and pushes the fresh data to every client.
+        Events.on(EventType.WorldLoadEvent.class, e -> onWorldLoad());
 
         config(Item.class, (MineConverterBuild b, Item item) -> {
             b.craft = item;
             if (b.consume == item) b.consume = null;
         });
         configClear((MineConverterBuild b) -> b.craft = null);
+    }
+
+    /** Registers the multiplayer hooks; safe to call from the mod's init(). */
+    public static void initNetworking() {
+        if (networkingInitialized) return;
+        networkingInitialized = true;
+
+        if (netServer != null) registerServerHandler();
+        if (netClient != null) registerClientHandler();
+
+        // client side: ask the server for the current world costs right after every world
+        // load (this also covers the case where the server's broadcast raced ahead of us)
+        Events.on(EventType.ClientLoadEvent.class, e -> {
+            if (net.client()) {
+                Call.serverBinaryPacketReliable(costsRequestPacket, new byte[0]);
+            }
+        });
+
+        // players joining mid-game need the current costs immediately
+        Events.on(EventType.PlayerJoin.class, e -> {
+            if (net.server()) sendCostsTo(e.player);
+        });
+    }
+
+    private static void registerServerHandler() {
+        if (serverHandlerRegistered) return;
+        serverHandlerRegistered = true;
+        netServer.addBinaryPacketHandler(costsRequestPacket, (player, data) -> sendCostsTo(player));
+    }
+
+    private static void registerClientHandler() {
+        if (clientHandlerRegistered) return;
+        clientHandlerRegistered = true;
+        netClient.addBinaryPacketHandler(costsPacket, MineConverter::applyCosts);
+    }
+
+    /** Called when a new world loads; discards everything derived from the previous map. */
+    void onWorldLoad() {
+        if (netServer != null) registerServerHandler(); // dedicated servers may not have netServer at mod init
+        lastConfig = null; // forget the previous map's selected item
+        clearCosts();
+        costsSynced = false;
+        if (net.server()) {
+            // The server recomputes for the new map and pushes the fresh data (even an empty
+            // result must be broadcast so clients stop using their local fallback).
+            countWorldCosts();
+            broadcastCosts();
+            setStats();
+        }
+    }
+
+    static void clearCosts() {
+        if (instance != null) {
+            for (Item i : costs.keys()) {
+                instance.itemFilter[i.id] = false;
+            }
+            instance.scaled.clear();
+        }
+        costs.clear();
+        lastCostsWorldChange = -1;
+        costsDirty = true;
     }
 
     @Override
@@ -108,16 +189,16 @@ public class MineConverter extends FrameBlock {
         stats.add(silicon.world.meta.Stat.itemsScaled, StatValues.itemsScaled(false, scaled));
     }
 
+    /** Recomputes the map's mineral costs from the current world; returns whether they changed. */
     public boolean countWorldCosts() {
         if (!costsDirty && lastCostsWorldChange == world.tileChanges) return false;
         costsDirty = false;
         lastCostsWorldChange = world.tileChanges;
         ObjectFloatMap<Item> oldCosts = new ObjectFloatMap<>(costs);
-        costs.clear();
-        scaled.clear();
         for (Item i : oldCosts.keys()) {
             itemFilter[i.id] = false;
         }
+        costs.clear();
         world.tiles.eachTile(tile -> {
             if (tile.drop() == null) return;
             costs.increment(tile.drop(), 0, 1);
@@ -131,7 +212,15 @@ public class MineConverter extends FrameBlock {
         for (Item i : costs.keys()) {
             itemFilter[i.id] = true;
         }
+        rebuildScaled();
+        boolean changed = !oldCosts.equals(costs);
+        if (changed) SiliconLog.info("Recount the number of minerals");
+        return changed;
+    }
 
+    /** Rebuilds the scaled display values (used by the stats screen) from the current costs. */
+    void rebuildScaled() {
+        scaled.clear();
         float max = 0;
         for (float i : costs.values().toSeq().toArray()) {
             if (i > max) max = i;
@@ -145,8 +234,77 @@ public class MineConverter extends FrameBlock {
                 }
             });
         }
-        SiliconLog.info("Recount the number of minerals");
-        return !oldCosts.equals(costs);
+    }
+
+    // ---------- multiplayer: world costs are computed on the server and broadcast ----------
+
+    /** Serializes the current world costs into a small binary payload. */
+    public static byte[] serializeCosts() {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(128);
+        try (DataOutputStream out = new DataOutputStream(bytes)) {
+            out.writeInt(costs.size);
+            for (Item item : costs.keys()) {
+                out.writeShort(item.id);
+                out.writeFloat(costs.get(item, 0));
+            }
+        } catch (IOException e) {
+            SiliconLog.info("Failed to serialize world costs: " + e);
+        }
+        return bytes.toByteArray();
+    }
+
+    /** Applies the authoritative world costs received from the server. */
+    public static void applyCosts(byte[] data) {
+        if (data == null || data.length < 4) return;
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(data))) {
+            int n = in.readInt();
+            if (n < 0 || n > 2048) return; // sanity check
+            ObjectFloatMap<Item> map = new ObjectFloatMap<>();
+            for (int i = 0; i < n; i++) {
+                short id = in.readShort();
+                float value = in.readFloat();
+                if (id >= 0 && id < content.items().size) {
+                    Item item = content.items().get(id);
+                    if (item != null && value > 0) map.put(item, value);
+                }
+            }
+            MineConverter mc = instance;
+            for (Item i : costs.keys()) {
+                if (mc != null) mc.itemFilter[i.id] = false;
+            }
+            costs.clear();
+            map.each((entry) -> costs.put(entry.key, entry.value));
+            if (mc != null) {
+                for (Item i : costs.keys()) mc.itemFilter[i.id] = true;
+                mc.rebuildScaled();
+                mc.setStats();
+            }
+            costsSynced = true;
+            costsDirty = false;
+            lastCostsWorldChange = world.tileChanges;
+        } catch (Exception e) {
+            SiliconLog.info("Failed to apply world costs: " + e);
+        }
+    }
+
+    /** Sends the current world costs to every connected client (server side only). */
+    public static void broadcastCosts() {
+        if (!net.server()) return;
+        byte[] data = serializeCosts();
+        for (Player p : Groups.player) {
+            if (p.con != null) Call.clientBinaryPacketReliable(p.con, costsPacket, data);
+        }
+    }
+
+    /** Sends the current world costs to one player (server side only). */
+    public static void sendCostsTo(Player p) {
+        if (!net.server() || p == null) return;
+        if (costs.size == 0 && instance != null) {
+            instance.countWorldCosts();
+        }
+        if (p.con != null) {
+            Call.clientBinaryPacketReliable(p.con, costsPacket, serializeCosts());
+        }
     }
 
     public class MineConverterBuild extends FrameBuild {
@@ -164,14 +322,19 @@ public class MineConverter extends FrameBlock {
 
             if (lastChange != world.tileChanges) {
                 lastChange = world.tileChanges;
-                if (countWorldCosts()) {
-                    block.setStats();
+                if (net.server()) {
+                    // authoritative: recompute on the server and push to every client
+                    if (countWorldCosts()) {
+                        broadcastCosts();
+                        block.setStats();
+                    }
+                } else if (!costsSynced) {
+                    // client that hasn't received server data yet: local fallback
+                    if (countWorldCosts()) block.setStats();
                 }
             }
-            if (costs.size == 0) {
-                if (countWorldCosts()) {
-                    block.setStats();
-                }
+            if (costs.size == 0 && (net.server() || !net.client() || !costsSynced)) {
+                if (countWorldCosts()) block.setStats();
             }
             {
                 if ((consumeProgress >= consumeTime || consume == null)) {
@@ -180,8 +343,10 @@ public class MineConverter extends FrameBlock {
                     if (consume == null || items.get(consume) == 0) {
                         consume = null;
                         for (int i = 0; i < items.length(); i++) {
-                            if ((consume == null || items.get(i) > items.get(consume)) && content.item(i) != null && content.item(i) != craft && items.get(i) != 0)
-                                consume = content.item(i);
+                            Item item = content.item(i);
+                            if (item != null && item != craft && items.get(i) != 0 && costs.get(item, 0) > 0
+                                    && (consume == null || items.get(i) > items.get(consume)))
+                                consume = item;
                         }
                     }
                     if (consume != null && items.get(consume) > 0) {
@@ -197,23 +362,25 @@ public class MineConverter extends FrameBlock {
             {
                 if (craft == null) return;
                 float c = costs.get(craft, 0) * (1 + consumptionMultiples);
-                if (craftValue >= c && items.get(craft) < itemCapacity) {
-                    craftValue -= c;
-                    items.add(craft, 1);
-                } else if (items.get(craft) == itemCapacity) {
-                    dump(craft);
-                    return;
+                if (c > 0) {
+                    if (craftValue >= c && items.get(craft) < itemCapacity) {
+                        craftValue -= c;
+                        items.add(craft, 1);
+                    } else if (items.get(craft) == itemCapacity) {
+                        dump(craft);
+                        return;
+                    }
+                    float del = Math.min(mineValue, c / craftTime * edelta());
+                    mineValue -= del;
+                    craftValue += del;
                 }
-                float del = Math.min(mineValue, c / craftTime * edelta());
-                mineValue -= del;
-                craftValue += del;
             }
             dump(craft);
         }
 
         @Override
         public void buildConfiguration(Table table) {
-            if (costs.size == 0) {
+            if (costs.size == 0 && (net.server() || !net.client() || !costsSynced)) {
                 countWorldCosts();
             }
             Seq<Item> items = costs.size > 0 ? costs.keys().toSeq() : content.items().copy();
@@ -225,7 +392,6 @@ public class MineConverter extends FrameBlock {
         public boolean acceptItem(Building source, Item item) {
             return craft != item && !(source instanceof MineConverterBuild && source != self()) && super.acceptItem(source, item);
         }
-
 
         @Override
         public boolean shouldConsume() {

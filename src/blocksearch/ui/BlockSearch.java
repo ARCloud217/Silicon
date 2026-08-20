@@ -53,6 +53,7 @@ public class BlockSearch{
     private static Table lastToggler;
 
     private static Table searchRow, historyList;
+    private static Element historyButton;
     private static TextField field;
     private static boolean searching;
     private static final Seq<Block> results = new Seq<>();
@@ -122,6 +123,12 @@ public class BlockSearch{
             return;
         }
 
+        //hot-apply the "show search history" setting: show/hide the history button right away
+        if(historyButton != null && historyButton.visible != showHistoryEnabled()){
+            historyButton.visible = showHistoryEnabled();
+            if(!showHistoryEnabled()) closeHistory();
+        }
+
         //a blank search box drops any stale result grid; the history list may still be
         //opened explicitly via the history button, so it is not force-closed here
         if(field != null && field.getText().trim().isEmpty()){
@@ -154,27 +161,26 @@ public class BlockSearch{
 
         //search row: magnifier + text field + clear button + history button,
         //and a collapsible history list below (empty = blank, no layout gap);
-        //hovering the history button shows its tooltip; clicking toggles the list
-        searchRow = new Table();
+        //hovering the history button shows its tooltip; clicking toggles the list.
+        //the panel background (Tex.pane2) and margin match the vanilla block grid so the
+        //search bar blends into the original item bar
+        searchRow = new Table(Tex.pane2);
         searchRow.name = searchRowName;
-        searchRow.top().left().margin(6f, 6f, 2f, 6f);
+        searchRow.top().left().margin(4f);
         searchRow.image(Icon.zoom).padRight(8f);
         field = searchRow.field("", BlockSearch::onChanged).growX().height(38f)
             .name("silicon-search-field").maxTextLength(64).get();
         field.setMessageText(Core.bundle.get("blocksearch.hint"));
         searchRow.button(Icon.cancel, Styles.clearNoneTogglei, BlockSearch::clearSearch).size(38f).padLeft(6f).name("silicon-search-clear");
-        if(showHistoryEnabled()){
-            searchRow.button(Icon.downOpen, Styles.clearNonei, BlockSearch::toggleHistory).size(38f).padLeft(4f)
-                .name("silicon-search-history").tooltip(Core.bundle.get("blocksearch.history"));
-        }
+        historyButton = searchRow.button(Icon.downOpen, Styles.clearNonei, BlockSearch::toggleHistory).size(38f).padLeft(4f)
+            .name("silicon-search-history").tooltip(Core.bundle.get("blocksearch.history")).get();
+        historyButton.visible = showHistoryEnabled(); //hot-applied every frame in update()
         searchRow.row();
 
-        if(showHistoryEnabled()){
-            historyList = new Table(Tex.pane2);
-            historyList.name = "silicon-search-history-list";
-            historyList.top().left();
-            searchRow.add(historyList).colspan(4).growX().padTop(2f);
-        }
+        historyList = new Table(Tex.pane2);
+        historyList.name = "silicon-search-history-list";
+        historyList.top().left();
+        searchRow.add(historyList).colspan(4).growX().padTop(2f);
 
         //re-parent the vanilla tables so the search bar sits on top of the block grid
         Table blocksSelect = (Table)blockCatTable.getChildren().get(0);

@@ -74,15 +74,29 @@ tasks.register('jarAndroid') {
         if (!platformRoot) throw new GradleException("No android.jar found. Ensure that you have an Android platform installed.")
 
         //collect dependencies needed for desugaring
-        def classpathDeps = (configurations.compileClasspath.asList() + configurations.runtimeClasspath.asList()).collect { "--classpath $it.path" }.join(" ")
-        def androidLib = "--lib ${new File(platformRoot, "android.jar").path}"
+        // Use ProcessBuilder with an argument list instead of string concatenation so that
+        // paths containing spaces (e.g. ANDROID_HOME with "Program Files" on Windows) are
+        // not split into multiple arguments.
+        def classpathDeps = configurations.compileClasspath.asList() + configurations.runtimeClasspath.asList()
 
+        // NOTE: build-tools 34.0.0 d8 (R8 8.2.2-dev) requires JDK 17; it crashes with a
+        // NullPointerException on classes compiled by JDK 21. Build with JDK 17 (as CI does).
         def d8File = new File("$sdkRoot/build-tools/34.0.0/${isWindows ? 'd8.bat' : 'd8'}")
         if (!d8File.exists()) throw new GradleException("d8 not found at ${d8File.path}. Ensure build-tools 34.0.0 is installed.")
         def d8 = d8File.path
 
-        def process =         "$d8 $classpathDeps $androidLib --min-api 21 --output ${projectName}Android.jar ${projectName}Desktop.jar"
-                .execute(null, new File("build/libs"))
+        def cmd = new ArrayList<String>()
+        cmd.add(d8)
+        classpathDeps.each { dep -> cmd.add("--classpath"); cmd.add(dep.path) }
+        cmd.add("--lib"); cmd.add(new File(platformRoot, "android.jar").path)
+        cmd.add("--min-api"); cmd.add("21")
+        cmd.add("--output"); cmd.add(projectName + "Android.jar")
+        cmd.add(projectName + "Desktop.jar")
+
+        def process = new ProcessBuilder(cmd)
+                .directory(new File("build/libs"))
+                .redirectErrorStream(true)
+                .start()
         process.consumeProcessOutput(System.out, System.err)
         process.waitFor()
         if (process.exitValue() != 0) {

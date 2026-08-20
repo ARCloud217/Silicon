@@ -1,4 +1,4 @@
-package silicon.ui;
+package blocksearch.ui;
 
 import arc.Core;
 import arc.Events;
@@ -122,8 +122,15 @@ public class BlockSearch{
             return;
         }
 
+        //when the search box is blank nothing must be shown: never leave a stale history list open
+        if(field != null && field.getText().trim().isEmpty()){
+            closeHistory();
+            if(searching) restore(); //drop any stale result grid as well
+            return;
+        }
+
         //if the vanilla grid clobbered our result grid while searching (e.g. hotkeys used after losing focus), re-apply
-        if(searching && field != null && !field.getText().trim().isEmpty()){
+        if(searching && field != null){
             Table blockTable = getField(blockTableF, frag);
             if(blockTable != null && blockTable.find(resultName) == null){
                 applyFilter(field.getText());
@@ -154,10 +161,10 @@ public class BlockSearch{
         searchRow.image(Icon.zoom).padRight(8f);
         field = searchRow.field("", BlockSearch::onChanged).growX().height(38f)
             .name("silicon-search-field").maxTextLength(64).get();
-        field.setMessageText(Core.bundle.get("silicon.blocksearch.hint"));
+        field.setMessageText(Core.bundle.get("blocksearch.hint"));
         searchRow.button(Icon.cancel, Styles.clearNoneTogglei, BlockSearch::clearSearch).size(38f).padLeft(6f).name("silicon-search-clear");
         searchRow.button(Icon.downOpen, Styles.clearNonei, BlockSearch::toggleHistory).size(38f).padLeft(4f)
-            .name("silicon-search-history").tooltip(Core.bundle.get("silicon.blocksearch.history"));
+            .name("silicon-search-history").tooltip(Core.bundle.get("blocksearch.history"));
         searchRow.row();
 
         historyList = new Table(Tex.pane2);
@@ -199,6 +206,7 @@ public class BlockSearch{
     static void onChanged(String text){
         if(text == null || text.trim().isEmpty()){
             restore();
+            closeHistory(); //blank search box must not show the history list
         }else{
             closeHistory(); //typing hides the history list
             applyFilter(text);
@@ -238,7 +246,7 @@ public class BlockSearch{
         blockTable.top().margin(5);
 
         if(results.isEmpty()){
-            blockTable.add(Core.bundle.get("silicon.blocksearch.noresults")).color(Color.lightGray).pad(10f).left();
+            blockTable.add(Core.bundle.get("blocksearch.noresults")).color(Color.lightGray).pad(10f).left();
             blockTable.act(0f);
             return;
         }
@@ -372,6 +380,7 @@ public class BlockSearch{
 
     static void clearSearch(){
         if(field != null) field.setText("");
+        closeHistory();
         if(Core.scene != null) Core.scene.setKeyboardFocus(null);
         restore();
     }
@@ -383,7 +392,9 @@ public class BlockSearch{
         PlacementFragment frag = fragment();
         if(frag == null) return;
         Core.app.post(() -> {
-            if(ui != null && ui.hudfrag != null && ui.hudfrag.blockfrag != null){
+            //if a new search was applied while the rebuild was pending (e.g. a history chip
+            //was clicked right away), don't wipe the fresh results
+            if(!searching && ui != null && ui.hudfrag != null && ui.hudfrag.blockfrag != null){
                 ui.hudfrag.blockfrag.rebuild();
             }
         });
@@ -395,7 +406,7 @@ public class BlockSearch{
         if(!historyLoaded){
             historyLoaded = true;
             try{
-                history = Core.settings.getJson("silicon-blocksearch-history", Seq.class, String.class, Seq::new);
+                history = Core.settings.getJson("blocksearch-history", Seq.class, String.class, Seq::new);
             }catch(Exception e){
                 history = new Seq<>();
             }
@@ -411,7 +422,7 @@ public class BlockSearch{
         h.insert(0, q);
         while(h.size > 4) h.pop();
         try{
-            Core.settings.putJson("silicon-blocksearch-history", String.class, h);
+            Core.settings.putJson("blocksearch-history", String.class, h);
         }catch(Exception ignored){
         }
         //refresh the list if it is currently open
@@ -444,14 +455,18 @@ public class BlockSearch{
 
         Seq<String> h = history();
         if(h.isEmpty()){
-            historyList.add(Core.bundle.get("silicon.blocksearch.nohistory")).color(Color.lightGray).pad(6f);
+            historyList.add(Core.bundle.get("blocksearch.nohistory")).color(Color.lightGray).pad(6f);
             return;
         }
 
         for(String q : h){
             String fq = q;
             historyList.button(q, Styles.flatBordert, () -> {
-                if(field != null) field.setText(fq);
+                if(field != null){
+                    field.setText(fq);
+                    //keep the keyboard on the field so typing can continue right away
+                    if(Core.scene != null) Core.scene.setKeyboardFocus(field);
+                }
                 applyFilter(fq); //apply directly — TextField.setText does not fire the change listener
                 closeHistory();
             }).growX().pad(3f);

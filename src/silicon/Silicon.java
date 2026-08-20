@@ -18,9 +18,9 @@ import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
-import silicon.ui.BlockSearch;
 import silicon.util.SiliconLog;
 import silicon.world.blocks.production.MineConverter;
+import blocksearch.ui.BlockSearch;
 
 import static mindustry.Vars.*;
 

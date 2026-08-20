@@ -128,6 +128,7 @@ public class MineConverter extends FrameBlock {
     /** Called when a new world loads; discards everything derived from the previous map. */
     void onWorldLoad() {
         if (netServer != null) registerServerHandler(); // dedicated servers may not have netServer at mod init
+        if (netClient != null) registerClientHandler(); // clients may not have netClient at mod init
         lastConfig = null; // forget the previous map's selected item
         clearCosts();
         costsSynced = false;

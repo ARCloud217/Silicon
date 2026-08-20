@@ -180,6 +180,7 @@ public class BlockSearch{
         historyList = new Table(Tex.pane2);
         historyList.name = "silicon-search-history-list";
         historyList.top().left();
+        historyList.visible = false; //hidden until the history dropdown is opened
         searchRow.add(historyList).colspan(4).growX().padTop(2f);
 
         //re-parent the vanilla tables so the search bar sits on top of the block grid
@@ -468,13 +469,17 @@ public class BlockSearch{
     }
 
     static void closeHistory(){
-        if(historyList != null) historyList.clearChildren();
+        if(historyList != null){
+            historyList.clearChildren();
+            historyList.visible = false; //no black panel strip between the search bar and the block grid
+        }
     }
 
     /** Rebuilds the recent-search dropdown (empty list = empty table = no layout gap). */
     static void rebuildHistoryList(){
         if(historyList == null) return;
         historyList.clearChildren();
+        historyList.visible = true; //the dropdown is open now
         historyList.top().left().margin(4f);
 
         Seq<String> h = history();

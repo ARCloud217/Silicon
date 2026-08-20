@@ -50,7 +50,6 @@ public class Silicon extends Mod {
         Events.on(EventType.ClientLoadEvent.class, e -> {
             ui.settings.addCategory("@settings.silicon.meta.category.name",
                     new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
-                st.checkPref("pauseRequest", true);
                 st.checkPref("blocksearch.showHistory", true);
                 st.checkPref("blocksearch.clearOnSelect", true);
                 st.sliderPref("pauseMode", 0, 0, 2, 1,
@@ -59,6 +58,7 @@ public class Silicon extends Mod {
                             Vars.pauseMode = i;
                             if (net.client()) Call.serverPacketReliable("pause-setmode", String.valueOf(i));
                         });
+                st.checkPref("pauseRequest", true);
                 st.row();
                 st.button(Core.bundle.get("setting.pauseWhitelist.name"), Styles.flatBordert, Silicon::showWhitelistDialog).width(200f).padTop(6f);
 

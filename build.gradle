@@ -114,6 +114,7 @@ jar{
 
     from(projectDir){
         include "mod.hjson"
+        include "pinyin.txt"
     }
 
     from("assets/"){

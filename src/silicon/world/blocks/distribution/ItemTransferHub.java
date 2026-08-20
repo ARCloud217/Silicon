@@ -44,7 +44,7 @@ public class ItemTransferHub extends Block {
         consumesPower = true;
         outputsPower = false;
         conductivePower = true;
-        consumePower(5f);
+        consumePowerDynamic(entity -> ((ItemTransferHubBuild) entity).powerConsumed);
         consumePowerBuffered(50f);
         solid = true;
         update = true;
@@ -313,6 +313,7 @@ public class ItemTransferHub extends Block {
             Seq<ItemTransferHubBuild> queue = new Seq<>();
             IntSeq dists = new IntSeq();
             Seq<ItemTransferHubBuild> visited = new Seq<>();
+            visited.add(this);
 
             for (ItemTransferHubBuild hub : data.hubs) {
                 if (!visited.contains(hub)) {
@@ -355,6 +356,7 @@ public class ItemTransferHub extends Block {
             Seq<ItemTransferHubBuild> queue = new Seq<>();
             IntSeq dists = new IntSeq();
             Seq<ItemTransferHubBuild> visited = new Seq<>();
+            visited.add(this);
 
             for (ItemTransferHubBuild hub : data.hubs) {
                 if (!visited.contains(hub)) {

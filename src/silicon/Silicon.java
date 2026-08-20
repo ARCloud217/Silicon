@@ -2,10 +2,8 @@ package silicon;
 
 import arc.Core;
 import arc.Events;
-import arc.graphics.Texture;
 import arc.graphics.Color;
 import arc.graphics.g2d.TextureRegion;
-import arc.scene.style.Drawable;
 import arc.scene.style.TextureRegionDrawable;
 import arc.scene.ui.TextField;
 import arc.util.Time;
@@ -50,13 +48,7 @@ public class Silicon extends Mod {
         MineConverter.initNetworking();
 
         Events.on(EventType.ClientLoadEvent.class, e -> {
-            Texture iconTexture = MOD != null ? MOD.iconTexture : null;
-            Drawable iconDrawable = iconTexture != null ? new TextureRegionDrawable(new TextureRegion(iconTexture)) : Styles.black6;
             ui.settings.addCategory("@settings.silicon.meta.category.name",
-                    iconDrawable, st -> {
-                st.checkPref("pause", false);
-                        SiliconLog.info("Loading settings.");
-                    });
                     new TextureRegionDrawable(new TextureRegion(Silicon.MOD.iconTexture)), st -> {
                 st.checkPref("pauseRequest", true);
                 st.sliderPref("pauseMode", 0, 0, 2, 1,

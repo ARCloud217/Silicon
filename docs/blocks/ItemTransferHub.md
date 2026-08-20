@@ -140,10 +140,11 @@ supplier.items.remove(item, 1);       // 扣除
 - **silicon-hub-power**: 电力状态（缓冲区电量 / 缓冲区容量）
 - **silicon-hub-power-cost**: 每秒电力消耗（显示实际数值，如 `Power Cost: 10.0/s`）
 - **silicon-hub-connections**: 连接数（当前连接数 / 最大连接数）
+- **silicon-hub-transfer-rate**: 传输速率（每秒传输物品数 / 50）
 
 ## 序列化
 
-保存字段: network.id, network.version, links
+保存字段: network.id, links
 
 ## 暂停白名单 UI
 
@@ -169,3 +170,5 @@ supplier.items.remove(item, 1);       // 扣除
 | a0.8.5.0 | 添加 MineConverter 到连接白名单、linkValid 添加 ClassCastException 保护、代码健壮性全面改进 |
 | a0.8.5.1 | 修复 timers 数组大小不足导致的崩溃 |
 | a0.8.5.2 | 完全模仿电力节点链接行为：hub-to-hub 手动链接、移除自动发现扫描、放置时自动连接、配置模式点击无效目标退出、修复白色连线（Draw.reset 问题）、添加连接数限制显示、添加电力缓冲（50f） |
+| a0.8.6.0 | 合并 PR #1 MineConverter 多人同步修复 |
+| a0.8.6.1 | 性能优化：BFS 队列/visited 池化为实例字段 + IntSet 替代 Seq，移除 HubData 死代码，修复 rebuildData 双向重建，添加传输速率状态栏 |

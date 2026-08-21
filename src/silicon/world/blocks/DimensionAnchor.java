@@ -258,8 +258,6 @@ public class DimensionAnchor extends Block{
 
         @Override
         public void buildConfiguration(Table table){
-            // refresh the signal registry from the world before showing the list
-            SignalSource.rebuildUsedSignals();
             rebuild(table);
         }
 

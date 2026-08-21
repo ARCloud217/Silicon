@@ -6,7 +6,9 @@ import arc.struct.ObjectSet;
 import arc.util.Nullable;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+import mindustry.Vars;
 import mindustry.gen.Building;
+import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.gen.Unit;
 import mindustry.graphics.Pal;
@@ -108,6 +110,19 @@ public class SignalSource extends Block{
         @Override
         public Object config(){
             return signal;
+        }
+
+        /**
+         * Re-syncs the signal to clients when this block enters the world (e.g. after loading a save).
+         * Custom fields like {@link #signal} are not synced by the entity system, so clients would
+         * otherwise never see it after a load and could not list the signal.
+         */
+        @Override
+        public void onProximityAdded(){
+            super.onProximityAdded();
+            if(signal != null && Vars.net.server()){
+                Call.tileConfig(null, this, signal);
+            }
         }
 
         /** Releases the signal when this block is removed, so it can be reused later. */

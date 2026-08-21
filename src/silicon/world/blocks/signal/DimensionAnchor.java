@@ -117,11 +117,12 @@ public class DimensionAnchor extends Block{
         }
 
         /**
-         * @return whether this anchor is enabled and its power grid satisfies its full power demand
+         * @return whether this anchor's power grid satisfies its full power demand
          * (power.status is the fraction of the requested power that can be supplied).
+         * Does NOT check {@link #enabled} - callers decide whether being enabled matters.
          */
         boolean powered(){
-            return enabled && power != null && power.status >= 0.999f;
+            return power != null && power.status >= 0.999f;
         }
 
         String encode(){
@@ -160,7 +161,8 @@ public class DimensionAnchor extends Block{
          */
         @Override
         public boolean acceptItem(Building source, Item item){
-            return items != null && items.total() < block.itemCapacity;
+            // only accept from same-team sources (defensive, like vanilla storage blocks)
+            return source.team == team && items != null && items.total() < block.itemCapacity;
         }
 
         @Override
@@ -204,9 +206,10 @@ public class DimensionAnchor extends Block{
             if(items == null || items.total() <= 0) return false;
 
             // the bound signal must be active: a powered signal source with this signal must exist.
-            // if it can no longer be found, clear the config so a new signal can be picked.
             if(findSignalSource(signal) == null){
-                if(signal != null){
+                // clear the config only when the signal source itself is gone (e.g. removed from the map),
+                // not when it merely has no power or some other reason caused this failure.
+                if(signal != null && Signals.source(signal, team) == null){
                     signal = null;
                     configure(encode());
                 }
@@ -225,8 +228,8 @@ public class DimensionAnchor extends Block{
             // must be exactly one receiving anchor
             if(receivers != 1 || target == null) return false;
 
-            // receiving anchor must have enough power to receive
-            if(!target.powered()) return false;
+            // receiving anchor must be enabled and have enough power to receive
+            if(!target.enabled || !target.powered()) return false;
 
             // receiving anchor cannot fit the whole inventory
             if(target.items == null || target.block.itemCapacity - target.items.total() < items.total()) return false;

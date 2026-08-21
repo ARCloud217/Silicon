@@ -5,6 +5,7 @@ import arc.util.Nullable;
 import mindustry.game.Team;
 import mindustry.gen.Building;
 import mindustry.gen.Groups;
+import silicon.world.blocks.signal.SignalSource;
 
 /**
  * Central, team-aware helpers for the signal system.

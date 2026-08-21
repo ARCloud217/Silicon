@@ -19,6 +19,8 @@ import mindustry.ui.Bar;
 import mindustry.world.Block;
 import mindustry.world.Tile;
 import mindustry.world.meta.StatUnit;
+import silicon.util.Signals;
+import silicon.util.SignalUser;
 import silicon.world.meta.Stat;
 
 /**

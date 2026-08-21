@@ -5,6 +5,7 @@ import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
 import arc.math.Mathf;
+import arc.scene.style.TextureRegionDrawable;
 import arc.scene.ui.ScrollPane;
 import arc.scene.ui.layout.Table;
 import arc.struct.Seq;
@@ -62,7 +63,8 @@ public class DimensionAnchor extends Block{
         hasPower = true;
         // sending anchors draw lots of power to package+send (1200/s), receiving anchors draw a little (160/s).
         // the first argument makes the info page actually show the power consumption.
-        consumePowerDynamic(sendPower, (Building entity) -> entity instanceof DimensionAnchorBuild b ? (b.sendMode ? sendPower : receivePower) : 0f);
+        // send mode with a signal draws 1200/s; otherwise (receive mode or no signal configured) draws 160/s.
+        consumePowerDynamic(sendPower, (Building entity) -> entity instanceof DimensionAnchorBuild b ? (b.sendMode && b.signal != null ? sendPower : receivePower) : 0f);
         configurable = true;
         config(String.class, (building, value) -> {
             if(building instanceof DimensionAnchorBuild b){
@@ -201,8 +203,15 @@ public class DimensionAnchor extends Block{
         boolean trySend(){
             if(items == null || items.total() <= 0) return false;
 
-            // the bound signal must be active: a powered signal source with this signal must exist
-            if(findSignalSource(signal) == null) return false;
+            // the bound signal must be active: a powered signal source with this signal must exist.
+            // if it can no longer be found, clear the config so a new signal can be picked.
+            if(findSignalSource(signal) == null){
+                if(signal != null){
+                    signal = null;
+                    configure(encode());
+                }
+                return false;
+            }
 
             DimensionAnchorBuild target = null;
             int receivers = 0;
@@ -302,6 +311,8 @@ public class DimensionAnchor extends Block{
         void rebuild(Table table){
             table.clearChildren();
             table.top();
+            // semi-transparent black background (25% opacity) behind the whole config UI
+            table.setBackground(new TextureRegionDrawable(Core.atlas.white()).tint(new Color(0f, 0f, 0f, 0.25f)));
 
             // mode buttons: send / receive
             table.table(mt -> {
@@ -346,7 +357,11 @@ public class DimensionAnchor extends Block{
                     list.top().left();
                     for(String s : signals){
                         list.button(b -> b.label(() -> s).left(), Styles.flatTogglet, () -> {
-                            if(!sendMode && hasOtherReceiver(s)){
+                            if(s.equals(signal)){
+                                // clicking the already-selected signal clears the config
+                                signal = null;
+                                configure(encode());
+                            }else if(!sendMode && hasOtherReceiver(s)){
                                 Vars.ui.showInfoToast(Core.bundle.get("block.silicon-dimension-anchor.hasreceiver"), 3f);
                             }else{
                                 signal = s;

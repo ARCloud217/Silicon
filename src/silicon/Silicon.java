@@ -19,6 +19,7 @@ import mindustry.ui.dialogs.BaseDialog;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
 import silicon.util.SiliconLog;
+import silicon.world.blocks.SignalSource;
 import silicon.world.blocks.production.MineConverter;
 import blocksearch.ui.BlockSearch;
 
@@ -44,6 +45,9 @@ public class Silicon extends Mod {
 
     @Override
     public void init() {
+        // Reset the signal registry on world load; saved signals are re-registered when buildings are read.
+        Events.on(EventType.WorldLoadEvent.class, e -> SignalSource.usedSignals.clear());
+
         BlockSearch.init();
         MineConverter.initNetworking();
 

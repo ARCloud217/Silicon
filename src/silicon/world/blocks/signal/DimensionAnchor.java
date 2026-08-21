@@ -89,7 +89,7 @@ public class DimensionAnchor extends Block{
         stats.add(Stat.sendInterval, sendInterval / 60f, StatUnit.seconds);
     }
 
-    public class DimensionAnchorBuild extends Building{
+    public class DimensionAnchorBuild extends Building implements SignalUser{
         /** true = send mode, false = receive mode. */
         public boolean sendMode = true;
         /** The linked signal, or null if not configured. */
@@ -103,6 +103,12 @@ public class DimensionAnchor extends Block{
         @Override
         public Object config(){
             return encode();
+        }
+
+        /** Implements {@link SignalUser} so this block is found and counted by {@link Signals}. */
+        @Override
+        public String signal(){
+            return signal;
         }
 
         String encode(){
@@ -124,10 +130,10 @@ public class DimensionAnchor extends Block{
             signal = s;
         }
 
-        /** @return whether another receiving anchor already uses this signal. */
+        /** @return whether another receiving anchor (same team) already uses this signal. */
         boolean hasOtherReceiver(String sig){
             for(Building b : Groups.build){
-                if(b instanceof DimensionAnchorBuild other && other != this && !other.sendMode && sig.equals(other.signal)){
+                if(b instanceof DimensionAnchorBuild other && other != this && !other.sendMode && other.team == team && sig.equals(other.signal)){
                     return true;
                 }
             }
@@ -191,7 +197,7 @@ public class DimensionAnchor extends Block{
             int receivers = 0;
             for(Building b : Groups.build){
                 if(b instanceof DimensionAnchorBuild other && other != this && !other.sendMode
-                    && other.signal != null && other.signal.equals(signal)){
+                    && other.team == team && other.signal != null && other.signal.equals(signal)){
                     receivers++;
                     target = other;
                 }
@@ -215,22 +221,16 @@ public class DimensionAnchor extends Block{
             return true;
         }
 
-        /** @return the powered signal source that currently owns this signal, or null if none. */
+        /** @return the powered signal source (same team) that currently owns this signal, or null if none. */
         SignalSource.SignalSourceBuild findSignalSource(String sig){
-            if(sig == null) return null;
-            for(Building b : Groups.build){
-                if(b instanceof SignalSource.SignalSourceBuild sb && sb.isActive() && sig.equals(sb.signal)){
-                    return sb;
-                }
-            }
-            return null;
+            return Signals.activeSource(sig, team);
         }
 
-        /** @return the receiving anchor linked to this signal, or null. */
+        /** @return the receiving anchor (same team) linked to this signal, or null. */
         DimensionAnchorBuild findReceiver(){
             if(signal == null) return null;
             for(Building b : Groups.build){
-                if(b instanceof DimensionAnchorBuild other && other != this && !other.sendMode && signal.equals(other.signal)){
+                if(b instanceof DimensionAnchorBuild other && other != this && !other.sendMode && other.team == team && signal.equals(other.signal)){
                     return other;
                 }
             }
@@ -256,7 +256,7 @@ public class DimensionAnchor extends Block{
             }else{
                 // receiving anchor: link from each sending anchor (sender -> receiver)
                 for(Building b : Groups.build){
-                    if(b instanceof DimensionAnchorBuild other && other != this && other.sendMode && signal.equals(other.signal)){
+                    if(b instanceof DimensionAnchorBuild other && other != this && other.sendMode && other.team == team && signal.equals(other.signal)){
                         drawLink(other, this);
                     }
                 }
@@ -314,14 +314,10 @@ public class DimensionAnchor extends Block{
             }).left();
             table.row();
 
-            // signal list, always shown; shows any signal that has a signal source (no power check)
+            // signal list, always shown; shows any signal that has a signal source on the
+            // same team as this anchor (no power check), so other teams' signals are hidden
             {
-                Seq<String> signals = new Seq<>();
-                for(Building b : Groups.build){
-                    if(b instanceof SignalSource.SignalSourceBuild sb && sb.signal != null && !signals.contains(sb.signal)){
-                        signals.add(sb.signal);
-                    }
-                }
+                Seq<String> signals = Signals.signalsFor(team);
 
                 if(signals.isEmpty()){
                     table.label(() -> Core.bundle.get("block.silicon-dimension-anchor.nosignals"))

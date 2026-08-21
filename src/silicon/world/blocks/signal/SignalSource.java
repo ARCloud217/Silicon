@@ -138,16 +138,9 @@ public class SignalSource extends Block{
             return signal != null && power != null && power.status >= 0.999f;
         }
 
-        /** @return how many machines in the world currently use this signal. */
+        /** @return how many machines on this team currently use this signal. */
         int countUsers(){
-            if(signal == null) return 0;
-            int count = 0;
-            for(Building b : Groups.build){
-                if(b instanceof DimensionAnchor.DimensionAnchorBuild db && signal.equals(db.signal)){
-                    count++;
-                }
-            }
-            return count;
+            return Signals.countUsers(signal, team);
         }
 
         /**
@@ -181,9 +174,9 @@ public class SignalSource extends Block{
         public void drawConfigure(){
             super.drawConfigure();
             if(signal == null) return;
-            for(Building b : Groups.build){
-                if(b instanceof DimensionAnchor.DimensionAnchorBuild db && signal.equals(db.signal)){
-                    Drawf.dashLine(linkColor, x, y, db.x, db.y);
+            for(SignalUser user : Signals.users(signal, team)){
+                if(user instanceof Building b){
+                    Drawf.dashLine(linkColor, x, y, b.x, b.y);
                 }
             }
         }

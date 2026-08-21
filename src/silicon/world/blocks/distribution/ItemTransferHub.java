@@ -7,6 +7,7 @@ import arc.graphics.g2d.Lines;
 import arc.math.Angles;
 import arc.math.Mathf;
 import arc.struct.IntSeq;
+import arc.struct.IntSet;
 import arc.struct.Seq;
 import arc.util.Strings;
 import arc.util.Time;
@@ -61,6 +62,7 @@ public class ItemTransferHub extends Block {
                 entity.links.removeValue(pos);
                 if (other instanceof ItemTransferHubBuild otherHub) {
                     otherHub.links.removeValue(entity.pos());
+                    rebuildData(otherHub);
                 }
                 rebuildData(entity);
             } else {
@@ -71,13 +73,13 @@ public class ItemTransferHub extends Block {
                     if (!otherHub.links.contains(entity.pos()) && otherHub.links.size < maxConnections) {
                         otherHub.links.addUnique(entity.pos());
                     }
+                    rebuildData(otherHub);
                 }
                 rebuildData(entity);
             }
         });
     }
 
-    /** Only connect to buildings that consume items or store items as primary function. */
     private static boolean shouldConnect(Building other) {
         if (other == null) return false;
         Block b = other.block;
@@ -103,7 +105,6 @@ public class ItemTransferHub extends Block {
 
     private static void rebuildData(ItemTransferHubBuild hub) {
         hub.data.clear();
-
         hub.links.each(pos -> {
             Building b = world.build(pos);
             if (b == null || !b.isValid() || b == hub) return;
@@ -113,9 +114,6 @@ public class ItemTransferHub extends Block {
                 if (!hub.data.buildings.contains(b)) hub.data.add(b);
             }
         });
-
-        hub.data.buildings.removeAll(b -> !b.isValid());
-        hub.data.hubs.removeAll(h -> !h.isValid());
     }
 
     @Override
@@ -139,6 +137,11 @@ public class ItemTransferHub extends Block {
                 () -> Core.bundle.format("bar.silicon-hub-connections", b.links.size, maxConnections),
                 () -> Pal.items,
                 () -> (float) b.links.size / maxConnections
+        ));
+        addBar("silicon-hub-transfer-rate", (ItemTransferHubBuild b) -> new Bar(
+                () -> Core.bundle.format("bar.silicon-hub-transfer-rate", b.transferCountPerSecond),
+                () -> Pal.accent,
+                () -> Math.min(b.transferCountPerSecond / 50f, 1f)
         ));
     }
 
@@ -176,15 +179,16 @@ public class ItemTransferHub extends Block {
         public float powerConsumed = 0f;
         public float powerPerSecond = 0f;
         private float powerAccumulator = 0f;
+        private int transferCount = 0;
+        private int transferCountPerSecond = 0;
+
+        private final Seq<ItemTransferHubBuild> bfsQueue = new Seq<>();
+        private final IntSeq bfsDists = new IntSeq();
+        private final IntSet bfsVisited = new IntSet();
 
         public ItemTransferHubBuild() {
             super();
             data = new ItemTransferHubNetwork.HubData(new Seq<>());
-        }
-
-        public void merge(ItemTransferHubBuild other) {
-            network = network.merge(other.network);
-            other.network = network;
         }
 
         @Override
@@ -223,24 +227,15 @@ public class ItemTransferHub extends Block {
 
         private void updateTopology() {
             data.clear();
-
             links.each(pos -> {
                 Building b = world.build(pos);
                 if (b == null || !b.isValid() || b == this) return;
-
                 if (b instanceof ItemTransferHubBuild hub) {
-                    if (!data.hubs.contains(hub)) {
-                        data.add(hub);
-                    }
+                    if (!data.hubs.contains(hub)) data.add(hub);
                 } else if (shouldConnect(b)) {
-                    if (!data.buildings.contains(b)) {
-                        data.add(b);
-                    }
+                    if (!data.buildings.contains(b)) data.add(b);
                 }
             });
-
-            data.buildings.removeAll(b -> !b.isValid());
-            data.hubs.removeAll(h -> !h.isValid());
         }
 
         @Override
@@ -250,21 +245,18 @@ public class ItemTransferHub extends Block {
             if (!enabled) return;
 
             powerConsumed = 0f;
-
-            if (timer(2, 60)) {
-                data.updateBefore();
-                data.update();
-            }
-
-            if (timer(3, 60)) {
-                powerPerSecond = powerAccumulator;
-                powerAccumulator = 0f;
-            }
+            transferCount = 0;
 
             if (network.enableDemandPull) pullOnDemand();
             if (network.enableSurplusPush) pushSurplusToCore();
 
             powerAccumulator += powerConsumed;
+
+            if (timer(3, 60)) {
+                powerPerSecond = powerAccumulator;
+                powerAccumulator = 0f;
+                transferCountPerSecond = transferCount;
+            }
         }
 
         private void pullOnDemand() {
@@ -302,6 +294,13 @@ public class ItemTransferHub extends Block {
             }
         }
 
+        private void bfsInit() {
+            bfsQueue.clear();
+            bfsDists.clear();
+            bfsVisited.clear();
+            bfsVisited.add(id);
+        }
+
         private Building findNearestSupplier(Building consumer, Item item) {
             for (Building b : data.buildings) {
                 if (b == consumer || !b.isValid()) continue;
@@ -310,22 +309,16 @@ public class ItemTransferHub extends Block {
                 }
             }
 
-            Seq<ItemTransferHubBuild> queue = new Seq<>();
-            IntSeq dists = new IntSeq();
-            Seq<ItemTransferHubBuild> visited = new Seq<>();
-            visited.add(this);
-
+            bfsInit();
             for (ItemTransferHubBuild hub : data.hubs) {
-                if (!visited.contains(hub)) {
-                    visited.add(hub);
-                    queue.add(hub);
-                    dists.add(1);
+                if (bfsVisited.add(hub.id)) {
+                    bfsQueue.add(hub);
+                    bfsDists.add(1);
                 }
             }
 
-            for (int idx = 0; idx < queue.size; idx++) {
-                ItemTransferHubBuild hub = queue.get(idx);
-                int dist = dists.get(idx);
+            for (int idx = 0; idx < bfsQueue.size; idx++) {
+                ItemTransferHubBuild hub = bfsQueue.get(idx);
 
                 for (Building b : hub.data.buildings) {
                     if (b == consumer || !b.isValid()) continue;
@@ -335,10 +328,9 @@ public class ItemTransferHub extends Block {
                 }
 
                 for (ItemTransferHubBuild neighbor : hub.data.hubs) {
-                    if (!visited.contains(neighbor)) {
-                        visited.add(neighbor);
-                        queue.add(neighbor);
-                        dists.add(dist + 1);
+                    if (bfsVisited.add(neighbor.id)) {
+                        bfsQueue.add(neighbor);
+                        bfsDists.add(bfsDists.get(idx) + 1);
                     }
                 }
             }
@@ -353,22 +345,16 @@ public class ItemTransferHub extends Block {
                 }
             }
 
-            Seq<ItemTransferHubBuild> queue = new Seq<>();
-            IntSeq dists = new IntSeq();
-            Seq<ItemTransferHubBuild> visited = new Seq<>();
-            visited.add(this);
-
+            bfsInit();
             for (ItemTransferHubBuild hub : data.hubs) {
-                if (!visited.contains(hub)) {
-                    visited.add(hub);
-                    queue.add(hub);
-                    dists.add(1);
+                if (bfsVisited.add(hub.id)) {
+                    bfsQueue.add(hub);
+                    bfsDists.add(1);
                 }
             }
 
-            for (int idx = 0; idx < queue.size; idx++) {
-                ItemTransferHubBuild hub = queue.get(idx);
-                int dist = dists.get(idx);
+            for (int idx = 0; idx < bfsQueue.size; idx++) {
+                ItemTransferHubBuild hub = bfsQueue.get(idx);
 
                 for (Building b : hub.data.buildings) {
                     if (b instanceof CoreBlock.CoreBuild core && b.isValid()) {
@@ -377,10 +363,9 @@ public class ItemTransferHub extends Block {
                 }
 
                 for (ItemTransferHubBuild neighbor : hub.data.hubs) {
-                    if (!visited.contains(neighbor)) {
-                        visited.add(neighbor);
-                        queue.add(neighbor);
-                        dists.add(dist + 1);
+                    if (bfsVisited.add(neighbor.id)) {
+                        bfsQueue.add(neighbor);
+                        bfsDists.add(bfsDists.get(idx) + 1);
                     }
                 }
             }
@@ -395,6 +380,7 @@ public class ItemTransferHub extends Block {
             consumer.handleItem(supplier, item);
             supplier.items.remove(item, 1);
             powerConsumed += 10f;
+            transferCount++;
             return true;
         }
 
@@ -402,7 +388,7 @@ public class ItemTransferHub extends Block {
         public void draw() {
             super.draw();
 
-            if(Mathf.zero(Renderer.laserOpacity) || isPayload() || team == Team.derelict) return;
+            if (Mathf.zero(Renderer.laserOpacity) || isPayload() || team == Team.derelict) return;
 
             Draw.z(Layer.power);
 
@@ -484,6 +470,7 @@ public class ItemTransferHub extends Block {
                         Building b = world.build(pos);
                         if (b instanceof ItemTransferHubBuild hub) {
                             hub.links.removeValue(this.pos());
+                            rebuildData(hub);
                         }
                     });
                     links.clear();
@@ -511,7 +498,6 @@ public class ItemTransferHub extends Block {
         public void write(Writes write) {
             super.write(write);
             write.i(network.id);
-            write.i(network.version);
             write.s(links.size);
             for (int i = 0; i < links.size; i++) {
                 write.i(links.get(i));
@@ -521,8 +507,12 @@ public class ItemTransferHub extends Block {
         @Override
         public void read(Reads read, byte revision) {
             super.read(read, revision);
-            int netId = read.i();
-            int ver = read.i();
+            network.id = read.i();
+            // 兼容旧存档（<v1）：旧格式在 id 之后还有一个 network.version 字段，需跳过，
+            // 否则后续 linkCount 会错位读到 version 值，导致链接数据损坏
+            if (revision < 1) {
+                read.i();
+            }
             short linkCount = read.s();
             links.clear();
             for (int i = 0; i < linkCount; i++) {
@@ -530,6 +520,11 @@ public class ItemTransferHub extends Block {
                 links.add(pos);
             }
             rebuildData(this);
+        }
+
+        @Override
+        public byte version() {
+            return 1;
         }
     }
 }

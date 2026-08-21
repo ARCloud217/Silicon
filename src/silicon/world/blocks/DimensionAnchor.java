@@ -175,6 +175,9 @@ public class DimensionAnchor extends Block{
         boolean trySend(){
             if(items == null || items.total() <= 0) return false;
 
+            // the bound signal must be active: a powered signal source with this signal must exist
+            if(findSignalSource(signal) == null) return false;
+
             DimensionAnchorBuild target = null;
             int receivers = 0;
             for(Building b : Groups.build){
@@ -203,6 +206,17 @@ public class DimensionAnchor extends Block{
             return true;
         }
 
+        /** @return the powered signal source that currently owns this signal, or null if none. */
+        SignalSource.SignalSourceBuild findSignalSource(String sig){
+            if(sig == null) return null;
+            for(Building b : Groups.build){
+                if(b instanceof SignalSource.SignalSourceBuild sb && sb.isActive() && sig.equals(sb.signal)){
+                    return sb;
+                }
+            }
+            return null;
+        }
+
         /** @return the receiving anchor linked to this signal, or null. */
         DimensionAnchorBuild findReceiver(){
             if(signal == null) return null;
@@ -225,33 +239,37 @@ public class DimensionAnchor extends Block{
             if(signal == null) return;
 
             if(sendMode){
+                // sending anchor: link to its receiver, dot travels sender -> receiver
                 DimensionAnchorBuild target = findReceiver();
                 if(target != null){
-                    drawLink(target);
+                    drawLink(this, target);
                 }
             }else{
+                // receiving anchor: link from each sending anchor (sender -> receiver)
                 for(Building b : Groups.build){
                     if(b instanceof DimensionAnchorBuild other && other != this && other.sendMode && signal.equals(other.signal)){
-                        drawLink(other);
+                        drawLink(other, this);
                     }
                 }
             }
         }
 
-        /** Draws one logistics link between this anchor and the given anchor. */
-        void drawLink(DimensionAnchorBuild target){
-            Drawf.line(Pal.accent, x, y, target.x, target.y);
+        /** Draws a logistics link from the sending anchor to the receiving anchor. */
+        void drawLink(DimensionAnchorBuild sender, DimensionAnchorBuild receiver){
+            Drawf.line(Pal.accent, sender.x, sender.y, receiver.x, receiver.y);
 
-            Draw.color(Pal.accent);
-            // larger endpoint circles
-            Fill.circle(x, y, 6f);
-            Fill.circle(target.x, target.y, 6f);
+            // endpoint circles, same size as the travelling dot: sender blue, receiver red
+            Draw.color(Color.sky);
+            Fill.circle(sender.x, sender.y, 3f);
+            Draw.color(Color.scarlet);
+            Fill.circle(receiver.x, receiver.y, 3f);
 
-            // small circle travelling from this anchor to the target
+            // small dot travelling from the sender to the receiver
             float dur = 60f; // one full travel per second
             float t = Mathf.mod(Time.time, dur) / dur;
-            float cx = Mathf.lerp(x, target.x, t);
-            float cy = Mathf.lerp(y, target.y, t);
+            float cx = Mathf.lerp(sender.x, receiver.x, t);
+            float cy = Mathf.lerp(sender.y, receiver.y, t);
+            Draw.color(Color.sky);
             Fill.circle(cx, cy, 3f);
             Draw.reset();
         }
@@ -287,15 +305,11 @@ public class DimensionAnchor extends Block{
             }).left();
             table.row();
 
-            // signal list, always shown so saved/placed signals are visible (like the vanilla payload source UI)
+            // signal list, always shown; only lists currently-active signals (powered signal sources)
             {
-                // collect signals from the shared registry AND by scanning the world
                 Seq<String> signals = new Seq<>();
-                for(String s : SignalSource.usedSignals){
-                    if(!signals.contains(s)) signals.add(s);
-                }
                 for(Building b : Groups.build){
-                    if(b instanceof SignalSource.SignalSourceBuild sb && sb.signal != null && !signals.contains(sb.signal)){
+                    if(b instanceof SignalSource.SignalSourceBuild sb && sb.isActive() && !signals.contains(sb.signal)){
                         signals.add(sb.signal);
                     }
                 }

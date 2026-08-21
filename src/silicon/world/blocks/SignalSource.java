@@ -113,6 +113,14 @@ public class SignalSource extends Block{
         }
 
         /**
+         * @return whether the signal is currently active: a signal is set AND the source has power.
+         * The signal is passive and only valid while the source is powered.
+         */
+        public boolean isActive(){
+            return signal != null && power != null && power.status >= 0.999f;
+        }
+
+        /**
          * Re-syncs the signal to clients when this block enters the world (e.g. after loading a save).
          * Custom fields like {@link #signal} are not synced by the entity system, so clients would
          * otherwise never see it after a load and could not list the signal.

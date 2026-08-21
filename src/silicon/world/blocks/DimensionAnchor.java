@@ -214,30 +214,52 @@ public class DimensionAnchor extends Block{
             return null;
         }
 
-        /** Draws the logistics link (line + travelling dot) to the linked receiving anchor. */
+        /**
+         * Draws the logistics link(s) for this anchor: end circles + line + travelling dot.
+         * Works both when selecting a sending anchor (links to its receiver) and a
+         * receiving anchor (links to all sending anchors using this signal).
+         */
         @Override
         public void drawSelect(){
             super.drawSelect();
-            if(sendMode && signal != null){
+            if(signal == null) return;
+
+            if(sendMode){
                 DimensionAnchorBuild target = findReceiver();
                 if(target != null){
-                    // connecting line
-                    Drawf.line(Pal.accent, x, y, target.x, target.y);
-
-                    // small circle travelling from this anchor to the receiver
-                    float dur = 60f; // one full travel per second
-                    float t = Mathf.mod(Time.time, dur) / dur;
-                    float cx = Mathf.lerp(x, target.x, t);
-                    float cy = Mathf.lerp(y, target.y, t);
-                    Draw.color(Pal.accent);
-                    Fill.circle(cx, cy, 3f);
-                    Draw.reset();
+                    drawLink(target);
+                }
+            }else{
+                for(Building b : Groups.build){
+                    if(b instanceof DimensionAnchorBuild other && other != this && other.sendMode && signal.equals(other.signal)){
+                        drawLink(other);
+                    }
                 }
             }
         }
 
+        /** Draws one logistics link between this anchor and the given anchor. */
+        void drawLink(DimensionAnchorBuild target){
+            Drawf.line(Pal.accent, x, y, target.x, target.y);
+
+            Draw.color(Pal.accent);
+            // larger endpoint circles
+            Fill.circle(x, y, 6f);
+            Fill.circle(target.x, target.y, 6f);
+
+            // small circle travelling from this anchor to the target
+            float dur = 60f; // one full travel per second
+            float t = Mathf.mod(Time.time, dur) / dur;
+            float cx = Mathf.lerp(x, target.x, t);
+            float cy = Mathf.lerp(y, target.y, t);
+            Fill.circle(cx, cy, 3f);
+            Draw.reset();
+        }
+
         @Override
         public void buildConfiguration(Table table){
+            // refresh the signal registry from the world before showing the list
+            SignalSource.rebuildUsedSignals();
             rebuild(table);
         }
 
@@ -267,10 +289,13 @@ public class DimensionAnchor extends Block{
             }).left();
             table.row();
 
-            // signal list, shown after picking a mode (or if a signal is already configured)
-            if(expanded || signal != null){
-                // collect signals directly from the world, so saved signals are always visible
+            // signal list, always shown so saved/placed signals are visible (like the vanilla payload source UI)
+            {
+                // collect signals from the shared registry AND by scanning the world
                 Seq<String> signals = new Seq<>();
+                for(String s : SignalSource.usedSignals){
+                    if(!signals.contains(s)) signals.add(s);
+                }
                 for(Building b : Groups.build){
                     if(b instanceof SignalSource.SignalSourceBuild sb && sb.signal != null && !signals.contains(sb.signal)){
                         signals.add(sb.signal);

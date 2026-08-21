@@ -1,7 +1,9 @@
 package silicon.world.blocks;
 
 import arc.Core;
+import arc.graphics.Color;
 import arc.math.Mathf;
+import arc.scene.ui.layout.Table;
 import arc.struct.ObjectSet;
 import arc.util.Nullable;
 import arc.util.io.Reads;
@@ -11,10 +13,13 @@ import mindustry.gen.Building;
 import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.gen.Unit;
+import mindustry.graphics.Drawf;
 import mindustry.graphics.Pal;
 import mindustry.ui.Bar;
 import mindustry.world.Block;
 import mindustry.world.Tile;
+import mindustry.world.meta.StatUnit;
+import silicon.world.meta.Stat;
 
 /**
  * SignalSource - 信号源
@@ -32,17 +37,23 @@ public class SignalSource extends Block{
     /** Max attempts before giving up on finding an unused signal. */
     private static final int MAX_ATTEMPTS = 1000;
 
+    /** Dark blue color used for the dashed logistics lines to all blocks using this signal. */
+    public static final Color linkColor = Color.valueOf("5a63d8");
+
     /** All signals currently in use, so every placed block gets a unique one. */
     public static final ObjectSet<String> usedSignals = new ObjectSet<>();
 
     public SignalSource(String name){
         super(name);
+        update = true; // needed so power consumption runs and the signal can actually be active
         solid = true;
         destructible = true;
         breakable = true;
         // A signal source needs power to emit its signal.
         hasPower = true;
         consumePower(60f / 60f);
+        // clicking the block opens a small info UI, like a vanilla bridge's configure dialog
+        configurable = true;
         config(String.class, (building, value) -> {
             if(building instanceof SignalSourceBuild b){
                 b.signal = value;
@@ -62,6 +73,13 @@ public class SignalSource extends Block{
             () -> Pal.accent,
             () -> b.signal == null ? 0f : 1f
         ));
+    }
+
+    /** Adds database/info page statistics. */
+    @Override
+    public void setStats(){
+        super.setStats();
+        stats.add(Stat.signalLength, String.valueOf(SIGNAL_LENGTH), StatUnit.none);
     }
 
     @Override
@@ -118,6 +136,56 @@ public class SignalSource extends Block{
          */
         public boolean isActive(){
             return signal != null && power != null && power.status >= 0.999f;
+        }
+
+        /** @return how many machines in the world currently use this signal. */
+        int countUsers(){
+            if(signal == null) return 0;
+            int count = 0;
+            for(Building b : Groups.build){
+                if(b instanceof DimensionAnchor.DimensionAnchorBuild db && signal.equals(db.signal)){
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        /**
+         * Small info dialog (like a vanilla bridge's configure dialog): shows the signal
+         * and how many machines currently use it. Both texts are computed once when the
+         * dialog opens, they do not refresh every frame.
+         */
+        @Override
+        public void buildConfiguration(Table table){
+            String signalText = signal == null
+                ? Core.bundle.get("block.silicon-signal-source.nosignal")
+                : Core.bundle.format("block.silicon-signal-source.signal", signal);
+            // the user count is read exactly once, when the dialog is opened
+            String countText = Core.bundle.format("block.silicon-signal-source.users", countUsers());
+
+            table.top();
+            table.table(main -> {
+                main.defaults().pad(4f);
+                main.label(() -> signalText).padTop(6f);
+                main.row();
+                main.label(() -> countText).color(Color.lightGray).padBottom(6f);
+            });
+        }
+
+        /**
+         * While the config dialog is open (i.e. only when clicked, never on hover), draws
+         * dark blue dashed lines (vanilla bridge style) from this source to every block
+         * that uses its signal.
+         */
+        @Override
+        public void drawConfigure(){
+            super.drawConfigure();
+            if(signal == null) return;
+            for(Building b : Groups.build){
+                if(b instanceof DimensionAnchor.DimensionAnchorBuild db && signal.equals(db.signal)){
+                    Drawf.dashLine(linkColor, x, y, db.x, db.y);
+                }
+            }
         }
 
         /**

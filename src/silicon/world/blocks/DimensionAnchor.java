@@ -21,6 +21,8 @@ import mindustry.ui.Bar;
 import mindustry.ui.Styles;
 import mindustry.world.Block;
 import mindustry.world.Tile;
+import mindustry.world.meta.StatUnit;
+import silicon.world.meta.Stat;
 
 import static mindustry.Vars.content;
 
@@ -78,6 +80,13 @@ public class DimensionAnchor extends Block{
                 () -> Mathf.clamp(b.sendTimer / sendInterval)
             );
         });
+    }
+
+    /** Adds database/info page statistics. */
+    @Override
+    public void setStats(){
+        super.setStats();
+        stats.add(Stat.sendInterval, sendInterval / 60f, StatUnit.seconds);
     }
 
     public class DimensionAnchorBuild extends Building{
@@ -305,11 +314,11 @@ public class DimensionAnchor extends Block{
             }).left();
             table.row();
 
-            // signal list, always shown; only lists currently-active signals (powered signal sources)
+            // signal list, always shown; shows any signal that has a signal source (no power check)
             {
                 Seq<String> signals = new Seq<>();
                 for(Building b : Groups.build){
-                    if(b instanceof SignalSource.SignalSourceBuild sb && sb.isActive() && !signals.contains(sb.signal)){
+                    if(b instanceof SignalSource.SignalSourceBuild sb && sb.signal != null && !signals.contains(sb.signal)){
                         signals.add(sb.signal);
                     }
                 }

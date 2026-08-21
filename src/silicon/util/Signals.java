@@ -1,4 +1,4 @@
-package silicon.world.blocks;
+package silicon.util;
 
 import arc.struct.Seq;
 import arc.util.Nullable;

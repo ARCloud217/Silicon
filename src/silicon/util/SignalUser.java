@@ -1,4 +1,4 @@
-package silicon.world.blocks;
+package silicon.util;
 
 /**
  * Implemented by any building that can be bound to a signal.

@@ -1,4 +1,4 @@
-package silicon.world.blocks;
+package silicon.world.blocks.signal;
 
 import arc.Core;
 import arc.graphics.Color;

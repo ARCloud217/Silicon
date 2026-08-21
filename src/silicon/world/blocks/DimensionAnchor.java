@@ -219,7 +219,7 @@ public class DimensionAnchor extends Block{
             // signal list, shown after picking a mode (or if a signal is already configured)
             if(expanded || signal != null){
                 if(SignalSource.usedSignals.isEmpty()){
-                    table.label(Core.bundle.get("block.silicon-dimension-anchor.nosignals"))
+                    table.label(() -> Core.bundle.get("block.silicon-dimension-anchor.nosignals"))
                         .color(Color.gray).padTop(10f);
                 }else{
                     Seq<String> signals = new Seq<>();
@@ -231,7 +231,7 @@ public class DimensionAnchor extends Block{
                     Table list = new Table();
                     list.top().left();
                     for(String s : signals){
-                        list.button(b -> b.label(s).left(), Styles.flatBordert, () -> {
+                        list.button(b -> b.label(() -> s).left(), Styles.flatBordert, () -> {
                             if(!sendMode && hasOtherReceiver(s)){
                                 Vars.ui.showInfoToast(Core.bundle.get("block.silicon-dimension-anchor.hasreceiver"), 3f);
                             }else{

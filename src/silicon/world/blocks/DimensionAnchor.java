@@ -2,19 +2,19 @@ package silicon.world.blocks;
 
 import arc.Core;
 import arc.graphics.Color;
+import arc.graphics.g2d.Fill;
 import arc.math.Mathf;
 import arc.scene.ui.ScrollPane;
 import arc.scene.ui.layout.Table;
 import arc.struct.Seq;
-import arc.util.Nullable;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
 import mindustry.gen.Building;
-import mindustry.gen.Call;
 import mindustry.gen.Groups;
-import mindustry.gen.Unit;
+import mindustry.graphics.Draw;
+import mindustry.graphics.Drawf;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
 import mindustry.ui.Bar;
@@ -203,6 +203,39 @@ public class DimensionAnchor extends Block{
             return true;
         }
 
+        /** @return the receiving anchor linked to this signal, or null. */
+        DimensionAnchorBuild findReceiver(){
+            if(signal == null) return null;
+            for(Building b : Groups.build){
+                if(b instanceof DimensionAnchorBuild other && other != this && !other.sendMode && signal.equals(other.signal)){
+                    return other;
+                }
+            }
+            return null;
+        }
+
+        /** Draws the logistics link (line + travelling dot) to the linked receiving anchor. */
+        @Override
+        public void drawSelect(){
+            super.drawSelect();
+            if(sendMode && signal != null){
+                DimensionAnchorBuild target = findReceiver();
+                if(target != null){
+                    // connecting line
+                    Drawf.line(Pal.accent, x, y, target.x, target.y);
+
+                    // small circle travelling from this anchor to the receiver
+                    float dur = 60f; // one full travel per second
+                    float t = Mathf.mod(Time.time, dur) / dur;
+                    float cx = Mathf.lerp(x, target.x, t);
+                    float cy = Mathf.lerp(y, target.y, t);
+                    Draw.color(Pal.accent);
+                    Fill.circle(cx, cy, 3f);
+                    Draw.color();
+                }
+            }
+        }
+
         @Override
         public void buildConfiguration(Table table){
             rebuild(table);
@@ -236,14 +269,18 @@ public class DimensionAnchor extends Block{
 
             // signal list, shown after picking a mode (or if a signal is already configured)
             if(expanded || signal != null){
-                if(SignalSource.usedSignals.isEmpty()){
+                // collect signals directly from the world, so saved signals are always visible
+                Seq<String> signals = new Seq<>();
+                for(Building b : Groups.build){
+                    if(b instanceof SignalSource.SignalSourceBuild sb && sb.signal != null && !signals.contains(sb.signal)){
+                        signals.add(sb.signal);
+                    }
+                }
+
+                if(signals.isEmpty()){
                     table.label(() -> Core.bundle.get("block.silicon-dimension-anchor.nosignals"))
                         .color(Color.gray).padTop(10f);
                 }else{
-                    Seq<String> signals = new Seq<>();
-                    for(String s : SignalSource.usedSignals){
-                        signals.add(s);
-                    }
                     // the currently selected signal is sorted to the top
                     signals.sort((a, b) -> {
                         boolean aSel = signal != null && signal.equals(a);
@@ -273,36 +310,6 @@ public class DimensionAnchor extends Block{
                     pane.setFadeScrollBars(false);
                     table.add(pane).height(180f).width(240f).padTop(6f);
                 }
-            }
-
-            // inventory display + deposit button, so items can be put into the anchor from the UI
-            table.table(it -> {
-                it.left();
-                it.label(() -> Core.bundle.get("block.silicon-dimension-anchor.inventory")).left().padRight(6f);
-                it.row();
-                boolean any = false;
-                for(Item item : content.items()){
-                    if(items != null && items.get(item) > 0){
-                        any = true;
-                        it.image(item.fullIcon).size(24f).pad(1f);
-                        it.label(() -> String.valueOf(items.get(item))).padRight(6f);
-                    }
-                }
-                if(!any){
-                    it.label(() -> "0").color(Color.gray).left();
-                }
-            }).left();
-            table.row();
-
-            if(items != null && Vars.player.unit() != null && Vars.player.unit().stack.amount > 0){
-                Unit unit = Vars.player.unit();
-                table.button(Core.bundle.format("block.silicon-dimension-anchor.deposit", unit.item().localizedName), Styles.flatBordert, () -> {
-                    if(unit.stack.amount > 0 && acceptStack(unit.item(), unit.stack.amount, unit) > 0){
-                        Call.transferInventory(Vars.player, this);
-                        rebuild(table);
-                    }
-                }).size(230f, 40f).padTop(6f);
-                table.row();
             }
         }
 

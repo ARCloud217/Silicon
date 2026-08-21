@@ -45,8 +45,8 @@ public class Silicon extends Mod {
 
     @Override
     public void init() {
-        // Reset the signal registry on world load; saved signals are re-registered when buildings are read.
-        Events.on(EventType.WorldLoadEvent.class, e -> SignalSource.usedSignals.clear());
+        // Rebuild the signal registry from the world after load (buildings are read by then).
+        Events.on(EventType.WorldLoadEvent.class, e -> SignalSource.rebuildUsedSignals());
 
         BlockSearch.init();
         MineConverter.initNetworking();

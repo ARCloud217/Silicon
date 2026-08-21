@@ -7,6 +7,7 @@ import arc.util.Nullable;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
+import mindustry.gen.Groups;
 import mindustry.gen.Unit;
 import mindustry.graphics.Pal;
 import mindustry.ui.Bar;
@@ -85,6 +86,20 @@ public class SignalSource extends Block{
 
         usedSignals.add(candidate);
         return candidate;
+    }
+
+    /**
+     * Rebuilds the in-use signal set from all signal sources currently in the world.
+     * Called on world load (after buildings have been read), because clearing it too early
+     * would wipe the signals restored from the save.
+     */
+    public static void rebuildUsedSignals(){
+        usedSignals.clear();
+        for(Building b : Groups.build){
+            if(b instanceof SignalSourceBuild sb && sb.signal != null){
+                usedSignals.add(sb.signal);
+            }
+        }
     }
 
     public class SignalSourceBuild extends Building{

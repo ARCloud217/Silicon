@@ -69,9 +69,9 @@ public class DimensionAnchor extends Block{
     @Override
     public void setBars(){
         super.setBars();
-        // send progress bar - shown only for send-mode anchors
+        // send progress bar - shown only for send-mode anchors with a chosen signal
         addBar("send", (DimensionAnchorBuild b) -> {
-            if(!b.sendMode) return null;
+            if(!b.sendMode || b.signal == null) return null;
             return new Bar(
                 b::sendStatusText,
                 () -> b.lastSendStatus == STATUS_FAILED ? Pal.remove : Pal.accent,
@@ -123,6 +123,23 @@ public class DimensionAnchor extends Block{
                 }
             }
             return false;
+        }
+
+        /**
+         * Accept items from conveyors/players as long as there is free space.
+         * This is required because the default acceptItem only returns true for blocks
+         * with an item consumer (consumeItem), which this block does not have.
+         */
+        @Override
+        public boolean acceptItem(Building source, Item item){
+            return items != null && items.total() < block.itemCapacity;
+        }
+
+        @Override
+        public void handleItem(Building source, Item item){
+            if(items != null && items.total() < block.itemCapacity){
+                items.add(item, 1);
+            }
         }
 
         String sendStatusText(){
@@ -227,12 +244,18 @@ public class DimensionAnchor extends Block{
                     for(String s : SignalSource.usedSignals){
                         signals.add(s);
                     }
-                    signals.sort();
+                    // the currently selected signal is sorted to the top
+                    signals.sort((a, b) -> {
+                        boolean aSel = signal != null && signal.equals(a);
+                        boolean bSel = signal != null && signal.equals(b);
+                        if(aSel != bSel) return aSel ? -1 : 1;
+                        return a.compareTo(b);
+                    });
 
                     Table list = new Table();
                     list.top().left();
                     for(String s : signals){
-                        list.button(b -> b.label(() -> s).left(), Styles.flatBordert, () -> {
+                        list.button(b -> b.label(() -> s).left(), Styles.flatTogglet, () -> {
                             if(!sendMode && hasOtherReceiver(s)){
                                 Vars.ui.showInfoToast(Core.bundle.get("block.silicon-dimension-anchor.hasreceiver"), 3f);
                             }else{
@@ -244,9 +267,11 @@ public class DimensionAnchor extends Block{
                         list.row();
                     }
 
+                    // limited height with a permanent scroll bar, like vanilla select lists
                     ScrollPane pane = new ScrollPane(list);
                     pane.setScrollingDisabled(true, false);
-                    table.add(pane).height(220f).width(240f).padTop(6f);
+                    pane.setFadeScrollBars(false);
+                    table.add(pane).height(180f).width(240f).padTop(6f);
                 }
             }
 

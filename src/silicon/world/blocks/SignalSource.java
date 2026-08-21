@@ -1,22 +1,17 @@
 package silicon.world.blocks;
 
 import arc.Core;
-import arc.graphics.Color;
 import arc.math.Mathf;
-import arc.scene.ui.layout.Table;
 import arc.struct.ObjectSet;
 import arc.util.Nullable;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
 import mindustry.gen.Unit;
-import mindustry.graphics.Drawf;
 import mindustry.graphics.Pal;
 import mindustry.ui.Bar;
 import mindustry.world.Block;
 import mindustry.world.Tile;
-
-import static mindustry.Vars.tilesize;
 
 /**
  * SignalSource - 信号源
@@ -24,6 +19,7 @@ import static mindustry.Vars.tilesize;
  * The signal is generated once on the server (placeEnded only runs on the server), synced to
  * all clients via the config mechanism, and persisted to saves.
  * The signal is removed again when the block is removed.
+ * The signal is shown inside the vanilla HUD bar (e.g. "信号：A1G4").
  */
 public class SignalSource extends Block{
     /** Allowed characters: uppercase letters and digits only, to avoid encoding issues. */
@@ -50,6 +46,19 @@ public class SignalSource extends Block{
                 if(value != null) usedSignals.add(value);
             }
         });
+    }
+
+    /** Adds the vanilla health/power bars plus a signal bar that shows "信号：A1G4". */
+    @Override
+    public void setBars(){
+        super.setBars();
+        addBar("signal", (SignalSourceBuild b) -> new Bar(
+            () -> b.signal == null
+                ? Core.bundle.get("block.silicon-signal-source.nosignal")
+                : Core.bundle.format("block.silicon-signal-source.signal", b.signal),
+            () -> Pal.accent,
+            () -> b.signal == null ? 0f : 1f
+        ));
     }
 
     @Override
@@ -84,48 +93,6 @@ public class SignalSource extends Block{
         @Override
         public Object config(){
             return signal;
-        }
-
-        /** Custom HUD: signal text on top, then only health, power and a white strength bar. */
-        @Override
-        public void display(Table table){
-            // signal text, above the bars: "信号：[字符串]"
-            table.table(t -> {
-                t.left();
-                t.label(() -> signal == null
-                    ? "[lightgray]" + Core.bundle.get("block.silicon-signal-source.nosignal")
-                    : "[accent]" + Core.bundle.format("block.silicon-signal-source.signal", signal)
-                ).left();
-            }).left();
-            table.row();
-
-            // health bar
-            table.table(t -> {
-                t.left();
-                t.add(new Bar("stat.health", Pal.health, this::healthf).blink(Color.white)).height(18f).width(220f);
-            }).left();
-            table.row();
-
-            // power bar
-            table.table(t -> {
-                t.left();
-                t.add(new Bar(() -> Core.bundle.get("bar.power"), () -> Pal.powerBar, () -> power == null ? 0f : power.status)).height(18f).width(220f);
-            }).left();
-            table.row();
-
-            // white signal strength bar
-            table.table(t -> {
-                t.left();
-                t.add(new Bar(() -> Core.bundle.get("block.silicon-signal-source.strength"), () -> Color.white, () -> signal == null ? 0f : 1f)).height(18f).width(220f);
-            }).left();
-        }
-
-        @Override
-        public void draw(){
-            super.draw();
-            if(signal != null){
-                Drawf.text(Core.bundle.format("block.silicon-signal-source.signal", signal), x, y + size * tilesize / 2f - 4f, Pal.accent, 1f);
-            }
         }
 
         /** Releases the signal when this block is removed, so it can be reused later. */

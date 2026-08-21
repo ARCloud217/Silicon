@@ -15,6 +15,7 @@ import mindustry.gen.Building;
 import mindustry.gen.Groups;
 import mindustry.gen.Unit;
 import mindustry.graphics.Pal;
+import mindustry.net.Call;
 import mindustry.type.Item;
 import mindustry.ui.Bar;
 import mindustry.ui.Styles;
@@ -247,6 +248,36 @@ public class DimensionAnchor extends Block{
                     pane.setScrollingDisabled(true, false);
                     table.add(pane).height(220f).width(240f).padTop(6f);
                 }
+            }
+
+            // inventory display + deposit button, so items can be put into the anchor from the UI
+            table.table(it -> {
+                it.left();
+                it.label(() -> Core.bundle.get("block.silicon-dimension-anchor.inventory")).left().padRight(6f);
+                it.row();
+                boolean any = false;
+                for(Item item : content.items()){
+                    if(items != null && items.get(item) > 0){
+                        any = true;
+                        it.image(item.fullIcon).size(24f).pad(1f);
+                        it.label(() -> String.valueOf(items.get(item))).padRight(6f);
+                    }
+                }
+                if(!any){
+                    it.label(() -> "0").color(Color.gray).left();
+                }
+            }).left();
+            table.row();
+
+            if(items != null && Vars.player.unit() != null && Vars.player.unit().stack.amount > 0){
+                Unit unit = Vars.player.unit();
+                table.button(Core.bundle.format("block.silicon-dimension-anchor.deposit", unit.item().localizedName), Styles.flatBordert, () -> {
+                    if(unit.stack.amount > 0 && acceptStack(unit.item(), unit.stack.amount, unit) > 0){
+                        Call.transferInventory(Vars.player, this);
+                        rebuild(table);
+                    }
+                }).size(230f, 40f).padTop(6f);
+                table.row();
             }
         }
 

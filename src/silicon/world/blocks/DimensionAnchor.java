@@ -2,6 +2,7 @@ package silicon.world.blocks;
 
 import arc.Core;
 import arc.graphics.Color;
+import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
 import arc.math.Mathf;
 import arc.scene.ui.ScrollPane;
@@ -13,7 +14,6 @@ import arc.util.io.Writes;
 import mindustry.Vars;
 import mindustry.gen.Building;
 import mindustry.gen.Groups;
-import mindustry.graphics.Draw;
 import mindustry.graphics.Drawf;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
@@ -231,7 +231,7 @@ public class DimensionAnchor extends Block{
                     float cy = Mathf.lerp(y, target.y, t);
                     Draw.color(Pal.accent);
                     Fill.circle(cx, cy, 3f);
-                    Draw.color();
+                    Draw.reset();
                 }
             }
         }

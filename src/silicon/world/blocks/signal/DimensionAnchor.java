@@ -60,8 +60,9 @@ public class DimensionAnchor extends Block{
         hasItems = true;
         itemCapacity = 100;
         hasPower = true;
-        // sending anchors draw lots of power to package+send, receiving anchors draw a little to receive
-        consumePowerDynamic((Building entity) -> entity instanceof DimensionAnchorBuild b ? (b.sendMode ? sendPower : receivePower) : 0f);
+        // sending anchors draw lots of power to package+send (1200/s), receiving anchors draw a little (160/s).
+        // the first argument makes the info page actually show the power consumption.
+        consumePowerDynamic(sendPower, (Building entity) -> entity instanceof DimensionAnchorBuild b ? (b.sendMode ? sendPower : receivePower) : 0f);
         configurable = true;
         config(String.class, (building, value) -> {
             if(building instanceof DimensionAnchorBuild b){
@@ -111,6 +112,14 @@ public class DimensionAnchor extends Block{
         @Override
         public String signal(){
             return signal;
+        }
+
+        /**
+         * @return whether this anchor is enabled and its power grid satisfies its full power demand
+         * (power.status is the fraction of the requested power that can be supplied).
+         */
+        boolean powered(){
+            return enabled && power != null && power.status >= 0.999f;
         }
 
         String encode(){
@@ -172,7 +181,7 @@ public class DimensionAnchor extends Block{
             // only charge (and eventually send) in send mode with a configured signal
             if(sendMode && signal != null && enabled){
                 // charging requires power - without it the anchor cannot charge
-                if(power == null || power.status < 0.999f) return;
+                if(!powered()) return;
 
                 sendTimer += Time.delta;
                 if(sendTimer >= sendInterval){
@@ -207,8 +216,8 @@ public class DimensionAnchor extends Block{
             // must be exactly one receiving anchor
             if(receivers != 1 || target == null) return false;
 
-            // receiving anchor has no power to receive
-            if(target.power == null || target.power.status < 0.999f) return false;
+            // receiving anchor must have enough power to receive
+            if(!target.powered()) return false;
 
             // receiving anchor cannot fit the whole inventory
             if(target.items == null || target.block.itemCapacity - target.items.total() < items.total()) return false;

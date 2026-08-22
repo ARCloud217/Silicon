@@ -21,7 +21,7 @@ import silicon.content.item.Items;
 import silicon.util.SiliconLog;
 import silicon.world.blocks.production.MineConverter;
 import silicon.world.blocks.signal.SignalSource;
-import blocksearch.ui.BlockSearch;
+import silicon.ui.BlockSearch;
 
 import static mindustry.Vars.*;
 

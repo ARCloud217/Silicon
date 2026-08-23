@@ -3,6 +3,7 @@ package silicon.world.blocks.container;
 import arc.Core;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.TextureRegion;
+import arc.util.Log;
 import mindustry.gen.Building;
 import mindustry.type.Liquid;
 import mindustry.world.blocks.liquid.LiquidBlock;
@@ -43,13 +44,22 @@ public class DualPurposeStorager extends StorageBlock {
     @Override
     public void load() {
         super.load();
-        // 按 mod 约定加载储罐三贴图；缺失时回退到主贴图，仍能显示流动+颜色
+        // 按 mod 约定加载储罐三贴图；缺失时回退到主贴图并打印警告
         this.bottomRegion = Core.atlas.find(name + "-bottom");
         this.liquidRegion = Core.atlas.find(name + "-liquid");
         this.topRegion = Core.atlas.find(name + "-top");
-        if (!bottomRegion.found()) bottomRegion = region;
-        if (!liquidRegion.found()) liquidRegion = region;
-        if (!topRegion.found()) topRegion = region;
+        if (!bottomRegion.found()) {
+            Log.warn("DualPurposeStorager '{}' missing -bottom texture, fallback to region", name);
+            bottomRegion = region;
+        }
+        if (!liquidRegion.found()) {
+            Log.warn("DualPurposeStorager '{}' missing -liquid texture, fallback to region", name);
+            liquidRegion = region;
+        }
+        if (!topRegion.found()) {
+            Log.warn("DualPurposeStorager '{}' missing -top texture, fallback to region", name);
+            topRegion = region;
+        }
     }
 
     @Override

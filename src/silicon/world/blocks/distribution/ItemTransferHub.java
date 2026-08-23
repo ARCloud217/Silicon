@@ -46,7 +46,6 @@ public class ItemTransferHub extends Block {
         outputsPower = false;
         conductivePower = true;
         consumePowerDynamic(entity -> ((ItemTransferHubBuild) entity).powerConsumed);
-        consumePowerBuffered(50f);
         solid = true;
         update = true;
         size = 3;
@@ -266,7 +265,7 @@ public class ItemTransferHub extends Block {
                 for (int i = 0; i < content.items().size; i++) {
                     Item item = content.item(i);
                     if (item == null) continue;
-                    if (consumer.items.get(item) >= consumer.block.itemCapacity) continue;
+                    if (consumer.items.get(item) >= consumer.getMaximumAccepted(item)) continue;
 
                     Building supplier = findNearestSupplier(consumer, item);
                     if (supplier != null) {

@@ -19,9 +19,10 @@ import mindustry.ui.dialogs.BaseDialog;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
 import silicon.util.SiliconLog;
+import silicon.world.blocks.distribution.ItemTransferHubNetwork;
 import silicon.world.blocks.production.MineConverter;
 import silicon.world.blocks.signal.SignalSource;
-import blocksearch.ui.BlockSearch;
+import silicon.ui.BlockSearch;
 
 import static mindustry.Vars.*;
 
@@ -48,6 +49,9 @@ public class Silicon extends Mod {
         // Rebuild the signal registry from the world after load (buildings are read by then).
         Events.on(EventType.WorldLoadEvent.class, e -> SignalSource.rebuildUsedSignals());
 
+        // Reset hub network ID counter on world load to avoid ID collisions with saved hubs.
+        Events.on(EventType.WorldLoadEvent.class, e -> ItemTransferHubNetwork.resetIdCounter());
+
         BlockSearch.init();
         MineConverter.initNetworking();
 
@@ -71,52 +75,54 @@ public class Silicon extends Mod {
         });
 
         Events.on(EventType.ClientLoadEvent.class, e -> {
-            netServer.addPacketHandler("pause", (p, time) -> {
-                if (p.admin || p.name.equals(state.map.author())) {
-                    state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
-                    Call.clientPacketReliable(p.con, "paused", time);
-                    SiliconLog.info(p.name + " pause");
-                    return;
-                }
+            if (netServer != null) {
+                netServer.addPacketHandler("pause", (p, time) -> {
+                    if (p.admin || p.name.equals(state.map.author())) {
+                        state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
+                        Call.clientPacketReliable(p.con, "paused", time);
+                        SiliconLog.info(p.name + " pause");
+                        return;
+                    }
 
-                if (Vars.pauseMode == 0) return;
+                    if (Vars.pauseMode == 0) return;
 
-                if (Vars.pauseMode == 1) {
-                    state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
-                    Call.clientPacketReliable(p.con, "paused", time);
-                    SiliconLog.info(p.name + " pause");
-                    return;
-                }
+                    if (Vars.pauseMode == 1) {
+                        state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
+                        Call.clientPacketReliable(p.con, "paused", time);
+                        SiliconLog.info(p.name + " pause");
+                        return;
+                    }
 
-                if (Vars.pauseMode == 2 && Vars.pauseWhitelist.contains(p.name)) {
-                    state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
-                    Call.clientPacketReliable(p.con, "paused", time);
-                    SiliconLog.info(p.name + " pause");
-                }
-            });
+                    if (Vars.pauseMode == 2 && Vars.pauseWhitelist.contains(p.name)) {
+                        state.set(state.isPaused() ? GameState.State.playing : GameState.State.paused);
+                        Call.clientPacketReliable(p.con, "paused", time);
+                        SiliconLog.info(p.name + " pause");
+                    }
+                });
 
-            netServer.addPacketHandler("pause-setmode", (p, data) -> {
-                if (!p.admin && !p.name.equals(state.map.author())) return;
-                try {
-                    Vars.pauseMode = Integer.parseInt(data.trim());
-                    if (Vars.pauseMode < 0 || Vars.pauseMode > 2) Vars.pauseMode = 0;
-                } catch (NumberFormatException ignored) {}
-            });
+                netServer.addPacketHandler("pause-setmode", (p, data) -> {
+                    if (!p.admin && !p.name.equals(state.map.author())) return;
+                    try {
+                        Vars.pauseMode = Integer.parseInt(data.trim());
+                        if (Vars.pauseMode < 0 || Vars.pauseMode > 2) Vars.pauseMode = 0;
+                    } catch (NumberFormatException ignored) {}
+                });
 
-            netServer.addPacketHandler("pause-grant", (p, data) -> {
-                if (!p.admin && !p.name.equals(state.map.author())) return;
-                String target = data.trim();
-                if (target.isEmpty()) return;
-                if (!Vars.pauseWhitelist.contains(target)) {
-                    Vars.pauseWhitelist.add(target);
-                }
-            });
+                netServer.addPacketHandler("pause-grant", (p, data) -> {
+                    if (!p.admin && !p.name.equals(state.map.author())) return;
+                    String target = data.trim();
+                    if (target.isEmpty()) return;
+                    if (!Vars.pauseWhitelist.contains(target)) {
+                        Vars.pauseWhitelist.add(target);
+                    }
+                });
 
-            netServer.addPacketHandler("pause-revoke", (p, data) -> {
-                if (!p.admin && !p.name.equals(state.map.author())) return;
-                String target = data.trim();
-                Vars.pauseWhitelist.remove(target);
-            });
+                netServer.addPacketHandler("pause-revoke", (p, data) -> {
+                    if (!p.admin && !p.name.equals(state.map.author())) return;
+                    String target = data.trim();
+                    Vars.pauseWhitelist.remove(target);
+                });
+            }
 
             netClient.addPacketHandler("paused", (s) -> {
                 Vars.pause.complete = true;

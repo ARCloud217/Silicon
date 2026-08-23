@@ -65,9 +65,6 @@ public class DualPurposeStorager extends StorageBlock {
 
         private static final float LIQUID_THRESHOLD = 0.001f;
 
-        // ========== 运行时状态 ==========
-        private Liquid storedLiquid = null;
-
         @Override
         public void created() {
             super.created();
@@ -93,40 +90,37 @@ public class DualPurposeStorager extends StorageBlock {
             Draw.rect(DualPurposeStorager.this.topRegion, x, y);
         }
 
-        // ========== 辅助方法 ==========
+        // ========== 辅助方法（全部基于 liquids 模块，自动序列化/同步） ==========
 
         public String getStoredLiquidName() {
-            return storedLiquid == null ? "无" : storedLiquid.localizedName;
+            return liquids.current() == null ? Core.bundle.get("bar.silicon.noliquid") : liquids.current().localizedName;
         }
 
         public float getTotalLiquidAmount() {
-            if (storedLiquid == null) return 0f;
-            return liquids.get(storedLiquid);
+            return liquids.currentAmount();
         }
 
         public boolean hasLiquid() {
-            return storedLiquid != null && liquids.get(storedLiquid) > LIQUID_THRESHOLD;
+            return liquids.current() != null && liquids.currentAmount() > LIQUID_THRESHOLD;
         }
 
         // ================================================================
-        // 液体输入（只接受一种液体）
+        // 液体输入（只接受一种液体，由 liquids 模块管理）
         // ================================================================
 
         @Override
         public boolean acceptLiquid(Building source, Liquid liquid) {
             if (source == this || liquid == null) return false;
-            if (storedLiquid == null) return true;
-            if (storedLiquid != liquid) return false;
-            return liquids.get(liquid) < liquidCapacity - LIQUID_THRESHOLD;
+            // 实际存量为空时接受任意液体；否则只接受与当前一致的液体类型
+            if (liquids.currentAmount() <= LIQUID_THRESHOLD) return true;
+            return liquids.current() == liquid && liquids.get(liquid) < liquidCapacity - LIQUID_THRESHOLD;
         }
 
         @Override
         public void handleLiquid(Building source, Liquid liquid, float amount) {
             if (liquid == null || amount <= 0) return;
-            if (storedLiquid == null) {
-                storedLiquid = liquid;
-            }
-            if (storedLiquid != liquid) return;
+            // 实际存量为空时接受任意液体；否则仅接受同类液体
+            if (liquids.currentAmount() > LIQUID_THRESHOLD && liquids.current() != liquid) return;
 
             float remaining = liquidCapacity - liquids.get(liquid);
             float actualAmount = Math.min(amount, remaining);
@@ -146,11 +140,6 @@ public class DualPurposeStorager extends StorageBlock {
             // 标准抽取接口：dumpLiquid 内部用 proximity 遍历真实相邻建筑，任意尺寸均可输出到导管
             if (hasLiquid()) {
                 dumpLiquid(liquids.current());
-            }
-
-            // 液体被排空后重置存储类型
-            if (storedLiquid != null && liquids.get(storedLiquid) <= LIQUID_THRESHOLD) {
-                storedLiquid = null;
             }
         }
 

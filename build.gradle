@@ -9,14 +9,7 @@ repositories {
     maven { setUrl("https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository") }
     mavenCentral()
 
-    //Downloads the dependencies JAR file from Mindustry releases; does not use any real repository. Surprisingly, this is the most reliable option.
-   ivy {
-       url = 'https://github.com/'
-       patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/dependencies.jar' }
-       metadataSources { artifact() }
-   }
-//
-//    //If the version is set to 'latest', downloads the latest Mindustry *release* as a dependency
+    // If the version is set to 'latest', downloads the latest Mindustry *release* as a dependency
 //    ivy {
 //        url = 'https://github.com/'
 //        patternLayout { artifact '/[organisation]/[module]/releases/[revision]/download/dependencies.jar' }

@@ -3,11 +3,11 @@ package silicon.world.blocks.container;
 import arc.Core;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.TextureRegion;
-import arc.util.Log;
 import mindustry.gen.Building;
 import mindustry.type.Liquid;
 import mindustry.world.blocks.liquid.LiquidBlock;
 import mindustry.world.blocks.storage.StorageBlock;
+import silicon.util.SiliconLog;
 
 /**
  * 两用存储方块：可存储物品与单种液体。
@@ -19,8 +19,6 @@ import mindustry.world.blocks.storage.StorageBlock;
 public class DualPurposeStorager extends StorageBlock {
 
     // ========== 配置参数 ==========
-    /** 液体总容量 */
-    public float maxLiquid = 900f;
     /** 液体边缘内缩间距（绘制流动液面时用，与原版 LiquidRouter 一致为 0） */
     public float liquidPadding = 0f;
     /** 储存罐底座贴图 */
@@ -34,7 +32,7 @@ public class DualPurposeStorager extends StorageBlock {
         super(name);
         this.coreMerge = true;
         this.itemCapacity = 500;
-        this.liquidCapacity = maxLiquid;
+        this.liquidCapacity = 900f;
         this.hasLiquids = true;
         this.outputsLiquid = true;
         this.update = true;
@@ -49,23 +47,17 @@ public class DualPurposeStorager extends StorageBlock {
         this.liquidRegion = Core.atlas.find(name + "-liquid");
         this.topRegion = Core.atlas.find(name + "-top");
         if (!bottomRegion.found()) {
-            Log.warn("DualPurposeStorager '{}' missing -bottom texture, fallback to region", name);
+            SiliconLog.warn("DualPurposeStorager '{}' missing -bottom texture, fallback to region", name);
             bottomRegion = region;
         }
         if (!liquidRegion.found()) {
-            Log.warn("DualPurposeStorager '{}' missing -liquid texture, fallback to region", name);
+            SiliconLog.warn("DualPurposeStorager '{}' missing -liquid texture, fallback to region", name);
             liquidRegion = region;
         }
         if (!topRegion.found()) {
-            Log.warn("DualPurposeStorager '{}' missing -top texture, fallback to region", name);
+            SiliconLog.warn("DualPurposeStorager '{}' missing -top texture, fallback to region", name);
             topRegion = region;
         }
-    }
-
-    @Override
-    public void setStats() {
-        super.setStats();
-        // 液体容量由 hasLiquids 的 super.setStats() 自动提供，此处不重复添加
     }
 
     // ============================================================
@@ -97,14 +89,6 @@ public class DualPurposeStorager extends StorageBlock {
 
         // ========== 辅助方法（全部基于 liquids 模块，自动序列化/同步） ==========
 
-        public String getStoredLiquidName() {
-            return liquids.current() == null ? Core.bundle.get("bar.silicon.noliquid") : liquids.current().localizedName;
-        }
-
-        public float getTotalLiquidAmount() {
-            return liquids.currentAmount();
-        }
-
         public boolean hasLiquid() {
             return liquids.current() != null && liquids.currentAmount() > LIQUID_THRESHOLD;
         }
@@ -116,16 +100,16 @@ public class DualPurposeStorager extends StorageBlock {
         @Override
         public boolean acceptLiquid(Building source, Liquid liquid) {
             if (source == this || liquid == null) return false;
-            // 实际存量为空时接受任意液体；否则只接受与当前一致的液体类型
-            if (liquids.currentAmount() <= LIQUID_THRESHOLD) return true;
+            // 严格单液体约束：仅当完全为空时才接受任意液体；有存量则必须类型一致
+            if (liquids.currentAmount() <= 0f) return true;
             return liquids.current() == liquid && liquids.get(liquid) < liquidCapacity - LIQUID_THRESHOLD;
         }
 
         @Override
         public void handleLiquid(Building source, Liquid liquid, float amount) {
             if (liquid == null || amount <= 0) return;
-            // 实际存量为空时接受任意液体；否则仅接受同类液体
-            if (liquids.currentAmount() > LIQUID_THRESHOLD && liquids.current() != liquid) return;
+            // 严格单液体约束：完全为空时接受任意液体；有存量则必须与当前类型一致，否则拒绝（防混液）
+            if (liquids.currentAmount() > 0f && liquids.current() != liquid) return;
 
             float remaining = liquidCapacity - liquids.get(liquid);
             float actualAmount = Math.min(amount, remaining);

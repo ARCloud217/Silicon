@@ -51,9 +51,10 @@ public class Blocks {
         }};
         dualPurposeStorager = new DualPurposeStorager("dual-purpose-storager") {{
             requirements(Category.effect, BuildVisibility.shown,
-                    ItemStack.with(Items.thorium, 100,Items.metaglass,30 ,Items.titanium, 45,Items.plastanium, 10 ));
+                    ItemStack.with(Items.thorium, 100, Items.metaglass, 30, Items.titanium, 45, Items.plastanium, 10));
             alwaysUnlocked = true;
-            size =3;
+            size = 3;
+            health = 600;
         }};
 
         // Compound interest generator - generates power based on 1% of existing stored power
@@ -105,6 +106,13 @@ public class Blocks {
             alwaysUnlocked = true;
             size = 3;
         }};
+        dimensionAnchor = new DimensionAnchor("dimension-anchor") {{
+            requirements(Category.effect, BuildVisibility.shown,
+                    ItemStack.with(Items.surgeAlloy, 500));
+            alwaysUnlocked = true;
+            size = 3;
+            health = 600;
+        }};
         signalSource = new SignalSource("signal-source") {{
             requirements(Category.effect, BuildVisibility.shown,
                     ItemStack.with(Items.surgeAlloy, 600));
@@ -117,13 +125,6 @@ public class Blocks {
                     ItemStack.with(Items.copper, 15, Items.lead, 10, Items.graphite, 8, Items.silicon, 5));
             alwaysUnlocked = true;
             size = 1;
-        }};
-        dimensionAnchor = new DimensionAnchor("dimension-anchor") {{
-            requirements(Category.effect, BuildVisibility.shown,
-                    ItemStack.with(Items.surgeAlloy, 500));
-            alwaysUnlocked = true;
-            size = 3;
-            health = 600;
         }};
     }
 }

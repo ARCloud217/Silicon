@@ -6,3 +6,6 @@ skip-paths:
   - "gradle/**"
   - ".gradle/**"
   - "build/**"
+  - "docs/**"
+  - "tests/**"
+  - "scripts/**"

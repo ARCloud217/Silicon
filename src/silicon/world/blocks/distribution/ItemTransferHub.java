@@ -378,7 +378,7 @@ public class ItemTransferHub extends Block {
             // 按帧累加后每秒取均作为 powerPerSecond 供 bar 显示。
             // 注意：chargePath 可能对远端 hub 的 powerConsumed 累加，需归入发起枢的 accumulator 统一口径
             // （发起枢的 powerConsumed 已含直连/路径首跳，远端 hub 的由其自身 updateTile 累加）
-            powerAccumulator += powerConsumed * Time.delta;
+            powerAccumulator += powerConsumed;
 
             if (timer(3, 60)) {
                 powerPerSecond = powerAccumulator;
@@ -538,11 +538,15 @@ public class ItemTransferHub extends Block {
                 if (consumer.items.get(item) >= consumer.getMaximumAccepted(item)) {
                     continue;
                 }
+                // 只拉该工厂真正接受的输入料（矿机空槽不算需求）
+                if (!consumer.acceptItem(this, item)) {
+                    continue;
+                }
             } else if (isStorageConsumer) {
                 if (consumer.items.get(item) >= consumer.block.itemCapacity * 0.9f) {
                     continue;
                 }
-                if (!consumer.acceptItem(null, item)) {
+                if (!consumer.acceptItem(this, item)) {
                     continue;
                 }
             }
@@ -557,7 +561,7 @@ public class ItemTransferHub extends Block {
                 return any;
             }
 
-            if (directTransfer(supplier, consumer, item)) {
+            if (directTransfer(supplier, consumer, item, 10)) {
                 any = true;
             }
             }
@@ -636,11 +640,17 @@ public class ItemTransferHub extends Block {
                         if (consumer.items.get(item) >= consumer.getMaximumAccepted(item)) {
                             continue;
                         }
+                        // 关键过滤：只统计真正接受的输入料。
+                        // 否则矿机/工厂的空槽位会被误判为需求，hasPendingDemand 恒真，
+                        // pushSurplusToCore 被永久门控——矿机满仓也不回仓库/核心。
+                        if (!consumer.acceptItem(this, item)) {
+                            continue;
+                        }
                     } else if (isStorageConsumer) {
                         if (consumer.items.get(item) >= consumer.block.itemCapacity * 0.9f) {
                             continue;
                         }
-                        if (!consumer.acceptItem(null, item)) {
+                        if (!consumer.acceptItem(this, item)) {
                             continue;
                         }
                     }
@@ -710,19 +720,21 @@ public class ItemTransferHub extends Block {
                     }
 
                     CoreBlock.CoreBuild core = findNearestCore(producer, item);
-                    if (core == null) {
-                        continue;
+
+                    // 核心满或不收 → 回退到最近仓库（非核心）
+                    Building target = core;
+                    if (core == null
+                        || (core.items != null && item.id < core.items.length()
+                            && core.items.get(item) >= core.block.itemCapacity)
+                        || !core.acceptItem(producer, item)) {
+                        target = findNearestStorage(producer, item);
                     }
-                    // 核心满时不推：按物判断已满则跳过
-                    if (core.items != null && item.id < core.items.length()
-                        && core.items.get(item) >= core.block.itemCapacity) {
-                        continue;
-                    }
-                    if (!core.acceptItem(producer, item)) {
+
+                    if (target == null) {
                         continue;
                     }
 
-                    directTransfer(producer, core, item);
+                    directTransfer(producer, target, item, 10);
                 }
             }
         }
@@ -735,53 +747,96 @@ public class ItemTransferHub extends Block {
             bfsVisited.add(id);
         }
 
+        /**
+         * 同类工厂互斥（精确版）：仅当该工厂【仍在接收】此物品（acceptItem 为真，
+         * 即其配方输入料）且未满时，才视为输入料库存而不作为供源——
+         * 避免同类工厂互相吸输入料形成乒乓。
+         *
+         * 工厂的【产出物】其 itemFilter 通常不含自身（acceptItem=false），
+         * 因此产出物即使未满仓也会被判定为可拉取——修复了中间链
+         * （A 厂产物喂 B 厂原料）中 A 被整体跳过的问题。
+         */
+        private boolean isInputStockOfFactory(Building supplier, Item item) {
+            return isFactory(supplier)
+                && supplier.acceptItem(supplier, item)
+                && supplier.items.get(item) < supplier.getMaximumAccepted(item);
+        }
+
         private Building findNearestSupplier(Building consumer, Item item) {
-            // Route-variable: dynamically evaluate distance each call; prefer local, then BFS nearest
-            Building best = null;
+            // Route-variable: dynamically evaluate distance each call; prefer local, then BFS nearest.
+            // Pass 1: 非工厂输入库存的供源（矿机产出/工厂成品/仓储/核心）。
+            // Pass 2: 兜底允许同类工厂输入库存（仅在无其它选择时，避免乒乓）。
+            for (int pass = 0; pass < 2; pass++) {
+
+                Building best = null;
+                int bestDist = Integer.MAX_VALUE;
+
+                for (Building b : data.buildings) {
+                    if (b == consumer || !b.isValid() || b.items == null || b.items.get(item) <= 0) continue;
+                    if (!consumer.acceptItem(b, item)) continue;
+                    if (pass == 0 && isInputStockOfFactory(b, item)) continue;
+                    if (bestDist > 1) {
+                        best = b;
+                        bestDist = 1;
+                    }
+                }
+                if (bestDist == 1) return best;
+
+                bfsInit();
+                for (ItemTransferHubBuild hub : data.hubs) {
+                    if (bfsVisited.add(hub.id)) {
+                        bfsQueue.add(hub);
+                        bfsDists.add(1);
+                    }
+                }
+
+                for (int idx = 0; idx < bfsQueue.size; idx++) {
+                    ItemTransferHubBuild hub = bfsQueue.get(idx);
+                    int d = bfsDists.get(idx) + 1;
+                    for (Building b : hub.data.buildings) {
+                        if (b == consumer || !b.isValid()) continue;
+                        if (b.items == null || b.items.get(item) <= 0) continue;
+                        if (!consumer.acceptItem(b, item)) continue;
+                        if (pass == 0 && isInputStockOfFactory(b, item)) continue;
+                        if (d < bestDist) {
+                            best = b;
+                            bestDist = d;
+                        }
+                    }
+                    for (ItemTransferHubBuild neighbor : hub.data.hubs) {
+                        if (bfsVisited.add(neighbor.id)) {
+                            bfsQueue.add(neighbor);
+                            bfsDists.add(bfsDists.get(idx) + 1);
+                        }
+                    }
+                }
+
+                if (best != null) {
+                    return best;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * 最近可收货仓储（非核心）。用于核心满或无核时的次级落点。
+         */
+        private StorageBlock.StorageBuild findNearestStorage(Building producer, Item item) {
+            StorageBlock.StorageBuild best = null;
             int bestDist = Integer.MAX_VALUE;
 
             for (Building b : data.buildings) {
-                if (b == consumer || !b.isValid() || b.items == null || b.items.get(item) <= 0) continue;
-                if (!consumer.acceptItem(b, item)) continue;
-                // local buildings are distance 1 (direct hub scope) — immediate candidate
-                if (bestDist > 1) {
-                    best = b;
-                    bestDist = 1;
+                if (!(b instanceof StorageBlock.StorageBuild st)) continue;
+                if (b instanceof CoreBlock.CoreBuild) continue;
+                if (!b.isValid() || b.items == null || item.id >= b.items.length()) continue;
+                if (b.items.get(item) >= b.block.itemCapacity) continue;
+                if (!b.acceptItem(producer, item)) continue;
+                int d = Math.abs(b.tile.x - producer.tile.x) + Math.abs(b.tile.y - producer.tile.y);
+                if (d < bestDist) {
+                    best = st;
+                    bestDist = d;
                 }
             }
-            if (bestDist == 1) return best;
-
-            bfsInit();
-            for (ItemTransferHubBuild hub : data.hubs) {
-                if (bfsVisited.add(hub.id)) {
-                    bfsQueue.add(hub);
-                    bfsDists.add(1);
-                }
-            }
-
-            for (int idx = 0; idx < bfsQueue.size; idx++) {
-                ItemTransferHubBuild hub = bfsQueue.get(idx);
-                int d = bfsDists.get(idx) + 1; // d = hub distance + 1 for its buildings
-                for (Building b : hub.data.buildings) {
-                    if (b == consumer || !b.isValid()) continue;
-                    if (b.items == null || b.items.get(item) <= 0) continue;
-                    if (!consumer.acceptItem(b, item)) continue;
-                    if (d < bestDist) {
-                        best = b;
-                        bestDist = d;
-                    }
-                }
-                if (best != null && bestDist <= d) {
-                    // already found nearer in this layer — still need to finish layer for tie-break, but early exit ok
-                }
-                for (ItemTransferHubBuild neighbor : hub.data.hubs) {
-                    if (bfsVisited.add(neighbor.id)) {
-                        bfsQueue.add(neighbor);
-                        bfsDists.add(bfsDists.get(idx) + 1);
-                    }
-                }
-            }
-            // variable route: if nearest supplier became invalid/empty during scan, caller will retry next tick
             return best;
         }
 
@@ -829,12 +884,24 @@ public class ItemTransferHub extends Block {
         }
 
         private boolean directTransfer(Building supplier, Building consumer, Item item) {
+            return directTransfer(supplier, consumer, item, 1);
+        }
+
+        /**
+         * 批量直转：单次最多搬 maxAmount 件（受供源存量 / 收方余位约束），
+         * 大幅提升矿机/工厂产物的吞吐速率。计费仍为每件经一枢 +10。
+         */
+        private boolean directTransfer(Building supplier, Building consumer, Item item, int maxAmount) {
+
+            if (maxAmount <= 1) {
+                return directTransfer(supplier, consumer, item);
+            }
 
             if (power == null || power.status <= 0) {
                 return false;
             }
 
-            if (supplier.items == null || supplier.items.get(item) <= 0) {
+            if (supplier.items == null || supplier.isValid() == false || supplier.items.get(item) <= 0) {
                 return false;
             }
 
@@ -842,21 +909,24 @@ public class ItemTransferHub extends Block {
                 return false;
             }
 
-            // 动态拓扑：中途供源可能已被拆除
-            if (!supplier.isValid()) {
+            int supplierStock = supplier.items.get(item);
+            int consumerSpace = consumer.getMaximumAccepted(item) - consumer.items.get(item);
+            int moved = Math.min(Math.min(maxAmount, supplierStock), Math.max(consumerSpace, 0));
+
+            if (moved <= 0) {
                 return false;
             }
 
-            consumer.handleItem(supplier, item);
+            // 零缓冲代理：直接操作双方库存（等价于 moved 次 handleItem）
+            consumer.items.add(item, moved);
+            supplier.items.remove(item, moved);
 
-            if (supplier.items != null) {
-                supplier.items.remove(item, 1);
+            // 经由计费：按 BFS 最短路上的每个中枢各收 10/件
+            for (int i = 0; i < moved; i++) {
+                chargePath(supplier, consumer);
             }
 
-            // 经由计费：按 BFS 最短路上的每个中枢各收 10
-            chargePath(supplier, consumer);
-
-            transferCount++;
+            transferCount += moved;
 
             return true;
         }

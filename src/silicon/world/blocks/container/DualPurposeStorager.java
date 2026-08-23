@@ -67,6 +67,30 @@ public class DualPurposeStorager extends StorageBlock {
 
         private static final float LIQUID_THRESHOLD = 0.001f;
 
+        /**
+         * 单液体类型接受规则（纯逻辑，可独立测试，不依赖 Mindustry 运行时）。
+         *
+         * @param currentAmount 当前存量
+         * @param currentType   当前液体类型标识（null 表示无液体）
+         * @param incomingType  待注入液体类型标识
+         * @param threshold     空判定阈值
+         * @return 是否接受该类型（类型层面）
+         */
+        static boolean canAcceptLiquidType(float currentAmount, Object currentType, Object incomingType, float threshold) {
+            if (incomingType == null) return false;
+            // 完全为空时接受任意液体
+            if (currentAmount <= threshold) return true;
+            // 有存量：必须类型一致
+            return currentType == incomingType;
+        }
+
+        /**
+         * 注入时防混液检查（纯逻辑）。有存量且类型不一致时拒绝。
+         */
+        static boolean shouldRejectLiquid(float currentAmount, Object currentType, Object incomingType, float threshold) {
+            return currentAmount > threshold && currentType != incomingType;
+        }
+
         // ================================================================
         // 绘制：复刻原版液体储罐的三层绘制，用 drawTiledFrames 生成流动条纹+颜色效果
         // ================================================================
@@ -100,16 +124,16 @@ public class DualPurposeStorager extends StorageBlock {
         @Override
         public boolean acceptLiquid(Building source, Liquid liquid) {
             if (source == this || liquid == null) return false;
-            // 严格单液体约束：仅当完全为空时才接受任意液体；有存量则必须类型一致
-            if (liquids.currentAmount() <= 0f) return true;
-            return liquids.current() == liquid && liquids.get(liquid) < liquidCapacity - LIQUID_THRESHOLD;
+            // 严格单液体约束（类型层面，复用纯逻辑规则）+ 容量检查
+            if (!canAcceptLiquidType(liquids.currentAmount(), liquids.current(), liquid, LIQUID_THRESHOLD)) return false;
+            return liquids.get(liquid) < liquidCapacity - LIQUID_THRESHOLD;
         }
 
         @Override
         public void handleLiquid(Building source, Liquid liquid, float amount) {
             if (liquid == null || amount <= 0) return;
-            // 严格单液体约束：完全为空时接受任意液体；有存量则必须与当前类型一致，否则拒绝（防混液）
-            if (liquids.currentAmount() > 0f && liquids.current() != liquid) return;
+            // 防混液：有存量且类型不一致则拒绝
+            if (shouldRejectLiquid(liquids.currentAmount(), liquids.current(), liquid, LIQUID_THRESHOLD)) return;
 
             float remaining = liquidCapacity - liquids.get(liquid);
             float actualAmount = Math.min(amount, remaining);

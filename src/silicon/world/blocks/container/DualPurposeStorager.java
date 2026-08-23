@@ -100,14 +100,16 @@ public class DualPurposeStorager extends StorageBlock {
             // 1. 底座贴图
             Draw.rect(DualPurposeStorager.this.bottomRegion, x, y);
             // 2. 有液体时绘制流动液面（白色条纹滚动 + 液体颜色）
-            if (liquids.currentAmount() > 0.001f) {
+            if (liquids.currentAmount() > LIQUID_THRESHOLD) {
                 Liquid liq = liquids.current();
                 if (liq != null) {
                     LiquidBlock.drawTiledFrames(size, x, y, DualPurposeStorager.this.liquidPadding, liq,
-                            liquids.currentAmount() / DualPurposeStorager.this.liquidCapacity);
+                            liquids.currentAmount() / liquidCapacity);
                 }
             }
             // 3. 顶盖贴图（中心挖空，液体透过中心显示）
+            //    注意：drawTiledFrames 会把 Draw.color 设为液体色，这里必须重置，否则顶盖会被染色
+            Draw.color();
             Draw.rect(DualPurposeStorager.this.topRegion, x, y);
         }
 

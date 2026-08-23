@@ -29,8 +29,7 @@
 - `consumesPower`: true
 - `outputsPower`: false
 - `conductivePower`: true
-- `consumePower`: 5f/s（空闲功耗）
-- `consumePowerBuffered`: 50f（电力缓冲容量）
+- `consumePower`: consumePowerDynamic（每次传输消耗10电力）
 - `update`: true
 - `solid`: true
 - `configurable`: true
@@ -172,3 +171,5 @@ supplier.items.remove(item, 1);       // 扣除
 | a0.8.5.2 | 完全模仿电力节点链接行为：hub-to-hub 手动链接、移除自动发现扫描、放置时自动连接、配置模式点击无效目标退出、修复白色连线（Draw.reset 问题）、添加连接数限制显示、添加电力缓冲（50f） |
 | a0.8.6.0 | 合并 PR #1 MineConverter 多人同步修复 |
 | a0.8.6.1 | 性能优化：BFS 队列/visited 池化为实例字段 + IntSet 替代 Seq，移除 HubData 死代码，修复 rebuildData 双向重建，添加传输速率状态栏 |
+| a0.8.7.0 | 同步上游方块搜索功能 |
+| a0.8.7.1 | 修复容器类拉取（getMaximumAccepted 替代 block.itemCapacity）、修复耗电不生效（移除被 Block.consume 吞掉的 consumePowerBuffered） |

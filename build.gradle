@@ -10,11 +10,11 @@ repositories {
     mavenCentral()
 
     //Downloads the dependencies JAR file from Mindustry releases; does not use any real repository. Surprisingly, this is the most reliable option.
-   ivy {
-       url = 'https://github.com/'
-       patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/dependencies.jar' }
-       metadataSources { artifact() }
-   }
+//    ivy {
+//        url = 'https://github.com/'
+//        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/dependencies.jar' }
+//        metadataSources { artifact() }
+//    }
 //
 //    //If the version is set to 'latest', downloads the latest Mindustry *release* as a dependency
 //    ivy {
@@ -41,6 +41,10 @@ java {
     sourceCompatibility = JavaVersion.VERSION_17
 }
 
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+}
+
 ext{
     // Mindustry version to depend on.
     // Valid values:
@@ -59,7 +63,18 @@ ext{
 }
 
 dependencies{
-    compileOnly mindustryVersion == "be" ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
+    def useLatest = false //set to "true" to always depend on the newest version of mindustry
+
+    //compileOnly useLatest ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
+
+    compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
+    compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
+//    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
+//    compileOnly "Anuken:Mindustry:$mindustryVersion"
+//    compileOnly "Anuken:Mindustry:$mindustryVersion:sources@zip"
+//    compileOnly "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
+    // 确保用于编译的注解处理器也被包含
+//    annotationProcessor "com.github.Anuken.Mindustry:annotations:$mindustryVersion"
 }
 
 tasks.register('jarAndroid') {

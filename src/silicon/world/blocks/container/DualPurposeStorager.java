@@ -15,7 +15,7 @@ import mindustry.world.blocks.storage.StorageBlock;
  * 同时通过 hasLiquids + dumpLiquid 提供液体存储与导管抽取能力。
  * 支持 bottomRegion/liquidRegion/topRegion 三层贴图，呈现与原版流体储罐一致的流动+颜色特效。
  */
-@SuppressWarnings({"SpellCheckingInspection", "unused"})
+@SuppressWarnings("SpellCheckingInspection")
 public class DualPurposeStorager extends StorageBlock {
 
     // ========== 配置参数 ==========
@@ -74,11 +74,6 @@ public class DualPurposeStorager extends StorageBlock {
     public class DualPurposeStoragerBuild extends StorageBuild {
 
         private static final float LIQUID_THRESHOLD = 0.001f;
-
-        @Override
-        public void created() {
-            super.created();
-        }
 
         // ================================================================
         // 绘制：复刻原版液体储罐的三层绘制，用 drawTiledFrames 生成流动条纹+颜色效果

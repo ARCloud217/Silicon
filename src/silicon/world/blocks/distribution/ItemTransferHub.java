@@ -441,11 +441,13 @@ public class ItemTransferHub extends Block {
                 updateTopology();
             }
 
-            // 先并入上一帧跨枢分摊的延迟计费/计数（chargeBatch 写入 *Next）。
-            // 无论启用与否都必须清空：禁用期间不清会导致无限累积、恢复时单帧尖峰。
-            powerConsumed += powerConsumedNext;
+            // 帧首以赋值语义并入跨枢延迟计费/计数（chargeBatch 写入 *Next）。
+            // 必须是【赋值】而非 += ：powerConsumed 在供电路径上无其它清零点，
+            // 若累加会随时间无限膨胀（电网请求虚增、耗电统计失真）；
+            // 赋值后本帧值 = 上帧全部延迟量，帧内调度再叠加自己的一跳。
+            powerConsumed = powerConsumedNext;
             powerConsumedNext = 0f;
-            transferCount += transferCountNext;
+            transferCount = transferCountNext;
             transferCountNext = 0;
 
             // 将上一帧转移数写入 10s 滑动窗口（每 tick 一个桶），随后本帧计数清零

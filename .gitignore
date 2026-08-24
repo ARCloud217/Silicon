@@ -166,3 +166,4 @@ javap4/
 .build_*.log
 .format.jar
 .build_*.log
+hotreload.log

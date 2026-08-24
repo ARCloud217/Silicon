@@ -1,0 +1,75 @@
+﻿
+> Task :compileJava FAILED
+gradlew.bat : D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:703: ����: �Ҳ�������
+At line:3 char:1
++ & .\gradlew.bat deploy --console=plain 2>&1 | Out-File -Encoding utf8 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\JavaProject\...����: �Ҳ�������:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+                        addFlow("��:" + consumer.block.name, moved);
+                                                            ^
+  ����:   ���� moved
+  λ��: �� ItemTransferHub.ItemTransferHubBuild
+D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:819: ����: �Ҳ�������
+                        addFlow("��:" + factoryTarget.block.name, moved);
+                                                                 ^
+  ����:   ���� moved
+  λ��: �� ItemTransferHub.ItemTransferHubBuild
+D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:842: ����: �Ҳ�������
+                        addFlow("��:����", moved);
+                                        ^
+  ����:   ���� moved
+  λ��: �� ItemTransferHub.ItemTransferHubBuild
+D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:1220: ����: �޷����� ObjectMap<K,V>�еķ
+��� mergeӦ�õ���������;
+            if (debugFlows) debugFlow.merge(tag, moved, Integer::sum);
+                                     ^
+  ��Ҫ: ObjectMap<? extends String,? extends Integer>
+  �ҵ�:    String,int,Integer::sum
+  ԭ��: ʵ�ʲ����б����ʽ�����б���Ȳ�ͬ
+  ����, K,V�����ͱ���:
+    K��չ������ ObjectMap��������Object
+    V��չ������ ObjectMap��������Object
+4 ������
+
+[Incubating] Problems report is available at: file:///D:/JavaProject/Silicon/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler output below.
+  D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:1220: ����: �޷����� ObjectMap<K,V>�
+еķ��� mergeӦ�õ���������;
+              if (debugFlows) debugFlow.merge(tag, moved, Integer::sum);
+                                       ^
+    ��Ҫ: ObjectMap<? extends String,? extends Integer>
+    �ҵ�:    String,int,Integer::sum
+    ԭ��: ʵ�ʲ����б����ʽ�����б���Ȳ�ͬ
+    ����, K,V�����ͱ���:
+      K��չ������ ObjectMap��������Object
+      V��չ������ ObjectMap��������Object
+  D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:703: ����: �Ҳ�������
+                          addFlow("��:" + consumer.block.name, moved);
+                                                              ^
+    ����:   ���� moved
+    λ��: �� ItemTransferHub.ItemTransferHubBuild
+  D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:819: ����: �Ҳ�������
+                          addFlow("��:" + factoryTarget.block.name, moved);
+                                                                   ^
+    ����:   ���� moved
+    λ��: �� ItemTransferHub.ItemTransferHubBuild
+  D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:842: ����: �Ҳ�������
+                          addFlow("��:����", moved);
+                                          ^
+    ����:   ���� moved
+    λ��: �� ItemTransferHub.ItemTransferHubBuild
+  4 ������
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 2s
+1 actionable task: 1 executed

@@ -305,9 +305,7 @@ public class ItemTransferHub extends Block {
             float y1 = cy + sa * len1;
             float x2 = other.x - ca * len2;
             float y2 = other.y - sa * len2;
-            float pulse = Mathf.absin(Time.time, 4f, 0.6f);
-            Tmp.c1.set(linkColor).lerp(Color.white, pulse);
-            Draw.color(Tmp.c1, linkOpacity());
+            Draw.color(linkColor, linkOpacity());
             Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
                 x1 + ca * 1.5f, y1 + sa * 1.5f,
                 x2 - ca * 1.5f, y2 - sa * 1.5f, 0.25f);
@@ -702,7 +700,7 @@ public class ItemTransferHub extends Block {
                     if (directTransfer(supplier, consumer, item, budget)) {
                         any = true;
                         fed = true;
-                        addFlow("拉:" + consumer.block.name, moved);
+                        addFlow("拉:" + consumer.block.name, budget);
                     }
                 }
                 // 刷新快照为当前存量（含本轮供料），供下轮计算真实消耗
@@ -818,7 +816,7 @@ public class ItemTransferHub extends Block {
                     Building factoryTarget = findNearestConsumer(producer, item);
                     if (factoryTarget != null) {
                         directTransfer(producer, factoryTarget, item, 10);
-                        addFlow("分:" + factoryTarget.block.name, moved);
+                        addFlow("分:" + factoryTarget.block.name, 10);
                         continue;
                     }
 
@@ -841,7 +839,7 @@ public class ItemTransferHub extends Block {
                     }
                     if (coreHasRoom && core != null) {
                         directTransfer(producer, core, item, 10);
-                        addFlow("推:核心", moved);
+                        addFlow("推:核心", 10);
                     }
                 }
             }
@@ -1219,7 +1217,7 @@ public class ItemTransferHub extends Block {
 
         /** 调试计数（仅 debugFlows 开启时累计）。 */
         void addFlow(String tag, int moved) {
-            if (debugFlows) debugFlow.merge(tag, moved, Integer::sum);
+            if (debugFlows) debugFlow.put(tag, debugFlow.get(tag, 0) + moved);
         }
 
         /** 单跳计费/计数：本枢直接入账，远端枢写入延迟队列（下一帧并入）。 */
@@ -1329,10 +1327,8 @@ public class ItemTransferHub extends Block {
                 float x2 = other.x - cos * len2;
                 float y2 = other.y - sin * len2;
 
-                // 物流连线：电力节点激光样式（颜色随时间轻微脉动，同原版电力线）
-                float pulse = Mathf.absin(Time.time, 4f, 0.6f);
-                Tmp.c1.set(linkColor).lerp(Color.white, pulse);
-                Draw.color(Tmp.c1, linkOpacity());
+                // 物流连线：电力节点激光样式，稳定色不闪烁
+                Draw.color(linkColor, linkOpacity());
                 // 原版大小：PowerNode 默认 laserScale=0.25，且端点向内收缩 1.5px
                 Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
                     x1 + cos * 1.5f, y1 + sin * 1.5f,

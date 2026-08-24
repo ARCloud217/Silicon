@@ -119,7 +119,7 @@ public class Silicon extends Mod {
                     t.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(8f);
                 }));
                 // —— 中枢连线设置 ——
-                st.sliderPref("hubLinkOpacity", 100, 10, 100, 5, i -> i + "%");
+                st.sliderPref("hubLinkOpacity", 100, 0, 100, 5, i -> i + "%");
 
                 SiliconLog.info("Loading settings.");
             });

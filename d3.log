@@ -1,0 +1,52 @@
+﻿Starting a Gradle Daemon, 1 incompatible Daemon could not be reused, use --status for details
+
+> Task :compileJava
+gradlew.bat : D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:1220: 错误: 无法将类 ObjectMa
+p<K,V>中的方法 merge应用到给定类型;
+At line:8 char:1
++ & .\gradlew.bat compileJava --console=plain 2>&1 | Out-File -Encoding ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\JavaProject\...法 merge应用到给定类型;:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+            if (debugFlows) debugFlow.merge(tag, moved, Integer::sum);
+                                     ^
+  需要: ObjectMap<? extends String,? extends Integer>
+  找到:    String,int,Integer::sum
+  原因: 实际参数列表和形式参数列表长度不同
+  其中, K,V是类型变量:
+    K扩展已在类 ObjectMap中声明的Object
+    V扩展已在类 ObjectMap中声明的Object
+注: D:\JavaProject\Silicon\src\silicon\ui\BlockSearch.java使用了未经检查或不安全的操作。
+注: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+1 个错误
+
+> Task :compileJava FAILED
+
+[Incubating] Problems report is available at: file:///D:/JavaProject/Silicon/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler output below.
+  D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:1220: 错误: 无法将类 ObjectMap<K,V>中的方法 m
+erge应用到给定类型;
+              if (debugFlows) debugFlow.merge(tag, moved, Integer::sum);
+                                       ^
+    需要: ObjectMap<? extends String,? extends Integer>
+    找到:    String,int,Integer::sum
+    原因: 实际参数列表和形式参数列表长度不同
+    其中, K,V是类型变量:
+      K扩展已在类 ObjectMap中声明的Object
+      V扩展已在类 ObjectMap中声明的Object
+  注: D:\JavaProject\Silicon\src\silicon\ui\BlockSearch.java使用了未经检查或不安全的操作。
+  注: 有关详细信息, 请使用 -Xlint:unchecked 重新编译。
+  1 个错误
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 20s
+1 actionable task: 1 executed

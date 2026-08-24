@@ -1,7 +1,9 @@
 name: Robin
 
 on:
-  pull_request:
+  # 使用 pull_request_target：跨 fork 的 PR 也能读取本仓库 secrets
+  # （robin 仅通过 API 读取 diff 并调用 LLM 出评论，不在 CI 中执行 PR 代码）
+  pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
   issue_comment:
     types: [created]

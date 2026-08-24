@@ -83,6 +83,9 @@ tasks.register('jarAndroid') {
         classpathDeps.each { dep -> cmd.add("--classpath"); cmd.add(dep.path) }
         cmd.add("--lib"); cmd.add(new File(platformRoot, "android.jar").path)
         cmd.add("--min-api"); cmd.add("21")
+        // build-tools 34.0.0 的 d8（R8 8.2.2-dev）在启用 desugaring 时会因
+        // java.lang.Record 类路径冲突抛 NPE，必须关闭（对齐 Anuken 官方模板/CI）
+        cmd.add("--no-desugaring")
         cmd.add("--output"); cmd.add(projectName + "Android.jar")
         cmd.add(projectName + "Desktop.jar")
 

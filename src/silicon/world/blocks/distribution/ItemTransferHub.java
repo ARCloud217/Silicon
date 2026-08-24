@@ -149,10 +149,46 @@ public class ItemTransferHub extends Block {
                 () -> (float) b.links.size / maxConnections
         ));
         addBar("silicon-hub-transfer-rate", (ItemTransferHubBuild b) -> new Bar(
-                () -> Core.bundle.format("bar.silicon-hub-transfer-rate", b.transferRate),
+                () -> Core.bundle.format("bar.silicon-hub-transfer-rate", Strings.fixed(b.transferRate, 1)),
                 () -> Pal.accent,
                 () -> Math.min(b.transferRate / 50f, 1f)
         ));
+    }
+
+    /**
+     * 静态版抢占检测：目标建筑周围是否存在其它中枢已将其纳入 links/data。
+     * 用于放置预览（此时本枢尚无实例）。
+     */
+    private boolean servedByOtherHubStatic(Tile ghostTile, Building target) {
+        var tree = target.team.data().buildingTree;
+        if (tree == null) return false;
+        final boolean[] served = {false};
+        int r = 3;
+        tree.intersect(target.x - r * tilesize, target.y - r * tilesize,
+            r * 2 * tilesize, r * 2 * tilesize, b -> {
+                if (served[0] || !(b instanceof ItemTransferHubBuild oh)) return;
+                if (oh.links.contains(target.pos()) || oh.data.buildings.contains(target)) {
+                    served[0] = true;
+                }
+            });
+        return served[0];
+    }
+
+
+    /**
+     * 自动连接目标统一判定（预览 / 放置 / 双击 三处共用）。
+     * - 范围内的所有中枢：一律可连
+     * - 非中枢：不在【即将连接的中枢自身】网络系统内即可连
+     *   （self 为空 = 放置预览/新中枢，网络为空，全部可连）
+     */
+    private static boolean autoConnectTargetValid(Building self, Building target){
+        if (target == null || !target.isValid()) return false;
+        if (target instanceof ItemTransferHubBuild) return true;
+
+        if (self instanceof ItemTransferHubBuild h) {
+            return !h.inSameNetwork(target);
+        }
+        return true;
     }
 
     @Override
@@ -240,7 +276,8 @@ public class ItemTransferHub extends Block {
         Drawf.circles(cx, cy, range);
 
         getPotentialLinks(tile, player.team(), other -> {
-            // 放置预览：与正常连接线一致——淡绿色细实线（不使用激光拉伸）
+            // 预览过滤与双击建链一致：中枢全连；非中枢排除已服务/同网
+            if (!autoConnectTargetValid(null, other)) return;
             float angle = Angles.angle(cx, cy, other.x, other.y);
             float len1 = size * tilesize / 2f;
             float len2 = other.block.size * tilesize / 2f;
@@ -248,9 +285,10 @@ public class ItemTransferHub extends Block {
             float y1 = cy + Mathf.sinDeg(angle) * len1;
             float x2 = other.x - Mathf.cosDeg(angle) * len2;
             float y2 = other.y - Mathf.sinDeg(angle) * len2;
-                // 放置预览：原版风格淡蓝灰，透明度随激光设置
-                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
-                Lines.stroke(1f);
+            Draw.color(Pal.lightishGray, Renderer.laserOpacity);
+            Lines.stroke(1f);
+            Lines.line(x1, y1, x2, y2);
+            Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
         });
 
         Draw.reset();
@@ -316,13 +354,15 @@ public class ItemTransferHub extends Block {
         public float powerConsumedNext = 0f;
         public float powerPerSecond = 0f;
         private float powerAccumulator = 0f;
+        /** 本帧经手件数（含上一帧跨枢延迟并入的 transferCountNext）。 */
         private int transferCount = 0;
-        private int transferCountPerSecond = 0;
-        /** 传输速率：10 秒滑动窗口平均（件/秒） */
+        /** 跨枢延迟计数：物品途经本枢（由其它枢纽发起调度）时写入，下一帧并入吞吐统计。 */
+        public int transferCountNext = 0;
+        /** 传输速率：10 秒滑动窗口平均（件/秒），含路过本枢的所有件数 */
         public float transferRate = 0f;
-        private static final int RATE_WINDOW_TICKS = 600; // 10s * 60fps
-        private final arc.struct.Seq<Integer> rateWindowCounts = new arc.struct.Seq<>();
-        private int rateWindowSum = 0;
+        private static final int RATE_WINDOW_TICKS = 600; // 10s * 60fps，真实 10 秒滑动窗口
+        private final IntSeq rateWindowCounts = new IntSeq();
+        private long rateWindowSum = 0;
         private int rateTickCounter = 0;
 
         private final Seq<ItemTransferHubBuild> bfsQueue = new Seq<>();
@@ -359,25 +399,35 @@ public class ItemTransferHub extends Block {
             }
             // PowerNode-style: scan via buildingTree + overlap test, then configure via network
             ItemTransferHub hubBlock = (ItemTransferHub) block;
+            // 先收集候选（避免遍历中 configure 改变状态），中枢优先排序
+            arc.struct.Seq<Building> cands = new arc.struct.Seq<>();
             hubBlock.getPotentialLinks(tile, team, other -> {
-                if (other == null || !other.isValid()) return;
-                // 已被其它中枢服务 → 不抢占
-                if (servedByOtherHub(other)) return;
-                if (!links.contains(other.pos()) && links.size < hubBlock.maxConnections && linkValid(this, other)) {
-                    configure(other.pos());
-                }
+                if (other != null && other.isValid() && !links.contains(other.pos()) && linkValid(this, other)) cands.add(other);
             });
+            cands.sort((x, y) -> Boolean.compare(y instanceof ItemTransferHubBuild, x instanceof ItemTransferHubBuild));
+            for (Building other : cands) {
+                if (links.size >= hubBlock.maxConnections) break;
+                if (!autoConnectTargetValid(this, other)) continue;
+                configure(other.pos());
+            }
             super.placed();
         }
 
         // ── 建筑拓扑（Building Topology）──────────────────────
         // 职责：本中枢的 links → data.hubs/buildings 本地视图重建与陈旧链剔除。
         private void updateTopology() {
-            // 变量路由：每帧重建并即时剔除失效链
+            // 存档/地图加载期间邻居建筑可能尚未创建（Tile.changed() 会逐个触发
+            // onProximityUpdate），此时不能因“目标不存在”误删已保存的链接；
+            // 加载完成后由周期刷新兜底清理真正失效的链接。
+            boolean loading = world.isGenerating();
             IntSeq stale = new IntSeq();
             links.each(pos -> {
                 Building b = world.build(pos);
-                if (b == null || !b.isValid() || b == this || !linkValid(this, b)) {
+                if (b == null) {
+                    if (!loading) stale.add(pos);
+                    return;
+                }
+                if (!b.isValid() || b == this || !linkValid(this, b)) {
                     stale.add(pos);
                 }
             });
@@ -411,42 +461,38 @@ public class ItemTransferHub extends Block {
 
             super.updateTile();
 
-            if (!enabled) {
-                return;
-            }
-
             // 周期性拓扑刷新：链路目标被拆除时不会触发本枢邻近事件，
             // 定时剔除失效路径并回收连接数（timers=4 中使用 id=2）。
             if (timer(2, 120)) {
                 updateTopology();
             }
 
-            // 先并入上一帧跨枢分摊的延迟计费（chargePath 写入 powerConsumedNext），
-            // 否则远端枢的耗电会被此处清零丢弃 → 电力统计 < 传输速率。
-            powerConsumed = powerConsumedNext;
+            // 先并入上一帧跨枢分摊的延迟计费/计数（chargeBatch 写入 *Next）。
+            // 无论启用与否都必须清空：禁用期间不清会导致无限累积、恢复时单帧尖峰。
+            powerConsumed += powerConsumedNext;
             powerConsumedNext = 0f;
+            transferCount += transferCountNext;
+            transferCountNext = 0;
 
-            // 将上一帧转移数写入 10s 滑动窗口（每 tick 一个桶）
-            if (rateTickCounter > 0 || rateWindowCounts.size == 0) {
-                rateWindowCounts.add(transferCount);
-                rateWindowSum += transferCount;
-                if (rateWindowCounts.size > RATE_WINDOW_TICKS / 6) {
-                    rateWindowSum -= rateWindowCounts.remove(0);
-                }
+            // 将上一帧转移数写入 10s 滑动窗口（每 tick 一个桶），随后本帧计数清零
+            rateWindowCounts.add(transferCount);
+            rateWindowSum += transferCount;
+            if (rateWindowCounts.size > RATE_WINDOW_TICKS) {
+                rateWindowSum -= rateWindowCounts.removeIndex(0);
             }
+            transferCount = 0;
             rateTickCounter++;
 
-            // 本帧发起的转移数清零；powerConsumed 现含延迟计费 + 本帧新计费（由 chargePath 继续累加）
-            transferCount = 0;
-
-            // 无电力或禁用：不调度，秒级统计归零（避免 powerPerSecond 滞留）
-            if (power == null || power.status <= 0) {
-
+            // 禁用 / 断电：不调度；瞬时请求清零——
+            // 禁用时原版电网本就跳过本枢（shouldConsumePower=false），残留值只会冻结显示；
+            // 断电时清零可避免“幽灵需求”挤占电池，且显示与实际消耗保持一致。
+            if (!enabled || power == null || power.status <= 0) {
+                powerConsumed = 0f;
+                powerConsumedNext = 0f;
                 powerAccumulator = 0f;
 
                 if (timer(3, 60)) {
                     powerPerSecond = 0f;
-                    powerAccumulator = 0f;
                     transferRate = 0f;
                 }
 
@@ -466,11 +512,9 @@ public class ItemTransferHub extends Block {
                 pushSurplusToCore();
             }
 
-            // 积分：powerConsumed 是本帧瞬时功耗（10 × 经过本枢的件数/倍率），
-            // 按帧累加后每秒取均作为 powerPerSecond 供 bar 显示。
-            // 注意：chargePath 可能对远端 hub 的 powerConsumed 累加，需归入发起枢的 accumulator 统一口径
-            // （发起枢的 powerConsumed 已含直连/路径首跳，远端 hub 的由其自身 updateTile 累加）
-            powerAccumulator += powerConsumed;
+            // 积分口径 = 实际取电量：电网欠载（status<1）时按满足率折算，
+            // 与电网实际供给一致；满电时 status=1 即全额请求（10 × 经手件数）。
+            powerAccumulator += powerConsumed * Math.min(power.status, 1f);
 
             if (timer(3, 60)) {
                 powerPerSecond = powerAccumulator;
@@ -479,12 +523,8 @@ public class ItemTransferHub extends Block {
 
             // 10 秒平均运输速率：滑动窗口各 tick 件数之和 ÷ 窗口覆盖的秒数
             if (rateTickCounter % 10 == 0) {
-                long sum = 0;
-                for (int i = 0; i < rateWindowCounts.size; i++) {
-                    sum += rateWindowCounts.get(i);
-                }
                 float seconds = Math.max(rateWindowCounts.size, 1) / 60f;
-                transferRate = sum / seconds;
+                transferRate = rateWindowSum / seconds;
             }
         }
 
@@ -643,6 +683,12 @@ public class ItemTransferHub extends Block {
          * - 仓储：>=90% 容量算溢出
          * - 矿机/工厂：任一输出满即堵线需要排空
          */
+        /**
+         * 推送优先级：
+         * ① 工厂 / 炮台（需要该原料且未满的消费者）
+         * ② 核心
+         * ③ 仓库（兜底）
+         */
         private void pushSurplusToCore() {
 
             for (Building producer : data.buildings) {
@@ -653,63 +699,107 @@ public class ItemTransferHub extends Block {
 
                 boolean isStorage = producer instanceof StorageBlock.StorageBuild
                     && !(producer instanceof CoreBlock.CoreBuild);
-                boolean isProducer = isPushProducer(producer);
+                boolean isProducerB = isPushProducer(producer);
 
-                if (!isStorage && !isProducer) {
+                if (!isStorage && !isProducerB) {
                     continue;
                 }
 
-                // 工厂/矿机：仅当任一输出满时才视为堵线需要排空；仓储用 90% 阈值在下方按物判断
-                if (isProducer) {
+                // 矿机/工厂：任一输出达到快满阈值才排空；仓储用 90% 按物判断
+                if (isProducerB) {
                     boolean blocked = false;
                     for (int k = 0; k < producer.items.length(); k++) {
                         Item ck = content.item(k);
-                        if (ck == null) {
-                            continue;
-                        }
+                        if (ck == null) continue;
                         if (producer.items.get(ck) >= producer.block.itemCapacity * surplusPushAt) {
                             blocked = true;
                             break;
                         }
                     }
-                    if (!blocked) {
-                        continue;
-                    }
+                    if (!blocked) continue;
                 }
 
                 for (int i = 0; i < producer.items.length(); i++) {
 
                     Item item = content.item(i);
+                    if (item == null || producer.items.get(item) == 0) continue;
 
-                    if (item == null || producer.items.get(item) == 0) {
+                    if (isStorage) {
+                        if (producer.items.get(item) < producer.block.itemCapacity * 0.9f) continue;
+                    }
+
+                    if (power == null || power.status <= 0) return;
+
+                    // ① 优先：找需要该原料的工厂/炮台
+                    Building factoryTarget = findNearestConsumer(producer, item);
+                    if (factoryTarget != null) {
+                        directTransfer(producer, factoryTarget, item, 10);
                         continue;
                     }
 
-                    // 仓储内容尽可能回核心（不再设 90% 保留阈值）
-
-                    if (power == null || power.status <= 0) {
-                        return;
-                    }
-
+                    // ② 其次：推核心（该物品存量低于 75% 阈值时）
                     CoreBlock.CoreBuild core = findNearestCore(producer, item);
-
-                    Building target = core;
-
-                    if (core == null || !core.acceptItem(producer, item)
-                        || (core.items != null && item.id < core.items.length()
-                            && core.items.get(item) >= core.block.itemCapacity)) {
-                        // 矿机/工厂：核心满 → 回退最近仓库
-                        // 仓储自身：核心满则停止（避免仓库间乒乓倒手）
-                        target = isStorage ? null : findNearestStorage(producer, item);
+                    boolean coreHasRoom = false;
+                    if (core != null && core.acceptItem(producer, item)) {
+                        int cap = Math.max(core.block.itemCapacity, 1);
+                        int cur = (core.items != null && item.id < core.items.length()) ? core.items.get(item) : 0;
+                        // 与推送阈值统一：核心该物品存量低于 75% 即可接收
+                        coreHasRoom = cur < cap * surplusPushAt;
                     }
-
-                    if (target == null) {
-                        continue;
+                    // ③ 核心≥75%或拒收：产物回流仓库
+                    if (!coreHasRoom || core == null) {
+                        StorageBlock.StorageBuild storage = findNearestStorage(producer, item);
+                        if (storage != null) {
+                            forceTransferToStorage(producer, storage, item, 10);
+                            continue;
+                        }
                     }
-
-                    directTransfer(producer, target, item, 10);
+                    if (coreHasRoom && core != null) {
+                        directTransfer(producer, core, item, 10);
+                    }
                 }
             }
+        }
+
+        /**
+         * 找最近的需要该物品的工厂/炮台消费者。
+         */
+        private Building findNearestConsumer(Building producer, Item item) {
+            Building best = null;
+            int bestDist = Integer.MAX_VALUE;
+
+            for (Building b : data.buildings) {
+                if (b == producer || !b.isValid()) continue;
+                if (!isFactory(b)) continue;
+                if (b.items == null || b.items.get(item) >= b.getMaximumAccepted(item)) continue;
+                if (!b.acceptItem(producer, item)) continue;
+                int d = Math.abs(b.tile.x - producer.tile.x) + Math.abs(b.tile.y - producer.tile.y);
+                if (d < bestDist) {
+                    best = b;
+                    bestDist = d;
+                }
+            }
+            return best;
+        }
+        /**
+         * 强制入库：供源 → 仓库。跳过收方 acceptItem（规避原版仓库-核心容量联动），
+         * 仅以仓库自身剩余容量为约束。
+         */
+        private boolean forceTransferToStorage(Building supplier, StorageBlock.StorageBuild storage, Item item, int maxAmount){
+            if (supplier.items == null || !supplier.isValid() || item.id >= supplier.items.length()) return false;
+            int stock = supplier.items.get(item);
+            if (stock <= 0) return false;
+            if (item.id >= storage.items.length()) return false;
+            int space = storage.block.itemCapacity - storage.items.get(item);
+            int moved = Math.min(Math.min(maxAmount, stock), Math.max(space, 0));
+            if (moved <= 0) return false;
+
+            storage.items.add(item, moved);
+            supplier.items.remove(item, moved);
+
+            // 计费与统计口径与 directTransfer 一致（统一在 chargeBatch 内完成）
+            chargeBatch(supplier, storage, moved);
+            return true;
         }
 
         private void bfsInit() {
@@ -857,21 +947,56 @@ public class ItemTransferHub extends Block {
 
         /**
          * 最近可收货仓储（非核心）。用于核心满或无核时的次级落点。
+         * 直连与跨中枢 BFS 双层查找：仓库常连在其它中枢上，
+         * 仅扫直连会导致“核心满却推不进仓库”。
          */
         private StorageBlock.StorageBuild findNearestStorage(Building producer, Item item) {
             StorageBlock.StorageBuild best = null;
             int bestDist = Integer.MAX_VALUE;
 
+            // 第一层：直连建筑
             for (Building b : data.buildings) {
                 if (!(b instanceof StorageBlock.StorageBuild st)) continue;
                 if (b instanceof CoreBlock.CoreBuild) continue;
                 if (!b.isValid() || b.items == null || item.id >= b.items.length()) continue;
+                // 不检查 acceptItem：原版仓库与核心容量联动，核心满会连带拒收；
+                // 以仓库自身容量为准即可
                 if (b.items.get(item) >= b.block.itemCapacity) continue;
-                if (!b.acceptItem(producer, item)) continue;
                 int d = Math.abs(b.tile.x - producer.tile.x) + Math.abs(b.tile.y - producer.tile.y);
                 if (d < bestDist) {
                     best = st;
                     bestDist = d;
+                }
+            }
+            if (best != null) return best;
+
+            // 第二层：BFS 全网层序，寻找其它中枢直连的仓库
+            bfsInit();
+            for (ItemTransferHubBuild hub : data.hubs) {
+                if (bfsVisited.add(hub.id)) {
+                    bfsQueue.add(hub);
+                    bfsDists.add(1);
+                }
+            }
+
+            for (int idx = 0; idx < bfsQueue.size; idx++) {
+                ItemTransferHubBuild hub = bfsQueue.get(idx);
+                int d = bfsDists.get(idx) + 1;
+                for (Building b : hub.data.buildings) {
+                    if (!(b instanceof StorageBlock.StorageBuild st)) continue;
+                    if (b instanceof CoreBlock.CoreBuild) continue;
+                    if (!b.isValid() || b.items == null || item.id >= b.items.length()) continue;
+                    if (b.items.get(item) >= b.block.itemCapacity) continue;
+                    if (d < bestDist) {
+                        best = st;
+                        bestDist = d;
+                    }
+                }
+                for (ItemTransferHubBuild neighbor : hub.data.hubs) {
+                    if (bfsVisited.add(neighbor.id)) {
+                        bfsQueue.add(neighbor);
+                        bfsDists.add(bfsDists.get(idx) + 1);
+                    }
                 }
             }
             return best;
@@ -930,10 +1055,6 @@ public class ItemTransferHub extends Block {
          */
         private boolean directTransfer(Building supplier, Building consumer, Item item, int maxAmount) {
 
-            if (maxAmount <= 1) {
-                return directTransfer(supplier, consumer, item);
-            }
-
             if (power == null || power.status <= 0) {
                 return false;
             }
@@ -972,31 +1093,34 @@ public class ItemTransferHub extends Block {
             consumer.items.add(item, moved);
             supplier.items.remove(item, moved);
 
-            // 经由计费：路径与费用整批只计算一次，避免逐件重跑 BFS
+            // 经由计费：路径与费用整批只计算一次，避免逐件重跑 BFS；
+            // 计费与吞吐计数统一在 chargeBatch 内完成
             chargeBatch(supplier, consumer, moved);
-
-            transferCount += moved;
 
             return true;
         }
 
         /**
-         * 计费口径：物品每经过一个中枢，该中枢消耗 10/moved 件——单价 10。
-         * 均摊到路径上每个中枢；本枢直接入账，远端枢写入延迟队列（下一帧生效）。
+         * 计费与吞吐统计口径（统一入口）：
+         * 物品每经过一个中枢：该中枢消耗 10 电力、经手件数 +moved。
+         * 本枢直接入账；远端枢写入延迟队列（下一帧生效）——
+         * 这样“路过”的中枢也能正确统计运输速率与耗电。
          */
         private void chargeBatch(Building supplier, Building consumer, int moved) {
             ItemTransferHubBuild srcHub = findOwnerHub(supplier);
             ItemTransferHubBuild dstHub = findOwnerHub(consumer);
 
-            // 直连同枢 / 无法归属：仅本枢按件收费
+            // 直连同枢 / 无法归属：仅本枢按件收费并计数
             if (srcHub == null || dstHub == null || srcHub == dstHub) {
                 powerConsumed += 10f * moved;
+                transferCount += moved;
                 return;
             }
 
             Seq<ItemTransferHubBuild> path = bfsPath(srcHub, dstHub);
             if (path == null || path.size == 0) {
                 powerConsumed += 10f * moved;
+                transferCount += moved;
                 return;
             }
 
@@ -1007,8 +1131,10 @@ public class ItemTransferHub extends Block {
                 if (!charged.add(h.id)) continue;
                 if (h == this) {
                     powerConsumed += share;
+                    transferCount += moved;
                 } else {
                     h.powerConsumedNext += share;
+                    h.transferCountNext += moved;
                 }
             }
         }
@@ -1149,8 +1275,8 @@ public class ItemTransferHub extends Block {
                         Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.place);
                     } else if (linkValid(this, link)) {
                         if (inSameNetwork(link)) {
-                            // 已在相同网络内但未直连：黄色警示
-                            Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.accent);
+                            // 同网络但未直连：紫色（区别于蓝=直连、绿=可新建）
+                            Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.reactorPurple);
                         } else {
                             // 可新建直连：绿色提示
                             Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.heal);
@@ -1173,23 +1299,21 @@ public class ItemTransferHub extends Block {
             if (this == other) {
                 ItemTransferHub hubBlock = (ItemTransferHub) block;
                 if (links.size > 0) {
-                    // clear all — use configure(new Point2[0]) pattern via clearing links
-                    links.each(pos -> {
-                        Building b = world.build(pos);
-                        if (b instanceof ItemTransferHubBuild hub) {
-                            hub.links.removeValue(this.pos());
-                            rebuildData(hub);
-                        }
-                    });
-                    links.clear();
-                    rebuildData(this);
+                    // 双击已连中枢：清空全部链接
+                    while (links.size > 0) {
+                        int pos = links.first();
+                        Building ob = world.build(pos);
+                    if (ob instanceof ItemTransferHubBuild oh) {
+                        oh.links.removeValue(this.pos());
+                        rebuildData(oh);
+                    }
+                    links.removeValue(pos);
+                }
+                rebuildData(this);
                 } else {
-                    // auto-connect all potential links like PowerNode.getPotentialLinks
                     hubBlock.getPotentialLinks(tile, team, b -> {
                         if (b == null || !b.isValid()) return;
-                        // 已被其它中枢服务 → 不抢占；同网建筑（含经其它枢）也跳过
-                        if (servedByOtherHub(b)) return;
-                        if (!(b instanceof ItemTransferHubBuild) && inSameNetwork(b)) return;
+                        if (!autoConnectTargetValid(this, b)) return;
                         if (!links.contains(b.pos()) && links.size < hubBlock.maxConnections && linkValid(this, b)) {
                             configure(b.pos());
                         }
@@ -1198,9 +1322,13 @@ public class ItemTransferHub extends Block {
                 deselect();
                 return false;
             }
-            // tap on invalid target: exit config like PowerNode (return true -> deselect)
             return true;
         }
+
+        // ── 存档序列化（Save / Load）──────────────────────
+        // v1 格式：network.id(int) + 链接数(short) + 每个链接 pos(int)。
+        // version() 必须与格式配套：未序列化链接的旧构建写入 revision=0 且无自定义数据，
+        // 读取时按 revision<1 直接跳过，避免错位解析损坏存档流。
 
         @Override
         public void write(Writes write) {
@@ -1215,18 +1343,18 @@ public class ItemTransferHub extends Block {
         @Override
         public void read(Reads read, byte revision) {
             super.read(read, revision);
-            network.id = read.i();
-            // 兼容旧存档（<v1）：旧格式在 id 之后还有一个 network.version 字段，需跳过，
-            // 否则后续 linkCount 会错位读到 version 值，导致链接数据损坏
             if (revision < 1) {
-                read.i();
+                // 未写过自定义数据的存档：保持空链接，加载后由放置预览/周期刷新重建
+                return;
             }
+            network.id = read.i();
             short linkCount = read.s();
             links.clear();
             for (int i = 0; i < linkCount; i++) {
-                int pos = read.i();
-                links.add(pos);
+                links.add(read.i());
             }
+            // 仅按已存在的建筑重建本地视图；加载中缺失的邻居由
+            // onProximityUpdate / 周期 updateTopology 补齐，不在此剔除链接
             rebuildData(this);
         }
 

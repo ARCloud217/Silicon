@@ -174,3 +174,5 @@ deploy-err.log
 d-err.log
 jobs.txt
 prc.txt
+rel.json
+tags.json

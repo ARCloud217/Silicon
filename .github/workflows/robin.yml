@@ -11,14 +11,24 @@ permissions:
   contents: read
   pull-requests: write
 
-# secrets 不能直接用于 job.if，经 workflow 级 env 中转判断
-env:
-  LLM_CONFIGURED: ${{ secrets.LLM_BASE_URL != '' }}
-
 jobs:
+  # 探测 LLM secrets 是否配置（secrets 不能用于顶层 env / job.if，须经步骤输出中转）
+  config-check:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          _BASE: ${{ secrets.LLM_BASE_URL }}
+        run: |
+          if [ -n "$_BASE" ]; then echo "configured=true" >> "$GITHUB_OUTPUT";
+          else echo "configured=false" >> "$GITHUB_OUTPUT"; fi
+
   review:
+    needs: config-check
     # 哪个仓库配齐了 LLM secrets 就在哪里运行；未配置则显示跳过而非失败
-    if: env.LLM_CONFIGURED == 'true'
+    if: needs.config-check.outputs.configured == 'true'
     uses: antongulin/robin/.github/workflows/review.yml@main
     with:
       review-on-synchronize: true

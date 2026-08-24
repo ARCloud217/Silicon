@@ -168,3 +168,4 @@ javap4/
 .build_*.log
 hotreload.log
 tests/*.txt
+.javap_tmp/

@@ -156,26 +156,6 @@ public class ItemTransferHub extends Block {
     }
 
     /**
-     * 静态版抢占检测：目标建筑周围是否存在其它中枢已将其纳入 links/data。
-     * 用于放置预览（此时本枢尚无实例）。
-     */
-    private boolean servedByOtherHubStatic(Tile ghostTile, Building target) {
-        var tree = target.team.data().buildingTree;
-        if (tree == null) return false;
-        final boolean[] served = {false};
-        int r = 3;
-        tree.intersect(target.x - r * tilesize, target.y - r * tilesize,
-            r * 2 * tilesize, r * 2 * tilesize, b -> {
-                if (served[0] || !(b instanceof ItemTransferHubBuild oh)) return;
-                if (oh.links.contains(target.pos()) || oh.data.buildings.contains(target)) {
-                    served[0] = true;
-                }
-            });
-        return served[0];
-    }
-
-
-    /**
      * 自动连接目标统一判定（预览 / 放置 / 双击 三处共用）。
      * - 范围内的所有中枢：一律可连
      * - 非中枢：不在【即将连接的中枢自身】网络系统内即可连
@@ -247,12 +227,6 @@ public class ItemTransferHub extends Block {
 
             cons.get(b);
         });
-    }
-
-    protected boolean overlaps(float srcx, float srcy, Tile other, Block otherBlock, float range) {
-        return Intersector.overlaps(Tmp.cr1.set(srcx, srcy, range),
-            Tmp.r1.setCentered(other.worldx() + otherBlock.offset, other.worldy() + otherBlock.offset,
-                otherBlock.size * tilesize, otherBlock.size * tilesize));
     }
 
     /** Building 版：建筑中心已含 offset，直接以占位矩形判定。 */
@@ -537,12 +511,7 @@ public class ItemTransferHub extends Block {
             return HubRouting.isFactory(b);
         }
 
-        /**
-         * 产出源判定：可被拉取的供源 —— 矿机产出 + 工厂产出。
-         */
-        /**
-         * 消费者优先级：炮台(0) > 工厂(1) > 仓储(2)。数值越小越优先。
-         */
+        /** 消费者优先级：炮台(0) > 工厂(1) > 仓储(2)。数值越小越优先。 */
         private int consumerPriority(Building b) {
             return HubRouting.consumerPriority(b);
         }
@@ -551,17 +520,11 @@ public class ItemTransferHub extends Block {
             return HubRouting.isProducer(b);
         }
 
-        /**
-         * 推送源判定：矿机/工厂溢出优先推核心（其次仓储由拉取补货，不主动推）。
-         */
+        /** 推送源判定：矿机/工厂溢出优先推核心（其次仓储由拉取补货，不主动推）。 */
         private boolean isPushProducer(Building b) {
             return isProducer(b);
         }
 
-        /**
-         * 拉取：工厂按需补料 + 仓储按需补货（均通过最近供源）。
-         * 同类型多工厂均衡：按缺口比例排序，最缺的先补；每物品每帧仅尝试一次，避免单厂吸干。
-         */
         /**
          * 拉取调度：
          * 消费者三级优先：炮台(0) > 工厂(1)；仓储不拉取。
@@ -683,11 +646,6 @@ public class ItemTransferHub extends Block {
             return maxDef;
         }
 
-        /**
-         * 推送：仓储/矿机/工厂 溢出 -> 核心；核心满时不推。
-         * - 仓储：>=90% 容量算溢出
-         * - 矿机/工厂：任一输出满即堵线需要排空
-         */
         /**
          * 推送优先级：
          * ① 工厂 / 炮台（需要该原料且未满的消费者）
@@ -833,26 +791,6 @@ public class ItemTransferHub extends Block {
          * 判断建筑是否已在本中枢网络内（经由任意中枢链路可达的直连建筑）。
          * 用于放置/双击自动连接时排除同网建筑——它们已被现有中枢服务。
          */
-        /**
-         * 目标建筑是否已被【其它】中枢直连或纳入服务范围。
-         * 用于自动连接时避免两个中枢争抢同一建筑。
-         */
-        private boolean servedByOtherHub(Building target) {
-            // 扫描目标周围小范围内其它中枢的直连与数据覆盖
-            var tree = team.data().buildingTree;
-            if (tree == null) return false;
-            final boolean[] served = {false};
-            int r = 3;
-            tree.intersect(target.x - r * tilesize, target.y - r * tilesize,
-                r * 2 * tilesize, r * 2 * tilesize, b -> {
-                    if (served[0] || !(b instanceof ItemTransferHubBuild oh) || oh == this) return;
-                    if (oh.links.contains(target.pos()) || oh.data.buildings.contains(target)) {
-                        served[0] = true;
-                    }
-                });
-            return served[0];
-        }
-
         private boolean inSameNetwork(Building b) {
             if (b == null) return false;
             if (data.buildings.contains(b)) return true;

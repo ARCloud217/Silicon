@@ -46,6 +46,13 @@ public class HubRouting {
             }
             return true;
         }
+        // 兵工厂 / 单位工厂等特殊生产建筑
+        if (b instanceof mindustry.world.blocks.units.UnitFactory) return true;
+        if (b instanceof mindustry.world.blocks.units.Reconstructor) return true;
+
+        // 泛化规则：任何带物品栏的建筑均可接入中枢物流（含未来新增方块类型）
+        if (other.items != null) return true;
+
         if (b instanceof GenericCrafter) return true;
         if (b instanceof MineConverter) return true;
         if (b instanceof Drill) return true;
@@ -84,7 +91,8 @@ public class HubRouting {
         return b instanceof GenericCrafter.GenericCrafterBuild
             || b instanceof MineConverter.MineConverterBuild
             || b instanceof Drill.DrillBuild
-            || b instanceof ItemTurret.ItemTurretBuild;
+            || b instanceof ItemTurret.ItemTurretBuild
+            || b instanceof mindustry.world.blocks.units.UnitFactory.UnitFactoryBuild;
     }
 
     /** 可被拉取的产出源：矿机 + 工厂。 */

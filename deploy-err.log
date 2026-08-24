@@ -1,0 +1,32 @@
+﻿
+> Task :compileJava FAILED
+gradlew.bat : D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:621: ����: �޷�ȡ������bo
+olean
+At line:4 char:1
++ & .\gradlew.bat deploy --console=plain 2>&1 | Out-File -Encoding utf8 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\JavaProject\...�ȡ������boolean:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+                    turret.ammoTypes.each((it, bt) -> {
+                          ^
+1 ������
+
+[Incubating] Problems report is available at: file:///D:/JavaProject/Silicon/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler output below.
+  D:\JavaProject\Silicon\src\silicon\world\blocks\distribution\ItemTransferHub.java:621: ����: �޷�ȡ������boolean
+                      turret.ammoTypes.each((it, bt) -> {
+                            ^
+  1 ������
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 7s
+1 actionable task: 1 executed

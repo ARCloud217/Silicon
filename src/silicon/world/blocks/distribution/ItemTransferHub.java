@@ -368,6 +368,10 @@ public class ItemTransferHub extends Block {
         private final Seq<ItemTransferHubBuild> bfsQueue = new Seq<>();
         private final IntSeq bfsDists = new IntSeq();
         private final IntSet bfsVisited = new IntSet();
+        /** 每消费者上次供料时刻（tick）：限制补货节奏贴近真实消耗，防止批量补满放大吞吐与耗电。 */
+        private final arc.struct.ObjectIntMap<Building> lastFeedTick = new arc.struct.ObjectIntMap<>();
+        /** 非炮台消费者的最小供料间隔（tick）。 */
+        private static final int FEED_INTERVAL_TICKS = 30;
 
         public ItemTransferHubBuild() {
             super();
@@ -456,6 +460,12 @@ public class ItemTransferHub extends Block {
                     if (!data.buildings.contains(b)) data.add(b);
                 }
             });
+            // 清理不再直连的消费者补货节奏记录（防 Building 引用滞留）
+            Seq<Building> staleKeys = new Seq<>();
+            for (arc.struct.ObjectIntMap.Entry<Building> e : lastFeedTick) {
+                if (!data.buildings.contains(e.key)) staleKeys.add(e.key);
+            }
+            for (Building k : staleKeys) lastFeedTick.remove(k);
         }
 
         // ── 建筑级更新（Building Update）──────────────────────
@@ -597,11 +607,18 @@ public class ItemTransferHub extends Block {
 
                 if (consumer.items == null || !consumer.isValid()) continue;
 
+                boolean turret = consumer instanceof ItemTurret.ItemTurretBuild;
+                // 补货节奏门控：非炮台消费者按最小间隔供料——
+                // 批量一次补满会让搬运量 ≈ 消耗量 × 批次粒度，远超产线真实需求
+                if (!turret && rateTickCounter - lastFeedTick.get(consumer, -FEED_INTERVAL_TICKS) < FEED_INTERVAL_TICKS) {
+                    continue;
+                }
+
                 // 候选物品：炮台按伤害降序；其余按缺口比降序
                 Seq<Item> ordered = new Seq<>();
                 if (consumer instanceof ItemTurret.ItemTurretBuild) {
-                    ItemTurret turret = (ItemTurret) consumer.block;
-                    turret.ammoTypes.each((it, bt) -> {
+                    ItemTurret tur = (ItemTurret) consumer.block;
+                    tur.ammoTypes.each((it, bt) -> {
                         if (it != null && bt != null && it.id < consumer.items.length()
                             && consumer.items.get(it) < consumer.getMaximumAccepted(it)) {
                             ordered.add(it);
@@ -625,6 +642,7 @@ public class ItemTransferHub extends Block {
                 }
 
                 // 多源料工厂：同一帧连续补多种输入，不提前 break
+                boolean fed = false;
                 for (Item item : ordered) {
                     if (item.id >= consumer.items.length()) continue;
                     if (consumer.items.get(item) >= consumer.getMaximumAccepted(item)) continue;
@@ -636,8 +654,10 @@ public class ItemTransferHub extends Block {
 
                     if (directTransfer(supplier, consumer, item, 10)) {
                         any = true;
+                        fed = true;
                     }
                 }
+                if (fed) lastFeedTick.put(consumer, rateTickCounter);
             }
 
             return any;

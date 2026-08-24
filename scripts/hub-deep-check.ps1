@@ -6,7 +6,7 @@ $routing = "src/silicon/world/blocks/distribution/HubRouting.java"
 $text    = Get-Content $hub -Raw -Encoding UTF8
 $route   = Get-Content $routing -Raw -Encoding UTF8
 function ok([bool]$c,[string]$m){ if($c){ Write-Host "PASS $m" -ForegroundColor Green; return 1 } else { Write-Host "FAIL $m" -ForegroundColor Red; return 0 } }
-$pass=0; $total=17
+$pass=0; $total=18
 $pass += ok ($text.Contains("HubRouting.isFactory(b)")) "isFactory 委托 HubRouting"
 $pass += ok ($route.Contains("Reconstructor.ReconstructorBuild")) "isFactory 含重构工厂"
 $pass += ok (-not $route.Contains("if (other.items != null) return true")) "白名单无『有物品栏即连』泛化"
@@ -18,8 +18,9 @@ $pass += ok ($text.Contains("item.id >= consumer.items.length()")) "越界防护
 $pass += ok ($text.Contains("power == null || power.status <= 0")) "电力门控"
 $pass += ok ($text.Contains("timer(0, 10)")) "调度节流 6Hz"
 $pass += ok ($text.Contains("private void chargeOne(")) "chargeOne 单跳计费"
-$pass += ok ($text.Contains("powerConsumed = powerConsumedNext") -and -not $text.Contains("powerConsumed += powerConsumedNext")) "计费折叠为赋值语义（防跨帧累加）"
-$pass += ok ($text.Contains("transferCount = transferCountNext")) "途经计数延迟并入"
+$pass += ok ($text.Contains("powerConsumed = powerConsumedNext") -and -not $text.Contains("powerConsumed += powerConsumedNext")) "电力折叠为赋值语义（防跨帧累加）"
+$pass += ok ($text.Contains("transferCount += transferCountNext")) "途经计数延迟并入（累加语义）"
+$pass += ok ($route.Contains("linkedCore != null")) "核心旁已合并仓库排除（linkedCore 判据）"
 $pass += ok ($text.Contains("write.i(network.id)") -and $text.Contains("revision < 1")) "存档序列化 v1"
 $pass += ok ($text.Contains("寻找其它中枢直连的仓库")) "核心满回退仓库跨网 BFS"
 $pass += ok ($text.Contains("world.isGenerating()")) "加载期防误删链接"

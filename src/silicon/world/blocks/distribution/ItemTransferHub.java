@@ -171,6 +171,21 @@ public class ItemTransferHub extends Block {
         return true;
     }
 
+    /** 收集 root 枢纽所在网络的全部直连建筑（含自身，跨枢 BFS）。 */
+    private static void collectNetworkBuildings(ItemTransferHubBuild root, arc.struct.ObjectSet<Building> out) {
+        arc.struct.ObjectSet<ItemTransferHubBuild> seen = new arc.struct.ObjectSet<>();
+        java.util.ArrayDeque<ItemTransferHubBuild> queue = new java.util.ArrayDeque<>();
+        seen.add(root);
+        queue.add(root);
+        while (!queue.isEmpty()) {
+            ItemTransferHubBuild cur = queue.poll();
+            out.addAll(cur.data.buildings);
+            for (ItemTransferHubBuild nb : cur.data.hubs) {
+                if (seen.add(nb)) queue.add(nb);
+            }
+        }
+    }
+
     @Override
     public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
         if (!(config instanceof arc.math.geom.Point2[] links)) return;
@@ -249,9 +264,18 @@ public class ItemTransferHub extends Block {
         Draw.color(Pal.placing);
         Drawf.circles(cx, cy, range);
 
-        getPotentialLinks(tile, player.team(), other -> {
-            // 预览过滤与双击建链一致：中枢全连；非中枢排除已服务/同网
-            if (!autoConnectTargetValid(null, other)) return;
+        Seq<Building> cands = new Seq<>();
+        getPotentialLinks(tile, player.team(), cands::add);
+
+        // 预览与实际建链口径一致：候选中枢网络内的建筑不显示连线
+        // （它们将由其所在中枢继续服务，新枢只连中枢本身）
+        arc.struct.ObjectSet<Building> servedByCandidateHubs = new arc.struct.ObjectSet<>();
+        for (Building cand : cands) {
+            if (cand instanceof ItemTransferHubBuild h) collectNetworkBuildings(h, servedByCandidateHubs);
+        }
+
+        for (Building other : cands) {
+            if (!(other instanceof ItemTransferHubBuild) && servedByCandidateHubs.contains(other)) continue;
             float angle = Angles.angle(cx, cy, other.x, other.y);
             float len1 = size * tilesize / 2f;
             float len2 = other.block.size * tilesize / 2f;
@@ -263,7 +287,7 @@ public class ItemTransferHub extends Block {
             Lines.stroke(1f);
             Lines.line(x1, y1, x2, y2);
             Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
-        });
+        }
 
         Draw.reset();
     }
@@ -372,19 +396,25 @@ public class ItemTransferHub extends Block {
                 return;
             }
             // PowerNode-style: scan via buildingTree + overlap test, then configure via network
-            ItemTransferHub hubBlock = (ItemTransferHub) block;
-            // 先收集候选（避免遍历中 configure 改变状态），中枢优先排序
-            arc.struct.Seq<Building> cands = new arc.struct.Seq<>();
-            hubBlock.getPotentialLinks(tile, team, other -> {
-                if (other != null && other.isValid() && !links.contains(other.pos()) && linkValid(this, other)) cands.add(other);
-            });
+            autoConnectNearby((ItemTransferHub) block);
+            super.placed();
+        }
+
+        /**
+         * 两阶段自动连接：候选按【中枢优先】排序——先建好全部枢-枢链路，
+         * 再对非中枢目标做同网排除（inSameNetwork 此时已含刚连入的中枢），
+         * 避免“既连中枢、又抢走该中枢网络内建筑”的重复服务。
+         */
+        private void autoConnectNearby(ItemTransferHub hubBlock) {
+            Seq<Building> cands = new Seq<>();
+            hubBlock.getPotentialLinks(tile, team, cands::add);
             cands.sort((x, y) -> Boolean.compare(y instanceof ItemTransferHubBuild, x instanceof ItemTransferHubBuild));
             for (Building other : cands) {
                 if (links.size >= hubBlock.maxConnections) break;
+                if (links.contains(other.pos())) continue;
                 if (!autoConnectTargetValid(this, other)) continue;
                 configure(other.pos());
             }
-            super.placed();
         }
 
         // ── 建筑拓扑（Building Topology）──────────────────────
@@ -441,13 +471,14 @@ public class ItemTransferHub extends Block {
                 updateTopology();
             }
 
-            // 帧首以赋值语义并入跨枢延迟计费/计数（chargeBatch 写入 *Next）。
-            // 必须是【赋值】而非 += ：powerConsumed 在供电路径上无其它清零点，
-            // 若累加会随时间无限膨胀（电网请求虚增、耗电统计失真）；
-            // 赋值后本帧值 = 上帧全部延迟量，帧内调度再叠加自己的一跳。
+            // 帧首并入跨枢延迟计费/计数——两者语义【刻意不对称】：
+            // powerConsumed 用【赋值】：其值跨帧有意义（电网读取最新请求），且供电路径
+            //   无其它清零点，+= 会随时间无限膨胀（a0.11.9.0 前的耗电虚高根因）；
+            // transferCount 用【+=】：入口恒为上帧清零后的 0，若用赋值会把
+            //   【本帧刚调度产生的自有件数】连同延迟量一起覆盖丢失 → 速率恒 0 而耗电正常。
             powerConsumed = powerConsumedNext;
             powerConsumedNext = 0f;
-            transferCount = transferCountNext;
+            transferCount += transferCountNext;
             transferCountNext = 0;
 
             // 将上一帧转移数写入 10s 滑动窗口（每 tick 一个桶），随后本帧计数清零
@@ -695,7 +726,14 @@ public class ItemTransferHub extends Block {
                     if (!isStorage && producer.acceptItem(producer, item)) continue;
 
                     if (isStorage) {
-                        if (producer.items.get(item) < producer.block.itemCapacity * 0.9f) continue;
+                        float stock = producer.items.get(item);
+                        boolean surplus = stock >= producer.block.itemCapacity * 0.9f;
+                        if (!surplus) {
+                            // 核心完全没有该物品时，仓库存量视为可回收，
+                            // 不受 90% 阈值限制（核心有存货则仍按 90% 盈余规则）
+                            CoreBlock.CoreBuild probe = findNearestCore(producer, item);
+                            if (probe == null || probe.items.get(item) > 0) continue;
+                        }
                     }
 
                     if (power == null || power.status <= 0) return;
@@ -1276,13 +1314,8 @@ public class ItemTransferHub extends Block {
                 }
                 rebuildData(this);
                 } else {
-                    hubBlock.getPotentialLinks(tile, team, b -> {
-                        if (b == null || !b.isValid()) return;
-                        if (!autoConnectTargetValid(this, b)) return;
-                        if (!links.contains(b.pos()) && links.size < hubBlock.maxConnections && linkValid(this, b)) {
-                            configure(b.pos());
-                        }
-                    });
+                    // 双击自动连接：与放置同一套【中枢优先两阶段】逻辑
+                    autoConnectNearby(hubBlock);
                 }
                 deselect();
                 return false;

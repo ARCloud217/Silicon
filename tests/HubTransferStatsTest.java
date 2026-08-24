@@ -42,11 +42,11 @@ public class HubTransferStatsTest {
 
         Hub(String name) { this.name = name; }
 
-        /** 镜像 updateTile：帧首赋值折叠 → 窗口记录并清零本帧计数 → 门控 → 积分/刷新。 */
+        /** 镜像 updateTile：帧首折叠（电力赋值/计数累加，刻意不对称）→ 窗口 → 门控 → 积分。 */
         void frame(boolean scheduleFires) {
-            // 帧首【赋值】并入延迟计费/计数（防跨帧无限累加；禁用帧随后清零）
+            // 帧首并入延迟计费/计数：电力【赋值】防膨胀；计数【+=】防覆盖同帧自有件数
             powerConsumed = powerConsumedNext; powerConsumedNext = 0f;
-            transferCount = transferCountNext; transferCountNext = 0;
+            transferCount += transferCountNext; transferCountNext = 0;
             // 窗口记录上一帧吞吐，随后清零
             window.push(transferCount);
             transferCount = 0;
@@ -171,6 +171,22 @@ public class HubTransferStatsTest {
         e.status = 0f;
         e.frame(false);
         check(e.powerConsumed == 0f && e.powerPerSecond == 0f, "场景7 断电帧请求与显示归零");
+
+        // ========== 场景9：发起枢纽同时被路过——自有件数与中转件数都入窗口 ==========
+        Hub mix = new Hub("M"), far = new Hub("F");
+        for (int f = 1; f <= 600; f++) {
+            boolean fire = (f % 10 == 0);
+            if (fire) {
+                mix.chargeOne(mix, 6);   // M 发起：自己一跳 6 件（仅调度帧）
+                mix.chargeOne(far, 4);   // 途经远端 F 4 件
+            }
+            mix.powerConsumedNext += 40f; // 连续不断的其它枢流量路过 M
+            mix.transferCountNext += 4;
+            mix.frame(fire);
+            far.frame(false);
+        }
+        check(mix.window.sum == 60L * 6L + 600L * 4L, "场景9 窗口总量 = 调度帧6件×60 + 每帧路过4件×600");
+        check(near(mix.transferRate, 276f, 1f), "场景9 速率 = 276件/秒");
 
         System.out.println("== 结果: " + pass + "/" + total + " 通过 ==");
         if (pass != total) System.exit(1);

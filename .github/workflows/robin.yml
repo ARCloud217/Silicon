@@ -11,8 +11,15 @@ permissions:
   contents: read
   pull-requests: write
 
+# secrets 不能直接用于 job.if，经 workflow 级 env 中转判断
+env:
+  LLM_CONFIGURED: ${{ secrets.LLM_BASE_URL != '' }}
+
 jobs:
   review:
+    # 仅在本 fork（已配置 LLM secrets）运行；
+    # 上游仓库无相关 secrets，PR 检查应显示跳过而非失败
+    if: env.LLM_CONFIGURED == 'true' && github.repository == 'Xiaobei09/Silicon'
     uses: antongulin/robin/.github/workflows/review.yml@main
     with:
       review-on-synchronize: true

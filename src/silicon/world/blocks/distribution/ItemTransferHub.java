@@ -291,14 +291,17 @@ public class ItemTransferHub extends Block {
             float angle = Angles.angle(cx, cy, other.x, other.y);
             float len1 = size * tilesize / 2f;
             float len2 = other.block.size * tilesize / 2f;
-            float x1 = cx + Mathf.cosDeg(angle) * len1;
-            float y1 = cy + Mathf.sinDeg(angle) * len1;
-            float x2 = other.x - Mathf.cosDeg(angle) * len2;
-            float y2 = other.y - Mathf.sinDeg(angle) * len2;
+            float ca = Mathf.cosDeg(angle), sa = Mathf.sinDeg(angle);
+            float x1 = cx + ca * len1;
+            float y1 = cy + sa * len1;
+            float x2 = other.x - ca * len2;
+            float y2 = other.y - sa * len2;
             float pulse = Mathf.absin(Time.time, 4f, 0.6f);
             Tmp.c1.set(linkColor).lerp(Color.white, pulse);
             Draw.color(Tmp.c1, Renderer.laserOpacity);
-            Drawf.laser(laserRegion, laserEndRegion, x1, y1, x2, y2);
+            Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
+                x1 + ca * 1.5f, y1 + sa * 1.5f,
+                x2 - ca * 1.5f, y2 - sa * 1.5f, 0.25f);
             Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
         }
 
@@ -1282,7 +1285,10 @@ public class ItemTransferHub extends Block {
                 float pulse = Mathf.absin(Time.time, 4f, 0.6f);
                 Tmp.c1.set(linkColor).lerp(Color.white, pulse);
                 Draw.color(Tmp.c1, Renderer.laserOpacity);
-                Drawf.laser(laserRegion, laserEndRegion, x1, y1, x2, y2);
+                // 原版大小：PowerNode 默认 laserScale=0.25，且端点向内收缩 1.5px
+                Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
+                    x1 + cos * 1.5f, y1 + sin * 1.5f,
+                    x2 - cos * 1.5f, y2 - sin * 1.5f, 0.25f);
             });
             Draw.reset();
         }

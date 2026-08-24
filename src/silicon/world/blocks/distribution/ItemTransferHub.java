@@ -4,6 +4,7 @@ import arc.Core;
 import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
+import arc.graphics.g2d.TextureRegion;
 import arc.math.Angles;
 import arc.math.Mathf;
 import arc.struct.IntSeq;
@@ -44,8 +45,17 @@ public class ItemTransferHub extends Block {
     public int maxConnections = 20;
     /** 矿机/工厂产出达到该容量比例即视为“快满”，触发向核心/仓库推送。 */
     public float surplusPushAt = 0.75f;
-    /** 物流连线颜色：墨绿（电力线风格）。 */
-    public static final Color linkColor = Color.valueOf("2E7D4F");
+    /** 物流连线颜色：与「连接数」状态栏一致（Pal.items）。 */
+    public static final Color linkColor = Pal.items;
+    /** 电力节点风格激光贴图。 */
+    public TextureRegion laserRegion, laserEndRegion;
+
+    @Override
+    public void load() {
+        super.load();
+        laserRegion = Core.atlas.find("laser");
+        laserEndRegion = Core.atlas.find("laser-end");
+    }
 
     public ItemTransferHub(String name) {
         super(name);
@@ -285,9 +295,10 @@ public class ItemTransferHub extends Block {
             float y1 = cy + Mathf.sinDeg(angle) * len1;
             float x2 = other.x - Mathf.cosDeg(angle) * len2;
             float y2 = other.y - Mathf.sinDeg(angle) * len2;
-            Draw.color(linkColor, Renderer.laserOpacity);
-            Lines.stroke(1.5f);
-            Lines.line(x1, y1, x2, y2);
+            float pulse = Mathf.absin(Time.time, 4f, 0.6f);
+            Tmp.c1.set(linkColor).lerp(Color.white, pulse);
+            Draw.color(Tmp.c1, Renderer.laserOpacity);
+            Drawf.laser(laserRegion, laserEndRegion, x1, y1, x2, y2);
             Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
         }
 
@@ -1267,15 +1278,11 @@ public class ItemTransferHub extends Block {
                 float x2 = other.x - cos * len2;
                 float y2 = other.y - sin * len2;
 
-                // 物流连线：墨绿电力线风格，透明度随激光设置
-                Draw.color(linkColor, Renderer.laserOpacity);
-                Lines.stroke(1.5f);
-
-                if (other instanceof ItemTransferHubBuild) {
-                    Lines.line(x1, y1, x2, y2, false);
-                } else {
-                    Lines.line(x1, y1, x2, y2, false);
-                }
+                // 物流连线：电力节点激光样式（颜色随时间轻微脉动，同原版电力线）
+                float pulse = Mathf.absin(Time.time, 4f, 0.6f);
+                Tmp.c1.set(linkColor).lerp(Color.white, pulse);
+                Draw.color(Tmp.c1, Renderer.laserOpacity);
+                Drawf.laser(laserRegion, laserEndRegion, x1, y1, x2, y2);
             });
             Draw.reset();
         }

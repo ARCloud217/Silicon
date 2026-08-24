@@ -7,31 +7,32 @@
 
 ## 固化步骤（按序执行，任一项 ❌ FAIL 即阻断启动）
 
-| 步骤 | 检查项 | 方法 | 通过标准 |
-|------|--------|------|----------|
-| S1 | isFactory 完整 | `Select-String isFactory` 含 Drill/GenericCrafter/MineConverter/ItemTurret | 4类齐全 |
-| S2 | isProducer / isPushProducer | 同上 | Drill+GenericCrafter+MineConverter |
-| S3 | pullOnDemand 区分工厂/仓储 | 含 isFactoryConsumer/isStorageConsumer | 2分支 |
-| S4 | 仓储阈值 0.9*capacity | 含 `0.9f` | 存在 |
-| S5 | findNearestSupplier 任意有货可供 | 不含 `if (!isProducer(b)) continue` 的局部 | 已放宽 |
-| S6 | 炮台伤害优先 | 含 `candidates.sort` + `ammoTypes.get(b).damage` | 存在 |
-| S7 | hasPendingDemand 同判据 | 含该方法且含 isFactory/isStorageConsumer | 存在 |
-| S8 | updateTile 门控 | 含 `boolean hasDemand = hasPendingDemand()` + `!pulled && !hasDemand` | 存在 |
-| S9 | push 堵线 blocked | 含 blocked 循环 | 存在 |
-| S10 | 核心满门控 | 含 `core.items.get(item) >= core.block.itemCapacity` | 存在 |
-| S11 | item.id 越界防护 | 含 `item.id >= consumer.items.length()` | 存在 |
-| S12 | 电力门控 | 含 `power == null || power.status` | 存在 |
-| S13 | 经由计费 chargePath/bfsPath | 含 chargePath | 存在 |
-| S14 | BFS 复用池 bfsInit | 含 bfsVisited.clear | 存在 |
-| S15 | 部署一致性 | `build/libs` 与 `data/mods` 长度一致 | 一致 |
-| S16 | 编译 | `gradlew deploy --no-daemon` EXIT:0 | 成功 |
+| 步骤 | 检查项 | 锚点（当前代码） |
+|------|--------|------------------|
+| S1 | isFactory 委托 HubRouting | `HubRouting.isFactory(b)` |
+| S2 | isFactory 含重构工厂 | HubRouting：`Reconstructor.ReconstructorBuild` |
+| S3 | 白名单无「有物品栏即连」泛化 | HubRouting 不含 `if (other.items != null) return true` |
+| S4 | 推送输入料保护门 | `producer.acceptItem(producer, item)` |
+| S5 | 炮台伤害优先 | `ammoTypes.get(b).damage` |
+| S6 | push 堵线触发 | `blocked = false` |
+| S7 | 核心 75% 门控 | `coreHasRoom = cur < cap * surplusPushAt` |
+| S8 | 越界防护 | `item.id >= consumer.items.length()` |
+| S9 | 电力门控 | `power == null || power.status <= 0` |
+| S10 | 调度节流 | `timer(0, 10)` |
+| S11 | chargeOne 单跳计费 | `private void chargeOne(` |
+| S12 | 途经计数延迟并入 | `transferCount += transferCountNext` |
+| S13 | 存档序列化 v1 | `write.i(network.id)` + `revision < 1` |
+| S14 | 核心满回退仓库跨网 BFS | `寻找其它中枢直连的仓库` |
+| S15 | 加载期防误删链接 | `world.isGenerating()` |
+| S16 | BFS 池化复用 | `bfsInit` |
 
 ## 自动化
 `powershell -ExecutionPolicy Bypass -File scripts/hub-deep-check.ps1`
-返回 14/14 PASS 且 BUILD 成功才允许 `Copy-Item build/libs -> data/mods` + `Start-Process run-hotreload.bat`。
+返回 16/16 PASS 且 BUILD 成功才允许覆盖游戏模组目录并重启。
 
 ## 人工复核
-- 放置预览：拖 ItemTransferHub 幽灵是否见淡绿细实线 + 方框
-- 工厂供料：仓库有货时工厂是否被拉至 MaximumAccepted
-- 仓库推核心：仓库>=90% 且核心未满是否推
+- 放置预览：拖中枢幽灵是否见淡蓝灰细线 + 方框；传送带等纯物流方块不出现可连提示
+- 工厂供料：仓库有货时工厂被拉至容量；**重构工厂同样被供料**
+- 核心满回退：核心对应物品全满时溢出流向仓库（含跨中枢连接的仓库）
+- 跨枢统计：中转枢纽的传输速率与耗电均有读数，耗电 ≈ 10 × 该枢经手速率
 - 炮台：多弹种时优先高 damage

@@ -41,9 +41,11 @@ import static mindustry.Vars.world;
 
 public class ItemTransferHub extends Block {
     public float connectionRange = 20f;
-    public int maxConnections = 50;
+    public int maxConnections = 20;
     /** 矿机/工厂产出达到该容量比例即视为“快满”，触发向核心/仓库推送。 */
     public float surplusPushAt = 0.75f;
+    /** 物流连线颜色：墨绿（电力线风格）。 */
+    public static final Color linkColor = Color.valueOf("2E7D4F");
 
     public ItemTransferHub(String name) {
         super(name);
@@ -283,8 +285,8 @@ public class ItemTransferHub extends Block {
             float y1 = cy + Mathf.sinDeg(angle) * len1;
             float x2 = other.x - Mathf.cosDeg(angle) * len2;
             float y2 = other.y - Mathf.sinDeg(angle) * len2;
-            Draw.color(Pal.lightishGray, Renderer.laserOpacity);
-            Lines.stroke(1f);
+            Draw.color(linkColor, Renderer.laserOpacity);
+            Lines.stroke(1.5f);
             Lines.line(x1, y1, x2, y2);
             Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
         }
@@ -307,9 +309,9 @@ public class ItemTransferHub extends Block {
             // 与已放置建筑连线
             Tile placedTile = world.tile(fx, fy);
             if (placedTile != null && placedTile.build != null && shouldConnect(placedTile.build)) {
-                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
-                Lines.stroke(1f);
-                Drawf.dashLine(Pal.lightishGray,
+                Draw.color(linkColor, Renderer.laserOpacity);
+                Lines.stroke(1.5f);
+                Drawf.dashLine(linkColor,
                     plan.drawx(), plan.drawy(),
                     placedTile.build.x, placedTile.build.y);
                 Drawf.square(placedTile.build.x, placedTile.build.y,
@@ -318,9 +320,9 @@ public class ItemTransferHub extends Block {
 
             // 与同批规划的其他中枢连线
             if (otherReq != null && otherReq.block == self) {
-                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
-                Lines.stroke(1f);
-                Drawf.dashLine(Pal.lightishGray, plan.drawx(), plan.drawy(),
+                Draw.color(linkColor, Renderer.laserOpacity);
+                Lines.stroke(1.5f);
+                Drawf.dashLine(linkColor, plan.drawx(), plan.drawy(),
                     otherReq.drawx(), otherReq.drawy());
                 Drawf.square(otherReq.drawx(), otherReq.drawy(),
                     otherReq.block.size * tilesize / 2f + 2f, Pal.place);
@@ -729,10 +731,11 @@ public class ItemTransferHub extends Block {
                         float stock = producer.items.get(item);
                         boolean surplus = stock >= producer.block.itemCapacity * 0.9f;
                         if (!surplus) {
-                            // 核心完全没有该物品时，仓库存量视为可回收，
-                            // 不受 90% 阈值限制（核心有存货则仍按 90% 盈余规则）
+                            // 核心该物品低于 75% 阈值时，仓库存量即可回收，
+                            // 不受仓库自身 90% 盈余阈值限制（与产出推送阈值对齐）
                             CoreBlock.CoreBuild probe = findNearestCore(producer, item);
-                            if (probe == null || probe.items.get(item) > 0) continue;
+                            if (probe == null
+                                || probe.items.get(item) >= probe.block.itemCapacity * surplusPushAt) continue;
                         }
                     }
 
@@ -802,7 +805,10 @@ public class ItemTransferHub extends Block {
             int moved = Math.min(Math.min(maxAmount, stock), Math.max(space, 0));
             if (moved <= 0) return false;
 
-            storage.items.add(item, moved);
+            // 与 directTransfer 同契约：逐件经 handleItem 交付（仓库默认实现即 items.add）
+            for (int i = 0; i < moved; i++) {
+                storage.handleItem(supplier, item);
+            }
             supplier.items.remove(item, moved);
 
             // 计费与统计口径与 directTransfer 一致（统一在 chargeBatch 内完成）
@@ -1077,8 +1083,12 @@ public class ItemTransferHub extends Block {
                 return false;
             }
 
-            // 零缓冲代理：直接操作双方库存（等价于 moved 次 handleItem）
-            consumer.items.add(item, moved);
+            // 零缓冲代理：供方扣减 + 收方经 handleItem 逐件交付。
+            // 默认 handleItem 为 items.add(1)；炮台等重写实现会把物品转换为弹药，
+            // 直接 items.add 会绕过转换造成"死库存"（既非弹药也无法取出）。
+            for (int i = 0; i < moved; i++) {
+                consumer.handleItem(supplier, item);
+            }
             supplier.items.remove(item, moved);
 
             // 经由计费：路径与费用整批只计算一次，避免逐件重跑 BFS；
@@ -1237,9 +1247,9 @@ public class ItemTransferHub extends Block {
                 float x2 = other.x - cos * len2;
                 float y2 = other.y - sin * len2;
 
-                // 物流连线：原版风格淡蓝灰，透明度随激光设置
-                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
-                Lines.stroke(1f);
+                // 物流连线：墨绿电力线风格，透明度随激光设置
+                Draw.color(linkColor, Renderer.laserOpacity);
+                Lines.stroke(1.5f);
 
                 if (other instanceof ItemTransferHubBuild) {
                     Lines.line(x1, y1, x2, y2, false);

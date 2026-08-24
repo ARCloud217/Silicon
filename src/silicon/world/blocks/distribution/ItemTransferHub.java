@@ -504,12 +504,17 @@ public class ItemTransferHub extends Block {
             // ② 推送：矿机 / 工厂溢出 → 核心（全网 BFS 找可收核心，无视距离）
             // ③ 兜底：核心满 / 无核时才落入仓库
 
-            if (network.enableDemandPull) {
-                pullOnDemand();
-            }
+            // 调度节流：每 10 tick（6Hz）执行一轮拉取/推送。
+            // 零缓冲批量直转单轮即可搬 10 件，逐帧调度会产生远超产线需求的吞吐，
+            // 导致耗电与速率统计虚高；节流后数值回归合理量级，调度行为本身不变。
+            if (timer(0, 10)) {
+                if (network.enableDemandPull) {
+                    pullOnDemand();
+                }
 
-            if (network.enableSurplusPush) {
-                pushSurplusToCore();
+                if (network.enableSurplusPush) {
+                    pushSurplusToCore();
+                }
             }
 
             // 积分口径 = 实际取电量：电网欠载（status<1）时按满足率折算，
@@ -723,6 +728,11 @@ public class ItemTransferHub extends Block {
 
                     Item item = content.item(i);
                     if (item == null || producer.items.get(item) == 0) continue;
+
+                    // 输入料保护：该物品仍是本生产建筑愿意接收的原料（未满）时不外运，
+                    // 否则推送出去会被拉取逻辑再抽回来，形成乒乓倒手、虚增吞吐与耗电。
+                    // 输出物必然不被自身接收（acceptItem=false），不受影响；仓库分支除外。
+                    if (!isStorage && producer.acceptItem(producer, item)) continue;
 
                     if (isStorage) {
                         if (producer.items.get(item) < producer.block.itemCapacity * 0.9f) continue;
@@ -1102,40 +1112,55 @@ public class ItemTransferHub extends Block {
 
         /**
          * 计费与吞吐统计口径（统一入口）：
-         * 物品每经过一个中枢：该中枢消耗 10 电力、经手件数 +moved。
-         * 本枢直接入账；远端枢写入延迟队列（下一帧生效）——
-         * 这样“路过”的中枢也能正确统计运输速率与耗电。
+         * 物品每经过一个中枢：该中枢自身消耗 10 电力、经手件数 +moved。
+         * 每个枢纽只统计"通过自己"的那一跳——发起枢不为其它枢的经手买单，
+         * 路径不可达时也只按端点归属各记一跳，绝不把全程记到单个枢头上。
          */
         private void chargeBatch(Building supplier, Building consumer, int moved) {
             ItemTransferHubBuild srcHub = findOwnerHub(supplier);
             ItemTransferHubBuild dstHub = findOwnerHub(consumer);
 
-            // 直连同枢 / 无法归属：仅本枢按件收费并计数
-            if (srcHub == null || dstHub == null || srcHub == dstHub) {
-                powerConsumed += 10f * moved;
-                transferCount += moved;
+            // 端点无法归属：仅当该端点直连本枢时才计入本枢
+            if (srcHub == null || dstHub == null) {
+                if ((srcHub == null && data.buildings.contains(supplier))
+                    || (dstHub == null && data.buildings.contains(consumer))) {
+                    powerConsumed += 10f * moved;
+                    transferCount += moved;
+                }
+                return;
+            }
+
+            // 同枢直转：费用与吞吐归该枢本身（本枢直接入账，远端枢延迟一帧）
+            if (srcHub == dstHub) {
+                chargeOne(srcHub, moved);
                 return;
             }
 
             Seq<ItemTransferHubBuild> path = bfsPath(srcHub, dstHub);
             if (path == null || path.size == 0) {
-                powerConsumed += 10f * moved;
-                transferCount += moved;
+                // 路径不可达（拓扑竞态兜底）：两端点归属枢各记自己的一跳
+                chargeOne(srcHub, moved);
+                chargeOne(dstHub, moved);
                 return;
             }
 
-            // 单价 10：物品每经过一个中枢，该中枢即消耗 10（不均摊）
-            float share = 10f * moved;
+            // 路径上每个经手中枢各计自己的一跳；本枢直接入账，远端枢下一帧生效
             IntSet charged = new IntSet();
             for (ItemTransferHubBuild h : path) {
                 if (!charged.add(h.id)) continue;
-                if (h == this) {
-                    powerConsumed += share;
-                    transferCount += moved;
-                } else {
-                    h.powerConsumedNext += share;
-                    h.transferCountNext += moved;
-                }
+                chargeOne(h, moved);
+            }
+        }
+
+        /** 单跳计费/计数：本枢直接入账，远端枢写入延迟队列（下一帧并入）。 */
+        private void chargeOne(ItemTransferHubBuild h, int moved) {
+            float share = 10f * moved;
+            if (h == this) {
+                powerConsumed += share;
+                transferCount += moved;
+            } else {
+                h.powerConsumedNext += share;
+                h.transferCountNext += moved;
             }
         }
 

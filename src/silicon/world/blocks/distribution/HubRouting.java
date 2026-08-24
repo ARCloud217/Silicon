@@ -3,9 +3,9 @@ package silicon.world.blocks.distribution;
 import arc.math.geom.Intersector;
 import arc.struct.IntSeq;
 import arc.struct.IntSet;
+import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import arc.util.Tmp;
-import mindustry.core.World;
 import mindustry.game.Team;
 import mindustry.gen.Building;
 import mindustry.world.Block;
@@ -18,6 +18,7 @@ import mindustry.world.blocks.production.GenericCrafter;
 import silicon.world.blocks.production.MineConverter;
 import mindustry.world.blocks.defense.turrets.ItemTurret;
 
+import static mindustry.Vars.content;
 import static mindustry.Vars.tilesize;
 import static mindustry.Vars.world;
 
@@ -29,12 +30,20 @@ public class HubRouting {
 
     private HubRouting() {}
 
+    /** 方块类型 → 是否消耗物品 的缓存（consumesItem 扫描较重，按类型缓存一次）。 */
+    private static final ObjectMap<Block, Boolean> itemConsumerCache = new ObjectMap<>();
+
     // ── 连接白名单 ────────────────────────────────────────────────
 
-    /** 可被中枢连接的建筑类型；核心旁已合并的容器排除。 */
+    /**
+     * 可被中枢连接的建筑类型：
+     * 存储（核心/仓库/容器）+ 生产（矿机/工厂/钻头）+ 有物品消耗的建筑（工厂/炮台/单位生产线）。
+     * 纯物流方块（传送带、路由器、交叉器等无消耗类型）不参与连接。
+     */
     public static boolean shouldConnect(Building other) {
-        if (other == null) return false;
+        if (other == null || other.items == null) return false;
         Block b = other.block;
+        // 存储：核心 / 仓库 / 容器
         if (b instanceof CoreBlock) return true;
         if (b instanceof StorageBlock) {
             // 核心旁已与核心合并的容器本身就是核心的一部分，不参与中枢连接
@@ -46,19 +55,33 @@ public class HubRouting {
             }
             return true;
         }
-        // 兵工厂 / 单位工厂等特殊生产建筑
+        // 生产 / 消耗白名单
+        if (b instanceof GenericCrafter || b instanceof MineConverter || b instanceof Drill) return true;
+        if (b instanceof ItemTurret) return true;
+        // 兵工厂 / 重构工厂等单位生产建筑
         if (b instanceof mindustry.world.blocks.units.UnitFactory) return true;
         if (b instanceof mindustry.world.blocks.units.Reconstructor) return true;
-
-        // 泛化规则：任何带物品栏的建筑均可接入中枢物流（含未来新增方块类型）
-        if (other.items != null) return true;
-
-        if (b instanceof GenericCrafter) return true;
-        if (b instanceof MineConverter) return true;
-        if (b instanceof Drill) return true;
-        if (b instanceof ItemTurret) return true;
         if (b instanceof ItemTransferHub) return true;
-        return false;
+        // 泛化：注册了物品消耗的方块自动接入；传送带等纯物流方块（无消耗）在此被排除
+        return consumesItems(b);
+    }
+
+    /** 方块类型是否有物品消耗（itemFilter 任一为真），按 Block 缓存。 */
+    public static boolean consumesItems(Block b) {
+        Boolean cached = itemConsumerCache.get(b);
+        if (cached != null) return cached;
+        boolean found = false;
+        if (b.hasItems) {
+            for (int i = 0; i < content.items().size; i++) {
+                Item it = content.item(i);
+                if (it != null && b.consumesItem(it)) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        itemConsumerCache.put(b, found);
+        return found;
     }
 
     /** 整体占位检测：中枢范围圆与目标建筑矩形相交即有效（非中心点距离）。 */
@@ -92,7 +115,8 @@ public class HubRouting {
             || b instanceof MineConverter.MineConverterBuild
             || b instanceof Drill.DrillBuild
             || b instanceof ItemTurret.ItemTurretBuild
-            || b instanceof mindustry.world.blocks.units.UnitFactory.UnitFactoryBuild;
+            || b instanceof mindustry.world.blocks.units.UnitFactory.UnitFactoryBuild
+            || b instanceof mindustry.world.blocks.units.Reconstructor.ReconstructorBuild;
     }
 
     /** 可被拉取的产出源：矿机 + 工厂。 */

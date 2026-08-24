@@ -169,3 +169,5 @@ javap4/
 hotreload.log
 tests/*.txt
 .javap_tmp/
+build-err.log
+deploy-err.log

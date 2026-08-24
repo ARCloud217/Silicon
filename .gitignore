@@ -167,3 +167,4 @@ javap4/
 .format.jar
 .build_*.log
 hotreload.log
+tests/*.txt

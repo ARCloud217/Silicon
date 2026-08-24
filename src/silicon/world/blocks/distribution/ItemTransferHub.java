@@ -50,6 +50,11 @@ public class ItemTransferHub extends Block {
     /** 电力节点风格激光贴图。 */
     public TextureRegion laserRegion, laserEndRegion;
 
+    /** 连线透明度：读取 Silicon 设置「中枢连线透明度」（0-100，默认 100）。 */
+    public static float linkOpacity() {
+        return Core.settings.getInt("hubLinkOpacity", 100) / 100f;
+    }
+
     @Override
     public void load() {
         super.load();
@@ -298,7 +303,7 @@ public class ItemTransferHub extends Block {
             float y2 = other.y - sa * len2;
             float pulse = Mathf.absin(Time.time, 4f, 0.6f);
             Tmp.c1.set(linkColor).lerp(Color.white, pulse);
-            Draw.color(Tmp.c1, Renderer.laserOpacity);
+            Draw.color(Tmp.c1, linkOpacity());
             Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
                 x1 + ca * 1.5f, y1 + sa * 1.5f,
                 x2 - ca * 1.5f, y2 - sa * 1.5f, 0.25f);
@@ -382,10 +387,12 @@ public class ItemTransferHub extends Block {
         private final Seq<ItemTransferHubBuild> bfsQueue = new Seq<>();
         private final IntSeq bfsDists = new IntSeq();
         private final IntSet bfsVisited = new IntSet();
-        /** 每消费者上次供料时刻（tick）：限制补货节奏贴近真实消耗，防止批量补满放大吞吐与耗电。 */
-        private final arc.struct.ObjectIntMap<Building> lastFeedTick = new arc.struct.ObjectIntMap<>();
-        /** 非炮台消费者的最小供料间隔（tick）。 */
-        private static final int FEED_INTERVAL_TICKS = 30;
+        /**
+         * 每非炮台消费者【上次供料后】的物品存量快照：
+         * 本轮可补量 = 快照 − 当前库存（即真实消耗量）+ 少量缓冲，
+         * 从数学上保证搬运量 ≈ 消耗量，杜绝批量补满带来的吞吐放大。
+         */
+        private final arc.struct.ObjectMap<Building, int[]> feedSnapshot = new arc.struct.ObjectMap<>();
 
         public ItemTransferHubBuild() {
             super();
@@ -474,12 +481,12 @@ public class ItemTransferHub extends Block {
                     if (!data.buildings.contains(b)) data.add(b);
                 }
             });
-            // 清理不再直连的消费者补货节奏记录（防 Building 引用滞留）
+            // 清理不再直连的消费者存量快照（防 Building 引用滞留）
             Seq<Building> staleKeys = new Seq<>();
-            for (arc.struct.ObjectIntMap.Entry<Building> e : lastFeedTick) {
-                if (!data.buildings.contains(e.key)) staleKeys.add(e.key);
+            for (Building k : feedSnapshot.keys()) {
+                if (!data.buildings.contains(k)) staleKeys.add(k);
             }
-            for (Building k : staleKeys) lastFeedTick.remove(k);
+            for (Building k : staleKeys) feedSnapshot.remove(k);
         }
 
         // ── 建筑级更新（Building Update）──────────────────────
@@ -622,11 +629,9 @@ public class ItemTransferHub extends Block {
                 if (consumer.items == null || !consumer.isValid()) continue;
 
                 boolean turret = consumer instanceof ItemTurret.ItemTurretBuild;
-                // 补货节奏门控：非炮台消费者按最小间隔供料——
-                // 批量一次补满会让搬运量 ≈ 消耗量 × 批次粒度，远超产线真实需求
-                if (!turret && rateTickCounter - lastFeedTick.get(consumer, -FEED_INTERVAL_TICKS) < FEED_INTERVAL_TICKS) {
-                    continue;
-                }
+                // 消耗匹配补货：非炮台消费者按「快照以来真实消耗量 + 缓冲」供给；
+                // 炮台作战耗弹快，保持按缺口即时足量供弹
+                int[] snap = turret ? null : feedSnapshot.get(consumer);
 
                 // 候选物品：炮台按伤害降序；其余按缺口比降序
                 Seq<Item> ordered = new Seq<>();
@@ -666,12 +671,26 @@ public class ItemTransferHub extends Block {
 
                     if (power == null || power.status <= 0) return any;
 
-                    if (directTransfer(supplier, consumer, item, 10)) {
+                    // 预算：非炮台 = 真实消耗量 + 2 缓冲（首轮回看快照缺省 2）
+                    int budget = 10;
+                    if (!turret) {
+                        int consumedSince = snap == null || item.id >= snap.length
+                            ? 0 : Math.max(0, snap[item.id] - consumer.items.get(item));
+                        budget = Math.min(10, consumedSince + 2);
+                        if (budget <= 0) continue;
+                    }
+
+                    if (directTransfer(supplier, consumer, item, budget)) {
                         any = true;
                         fed = true;
                     }
                 }
-                if (fed) lastFeedTick.put(consumer, rateTickCounter);
+                // 刷新快照为当前存量（含本轮供料），供下轮计算真实消耗
+                if (!turret && consumer.items != null) {
+                    int[] ns = new int[consumer.items.length()];
+                    for (int i = 0; i < ns.length; i++) ns[i] = consumer.items.get(i);
+                    feedSnapshot.put(consumer, ns);
+                }
             }
 
             return any;
@@ -1284,7 +1303,7 @@ public class ItemTransferHub extends Block {
                 // 物流连线：电力节点激光样式（颜色随时间轻微脉动，同原版电力线）
                 float pulse = Mathf.absin(Time.time, 4f, 0.6f);
                 Tmp.c1.set(linkColor).lerp(Color.white, pulse);
-                Draw.color(Tmp.c1, Renderer.laserOpacity);
+                Draw.color(Tmp.c1, linkOpacity());
                 // 原版大小：PowerNode 默认 laserScale=0.25，且端点向内收缩 1.5px
                 Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
                     x1 + cos * 1.5f, y1 + sin * 1.5f,

@@ -109,6 +109,9 @@ public class Silicon extends Mod {
                 st.pref(new CustomSetting(t -> t.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(8f)));
                 // —— 更新设置 ——
                 st.checkPref("updatecheck.autoCheck", true);
+
+                // —— 中枢物流调试 ——
+                st.checkPref("hubDebugLog", false, v -> silicon.world.blocks.distribution.ItemTransferHub.debugFlows = v);
                 // 检查更新按钮 + 与「恢复默认设置」之间再加一条灰色细线（rebuild 时保留）
                 st.pref(new CustomSetting(t -> {
                     t.button(Core.bundle.get("setting.checkUpdate.name"), Styles.defaultt, () -> UpdateChecker.check(true)).width(200f).padTop(6f);

@@ -26,6 +26,7 @@ import mindustry.world.Block;
 import mindustry.world.blocks.defense.turrets.ItemTurret;
 import mindustry.world.blocks.production.Drill;
 import mindustry.world.blocks.production.GenericCrafter;
+import silicon.util.SiliconLog;
 import silicon.world.blocks.production.MineConverter;
 import mindustry.world.blocks.storage.CoreBlock;
 import mindustry.world.blocks.storage.StorageBlock;
@@ -45,6 +46,9 @@ public class ItemTransferHub extends Block {
     public int maxConnections = 20;
     /** 矿机/工厂产出达到该容量比例即视为“快满”，触发向核心/仓库推送。 */
     public float surplusPushAt = 0.75f;
+    /** 调试日志开关（Silicon 设置页控制）。 */
+    public static boolean debugFlows = false;
+
     /** 物流连线颜色：与「连接数」状态栏一致（Pal.items）。 */
     public static final Color linkColor = Pal.items;
     /** 电力节点风格激光贴图。 */
@@ -393,6 +397,9 @@ public class ItemTransferHub extends Block {
          * 从数学上保证搬运量 ≈ 消耗量，杜绝批量补满带来的吞吐放大。
          */
         private final arc.struct.ObjectMap<Building, int[]> feedSnapshot = new arc.struct.ObjectMap<>();
+        /** 调试：流量聚合计数（"标签" -> 件数），由设置开关控制输出。 */
+        private final arc.struct.ObjectMap<String, Integer> debugFlow = new arc.struct.ObjectMap<>();
+        private int debugTicks = 0;
 
         public ItemTransferHubBuild() {
             super();
@@ -571,6 +578,18 @@ public class ItemTransferHub extends Block {
                 float seconds = Math.max(rateWindowCounts.size, 1) / 60f;
                 transferRate = rateWindowSum / seconds;
             }
+
+            // 调试流量聚合输出（设置页开关控制，每 2 秒一次）
+            if (debugFlows && ++debugTicks >= 120 && !debugFlow.isEmpty()) {
+                StringBuilder sb = new StringBuilder("[中枢流量 @").append(tile.x).append(",").append(tile.y).append("]");
+                for (arc.struct.ObjectMap.Entry<String, Integer> e : debugFlow) {
+                    sb.append(' ').append(e.key).append('=').append(e.value);
+                }
+                sb.append(" | 速率=").append(transferRate).append(" 耗电=").append(powerPerSecond);
+                SiliconLog.info(sb.toString());
+                debugFlow.clear();
+                debugTicks = 0;
+            }
         }
 
         private boolean isFactory(Building b) {
@@ -683,6 +702,7 @@ public class ItemTransferHub extends Block {
                     if (directTransfer(supplier, consumer, item, budget)) {
                         any = true;
                         fed = true;
+                        addFlow("拉:" + consumer.block.name, moved);
                     }
                 }
                 // 刷新快照为当前存量（含本轮供料），供下轮计算真实消耗
@@ -798,6 +818,7 @@ public class ItemTransferHub extends Block {
                     Building factoryTarget = findNearestConsumer(producer, item);
                     if (factoryTarget != null) {
                         directTransfer(producer, factoryTarget, item, 10);
+                        addFlow("分:" + factoryTarget.block.name, moved);
                         continue;
                     }
 
@@ -820,6 +841,7 @@ public class ItemTransferHub extends Block {
                     }
                     if (coreHasRoom && core != null) {
                         directTransfer(producer, core, item, 10);
+                        addFlow("推:核心", moved);
                     }
                 }
             }
@@ -863,8 +885,10 @@ public class ItemTransferHub extends Block {
                 storage.handleItem(supplier, item);
             }
             supplier.items.remove(item, moved);
+            addFlow("推:仓库", moved);
 
             // 计费与统计口径与 directTransfer 一致（统一在 chargeBatch 内完成）
+            addFlow("推:->仓库", moved);
             chargeBatch(supplier, storage, moved);
             return true;
         }
@@ -1191,6 +1215,11 @@ public class ItemTransferHub extends Block {
                 if (!charged.add(h.id)) continue;
                 chargeOne(h, moved);
             }
+        }
+
+        /** 调试计数（仅 debugFlows 开启时累计）。 */
+        void addFlow(String tag, int moved) {
+            if (debugFlows) debugFlow.merge(tag, moved, Integer::sum);
         }
 
         /** 单跳计费/计数：本枢直接入账，远端枢写入延迟队列（下一帧并入）。 */

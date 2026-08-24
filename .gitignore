@@ -171,3 +171,6 @@ tests/*.txt
 .javap_tmp/
 build-err.log
 deploy-err.log
+d-err.log
+jobs.txt
+prc.txt

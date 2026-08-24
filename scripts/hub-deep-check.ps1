@@ -39,11 +39,9 @@ Copy-Item $jar.FullName "Silicon.mod.jar" -Force
 Write-Host "已部署 Silicon.mod.jar ($((Get-Item 'Silicon.mod.jar').Length) bytes)"
 $gameDir = "D:\Games\Mindustry-HotReload\data\mods"
 if (Test-Path $gameDir) {
-  $target = Join-Path $gameDir $jar.Name
-  if (Test-Path $target) {
-    $d = (Get-Item $target).Length
-    if ($jar.Length -ne $d) { Write-Host "部署不一致 build=$($jar.Length) game=$d 需覆盖" -ForegroundColor Yellow }
-    else { Write-Host "游戏目录一致 $d" -ForegroundColor Green }
-  } else { Write-Host "游戏目录缺 $($jar.Name)，需手动复制" -ForegroundColor Yellow }
+  # 移除全部旧版 Silicon 包防同模组双载，替换为最新构建
+  Get-ChildItem $gameDir -Filter 'Silicon*.jar' | Remove-Item -Force
+  Copy-Item $jar.FullName (Join-Path $gameDir 'Silicon.jar') -Force
+  Write-Host "已同步游戏目录 Silicon.jar ($((Get-Item (Join-Path $gameDir 'Silicon.jar')).Length) bytes)" -ForegroundColor Green
 }
 Pop-Location

@@ -95,12 +95,6 @@ public class HubRouting {
             Tmp.r1.setCentered(link.x, link.y, link.block.size * tilesize, link.block.size * tilesize));
     }
 
-    /** 圆 vs 建筑整体矩形。 */
-    public static boolean overlaps(float srcx, float srcy, Building other, float range) {
-        return Intersector.overlaps(Tmp.cr1.set(srcx, srcy, range),
-            Tmp.r1.setCentered(other.x, other.y, other.block.size * tilesize, other.block.size * tilesize));
-    }
-
     // ── 角色判定 ────────────────────────────────────────────────
 
     /** 需喂料的消费者：炮台(0) > 工厂(1)；仓储为 2。 */

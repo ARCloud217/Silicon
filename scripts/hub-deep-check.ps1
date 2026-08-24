@@ -1,32 +1,49 @@
-param()
+﻿param()
 $ErrorActionPreference = "Continue"
-$hub = "src/silicon/world/blocks/distribution/ItemTransferHub.java"
-$text = Get-Content $hub -Raw
-function ok([bool]$c,[string]$m){ if($c){ Write-Host "✅ PASS $m" -ForegroundColor Green; return 1 } else { Write-Host "❌ FAIL $m" -ForegroundColor Red; return 0 } }
-$pass=0; $total=14
-$pass += ok ($text.Contains("private boolean isFactory") -and $text.Contains("Drill.DrillBuild")) "isFactory 含 Drill"
-$pass += ok ($text.Contains("private boolean isProducer")) "isProducer 存在"
-$pass += ok ($text.Contains("isFactoryConsumer") -and $text.Contains("isStorageConsumer")) "pull区分工厂/仓储"
-$pass += ok ($text.Contains("0.9f")) "仓储阈值 0.9"
-$pass += ok (-not $text.Contains("for (Building b : data.buildings) {\n                if (!isProducer(b)) continue;")) "findNearestSupplier 已放宽"
-$pass += ok ($text.Contains("candidates.sort") -and $text.Contains("ammoTypes.get(b).damage")) "炮台伤害优先"
-$pass += ok ($text.Contains("hasPendingDemand")) "hasPendingDemand"
-$pass += ok ($text.Contains("boolean hasDemand = hasPendingDemand()")) "gate hasDemand"
-$pass += ok ($text.Contains("blocked = false")) "push blocked"
-$pass += ok ($text.Contains("core.items.get(item) >= core.block.itemCapacity")) "核心满门控"
+# 固化检查：对齐 a0.11.8.x 当前代码锚点（chargeOne 单跳计费 / 调度节流 / 序列化 v1 / 跨网仓库回退）
+$hub     = "src/silicon/world/blocks/distribution/ItemTransferHub.java"
+$routing = "src/silicon/world/blocks/distribution/HubRouting.java"
+$text    = Get-Content $hub -Raw -Encoding UTF8
+$route   = Get-Content $routing -Raw -Encoding UTF8
+function ok([bool]$c,[string]$m){ if($c){ Write-Host "PASS $m" -ForegroundColor Green; return 1 } else { Write-Host "FAIL $m" -ForegroundColor Red; return 0 } }
+$pass=0; $total=16
+$pass += ok ($text.Contains("HubRouting.isFactory(b)")) "isFactory 委托 HubRouting"
+$pass += ok ($route.Contains("Reconstructor.ReconstructorBuild")) "isFactory 含重构工厂"
+$pass += ok (-not $route.Contains("if (other.items != null) return true")) "白名单无『有物品栏即连』泛化"
+$pass += ok ($text.Contains("producer.acceptItem(producer, item)")) "推送输入料保护门"
+$pass += ok ($text.Contains("ammoTypes.get(b).damage")) "炮台伤害优先"
+$pass += ok ($text.Contains("blocked = false")) "push 堵线触发"
+$pass += ok ($text.Contains("coreHasRoom = cur < cap * surplusPushAt")) "核心 75% 门控"
 $pass += ok ($text.Contains("item.id >= consumer.items.length()")) "越界防护"
-$pass += ok ($text.Contains("power == null")) "电力门控"
-$pass += ok ($text.Contains("chargePath")) "经由计费"
-$pass += ok ($text.Contains("bfsInit")) "BFS"
+$pass += ok ($text.Contains("power == null || power.status <= 0")) "电力门控"
+$pass += ok ($text.Contains("timer(0, 10)")) "调度节流 6Hz"
+$pass += ok ($text.Contains("private void chargeOne(")) "chargeOne 单跳计费"
+$pass += ok ($text.Contains("transferCountNext") -and $text.Contains("transferCount += transferCountNext")) "途经计数延迟并入"
+$pass += ok ($text.Contains("write.i(network.id)") -and $text.Contains("revision < 1")) "存档序列化 v1"
+$pass += ok ($text.Contains("寻找其它中枢直连的仓库")) "核心满回退仓库跨网 BFS"
+$pass += ok ($text.Contains("world.isGenerating()")) "加载期防误删链接"
+$pass += ok ($text.Contains("bfsInit")) "BFS 池化复用"
 Write-Host "--- $pass/$total ---" -ForegroundColor Cyan
 if($pass -ne $total){ exit 1 }
-# 编译
+# 编译（JDK17：build-tools 34 d8 需要）
 $env:JAVA_HOME = "C:\Users\56308\.jdks\jbr-17.0.7"
-$env:JAVA_TOOL_OPTIONS = "-Dfile.encoding=UTF-8"
-$env:GRADLE_USER_HOME = "D:\JavaProject\Silicon\.gradle-home"
-& "D:\Gradle\wrapper\dists\gradle-9.4.1-all\4rb8wyv1meme7u9gesmslx5da\gradle-9.4.1\bin\gradle.bat" deploy --no-daemon --console=plain
-if($LASTEXITCODE -ne 0){ Write-Host "❌ BUILD FAIL" -ForegroundColor Red; exit 1 }
-Write-Host "✅ BUILD SUCCESS" -ForegroundColor Green
-$b = (Get-Item "build/libs/Silicon-a0.10.1.1-v159.7.jar").Length
-$d = (Get-Item "D:\Games\Mindustry-HotReload\data\mods\Silicon-a0.10.1.1-v159.7.jar" -ErrorAction SilentlyContinue)?.Length
-if($b -ne $d){ Write-Host "⚠ 部署不一致 build=$b data=$d 需覆盖" -ForegroundColor Yellow } else { Write-Host "✅ 部署一致 $b" -ForegroundColor Green }
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+$root = Split-Path -Parent $PSScriptRoot
+Push-Location $root
+& ".\gradlew.bat" deploy --console=plain "-Dorg.gradle.java.home=$env:JAVA_HOME" | Out-Null
+if($LASTEXITCODE -ne 0){ Write-Host "BUILD FAIL" -ForegroundColor Red; Pop-Location; exit 1 }
+Write-Host "BUILD SUCCESS" -ForegroundColor Green
+# 部署一致性：最新产物 vs 游戏模组目录（目录不存在则跳过）
+$jar = Get-ChildItem "build/libs/Silicon-*-v159.7.jar" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Copy-Item $jar.FullName "Silicon.mod.jar" -Force
+Write-Host "已部署 Silicon.mod.jar ($((Get-Item 'Silicon.mod.jar').Length) bytes)"
+$gameDir = "D:\Games\Mindustry-HotReload\data\mods"
+if (Test-Path $gameDir) {
+  $target = Join-Path $gameDir $jar.Name
+  if (Test-Path $target) {
+    $d = (Get-Item $target).Length
+    if ($jar.Length -ne $d) { Write-Host "部署不一致 build=$($jar.Length) game=$d 需覆盖" -ForegroundColor Yellow }
+    else { Write-Host "游戏目录一致 $d" -ForegroundColor Green }
+  } else { Write-Host "游戏目录缺 $($jar.Name)，需手动复制" -ForegroundColor Yellow }
+}
+Pop-Location

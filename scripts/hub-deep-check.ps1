@@ -39,7 +39,7 @@ Write-Host "BUILD SUCCESS" -ForegroundColor Green
 $jar = Get-ChildItem "build/libs/Silicon-*-v159.7.jar" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 Copy-Item $jar.FullName "Silicon.mod.jar" -Force
 Write-Host "已部署 Silicon.mod.jar ($((Get-Item 'Silicon.mod.jar').Length) bytes)"
-$gameDir = Join-Path $env:APPDATA 'Mindustry\mods'
+$gameDir = 'D:\Games\Mindustry-HotReload\data\mods'
 if (Test-Path $gameDir) {
   # 移除全部旧版 Silicon 包防同模组双载，替换为最新构建
   Get-ChildItem $gameDir -Filter 'Silicon*.jar' | Remove-Item -Force

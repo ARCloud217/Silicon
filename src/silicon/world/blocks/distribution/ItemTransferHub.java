@@ -42,6 +42,8 @@ import static mindustry.Vars.world;
 public class ItemTransferHub extends Block {
     public float connectionRange = 20f;
     public int maxConnections = 50;
+    /** 矿机/工厂产出达到该容量比例即视为“快满”，触发向核心/仓库推送。 */
+    public float surplusPushAt = 0.75f;
 
     public ItemTransferHub(String name) {
         super(name);
@@ -84,29 +86,31 @@ public class ItemTransferHub extends Block {
                 rebuildData(entity);
             }
         });
+
+        // 长按拖线放置：InputHandler 将拖过的相对坐标以 Point2[] 传入
+        config(arc.math.geom.Point2[].class, (ItemTransferHubBuild entity, arc.math.geom.Point2[] dragLinks) -> {
+            entity.links.clear();
+            for (arc.math.geom.Point2 link : dragLinks) {
+                Building other = world.build(entity.tile.x + link.x, entity.tile.y + link.y);
+                if (other == null || !other.isValid() || other == entity) continue;
+                if (!linkValid(entity, other)) continue;
+                if (entity.links.size >= maxConnections) break;
+                entity.links.addUnique(other.pos());
+                if (other instanceof ItemTransferHubBuild otherHub
+                    && !otherHub.links.contains(entity.pos()) && otherHub.links.size < maxConnections) {
+                    otherHub.links.addUnique(entity.pos());
+                }
+            }
+            rebuildData(entity);
+        });
     }
 
     private static boolean shouldConnect(Building other) {
-        if (other == null) return false;
-        Block b = other.block;
-        if (b instanceof CoreBlock) return true;
-        if (b instanceof StorageBlock) return true;
-        if (b instanceof GenericCrafter) return true;
-        if (b instanceof MineConverter) return true;
-        if (b instanceof Drill) return true;
-        if (b instanceof ItemTurret) return true;
-        if (b instanceof ItemTransferHub) return true;
-        return false;
+        return HubRouting.shouldConnect(other);
     }
 
     public static boolean linkValid(Building tile, Building link) {
-        if (tile == link || link == null) return false;
-        if (!(tile.block instanceof ItemTransferHub)) return false;
-        if (tile.team != link.team) return false;
-        if (!shouldConnect(link)) return false;
-        float range = ((ItemTransferHub) tile.block).connectionRange * tilesize;
-        float dist = Mathf.dst(tile.x, tile.y, link.x, link.y);
-        return dist <= range;
+        return HubRouting.linkValid(tile, link);
     }
 
     private static void rebuildData(ItemTransferHubBuild hub) {
@@ -145,10 +149,26 @@ public class ItemTransferHub extends Block {
                 () -> (float) b.links.size / maxConnections
         ));
         addBar("silicon-hub-transfer-rate", (ItemTransferHubBuild b) -> new Bar(
-                () -> Core.bundle.format("bar.silicon-hub-transfer-rate", b.transferCountPerSecond),
+                () -> Core.bundle.format("bar.silicon-hub-transfer-rate", b.transferRate),
                 () -> Pal.accent,
-                () -> Math.min(b.transferCountPerSecond / 50f, 1f)
+                () -> Math.min(b.transferRate / 50f, 1f)
         ));
+    }
+
+    @Override
+    public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
+        if (!(config instanceof arc.math.geom.Point2[] links)) return;
+
+        Building hubB = tile.build;
+        if (!(hubB instanceof ItemTransferHubBuild hub)) return;
+
+        for (arc.math.geom.Point2 link : links) {
+            Tile other = world.tile(tile.x + link.x, tile.y + link.y);
+            if (other == null || other.build == null || other.build == hub) continue;
+            if (hub.links.contains(other.build.pos())) continue;
+            if (hub.links.size >= maxConnections) break;
+            hub.configure(other.build.pos());
+        }
     }
 
     /**
@@ -175,7 +195,7 @@ public class ItemTransferHub extends Block {
                 return;
             }
 
-            if (!overlaps(wx, wy, b.tile, b.block, range)) {
+            if (!overlaps(wx, wy, b, range)) {
                 return;
             }
 
@@ -195,6 +215,12 @@ public class ItemTransferHub extends Block {
         return Intersector.overlaps(Tmp.cr1.set(srcx, srcy, range),
             Tmp.r1.setCentered(other.worldx() + otherBlock.offset, other.worldy() + otherBlock.offset,
                 otherBlock.size * tilesize, otherBlock.size * tilesize));
+    }
+
+    /** Building 版：建筑中心已含 offset，直接以占位矩形判定。 */
+    protected boolean overlaps(float srcx, float srcy, Building other, float range) {
+        return Intersector.overlaps(Tmp.cr1.set(srcx, srcy, range),
+            Tmp.r1.setCentered(other.x, other.y, other.block.size * tilesize, other.block.size * tilesize));
     }
 
     @Override
@@ -220,12 +246,48 @@ public class ItemTransferHub extends Block {
             float y1 = cy + Mathf.sinDeg(angle) * len1;
             float x2 = other.x - Mathf.cosDeg(angle) * len2;
             float y2 = other.y - Mathf.sinDeg(angle) * len2;
-            Draw.color(Pal.powerLight, Renderer.laserOpacity);
-            Lines.stroke(1f);
-            Lines.line(x1, y1, x2, y2, false);
-            Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
+                // 放置预览：原版风格淡蓝灰，透明度随激光设置
+                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
+                Lines.stroke(1f);
         });
 
+        Draw.reset();
+    }
+
+    @Override
+    public void drawPlanConfigTop(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
+        if (!(plan.config instanceof arc.math.geom.Point2[] ps)) return;
+
+        mindustry.world.Block self = this;
+        int cx = plan.x, cy = plan.y;
+
+        for (arc.math.geom.Point2 p : ps) {
+            final int fx = cx + p.x, fy = cy + p.y;
+            mindustry.entities.units.BuildPlan otherReq = findPlan(list, fx, fy, other ->
+                other != plan && other.block != null && other.block.size > 0);
+
+            // 与已放置建筑连线
+            Tile placedTile = world.tile(fx, fy);
+            if (placedTile != null && placedTile.build != null && shouldConnect(placedTile.build)) {
+                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
+                Lines.stroke(1f);
+                Drawf.dashLine(Pal.lightishGray,
+                    plan.drawx(), plan.drawy(),
+                    placedTile.build.x, placedTile.build.y);
+                Drawf.square(placedTile.build.x, placedTile.build.y,
+                    placedTile.build.block.size * tilesize / 2f + 2f, Pal.place);
+            }
+
+            // 与同批规划的其他中枢连线
+            if (otherReq != null && otherReq.block == self) {
+                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
+                Lines.stroke(1f);
+                Drawf.dashLine(Pal.lightishGray, plan.drawx(), plan.drawy(),
+                    otherReq.drawx(), otherReq.drawy());
+                Drawf.square(otherReq.drawx(), otherReq.drawy(),
+                    otherReq.block.size * tilesize / 2f + 2f, Pal.place);
+            }
+        }
         Draw.reset();
     }
 
@@ -254,6 +316,12 @@ public class ItemTransferHub extends Block {
         private float powerAccumulator = 0f;
         private int transferCount = 0;
         private int transferCountPerSecond = 0;
+        /** 传输速率：10 秒滑动窗口平均（件/秒） */
+        public float transferRate = 0f;
+        private static final int RATE_WINDOW_TICKS = 600; // 10s * 60fps
+        private final arc.struct.Seq<Integer> rateWindowCounts = new arc.struct.Seq<>();
+        private int rateWindowSum = 0;
+        private int rateTickCounter = 0;
 
         private final Seq<ItemTransferHubBuild> bfsQueue = new Seq<>();
         private final IntSeq bfsDists = new IntSeq();
@@ -291,6 +359,8 @@ public class ItemTransferHub extends Block {
             ItemTransferHub hubBlock = (ItemTransferHub) block;
             hubBlock.getPotentialLinks(tile, team, other -> {
                 if (other == null || !other.isValid()) return;
+                // 非中枢建筑若已在相同网络内（被其它中枢服务），不重复连接
+                if (!(other instanceof ItemTransferHubBuild) && inSameNetwork(other)) return;
                 if (!links.contains(other.pos()) && links.size < hubBlock.maxConnections && linkValid(this, other)) {
                     configure(other.pos());
                 }
@@ -343,8 +413,22 @@ public class ItemTransferHub extends Block {
                 return;
             }
 
-            // 本帧发起的转移数清零；powerConsumed 为本帧瞬时耗电（由 chargePath 累加）
-            powerConsumed = 0f;
+            // 先并入上一帧跨枢分摊的延迟计费（chargePath 写入 powerConsumedNext），
+            // 否则远端枢的耗电会被此处清零丢弃 → 电力统计 < 传输速率。
+            powerConsumed = powerConsumedNext;
+            powerConsumedNext = 0f;
+
+            // 将上一帧转移数写入 10s 滑动窗口（每 tick 一个桶）
+            if (rateTickCounter > 0 || rateWindowCounts.size == 0) {
+                rateWindowCounts.add(transferCount);
+                rateWindowSum += transferCount;
+                if (rateWindowCounts.size > RATE_WINDOW_TICKS / 6) {
+                    rateWindowSum -= rateWindowCounts.remove(0);
+                }
+            }
+            rateTickCounter++;
+
+            // 本帧发起的转移数清零；powerConsumed 现含延迟计费 + 本帧新计费（由 chargePath 继续累加）
             transferCount = 0;
 
             // 无电力或禁用：不调度，秒级统计归零（避免 powerPerSecond 滞留）
@@ -355,22 +439,22 @@ public class ItemTransferHub extends Block {
                 if (timer(3, 60)) {
                     powerPerSecond = 0f;
                     powerAccumulator = 0f;
-                    transferCountPerSecond = 0;
+                    transferRate = 0f;
                 }
 
                 return;
             }
 
-            // 调度：拉取优先于推送（同产品链路）
-            boolean pulled = false;
+            // 调度优先级（每帧顺序执行）：
+            // ① 拉取：先满足工厂 / 炮台的原料需求（最高优先）
+            // ② 推送：矿机 / 工厂溢出 → 核心（全网 BFS 找可收核心，无视距离）
+            // ③ 兜底：核心满 / 无核时才落入仓库
 
             if (network.enableDemandPull) {
-                pulled = pullOnDemand();
+                pullOnDemand();
             }
 
-            boolean hasDemand = hasPendingDemand();
-
-            if (network.enableSurplusPush && !pulled && !hasDemand) {
+            if (network.enableSurplusPush) {
                 pushSurplusToCore();
             }
 
@@ -383,28 +467,35 @@ public class ItemTransferHub extends Block {
             if (timer(3, 60)) {
                 powerPerSecond = powerAccumulator;
                 powerAccumulator = 0f;
-                transferCountPerSecond = transferCount;
+            }
+
+            // 10 秒平均运输速率：滑动窗口各 tick 件数之和 ÷ 窗口覆盖的秒数
+            if (rateTickCounter % 10 == 0) {
+                long sum = 0;
+                for (int i = 0; i < rateWindowCounts.size; i++) {
+                    sum += rateWindowCounts.get(i);
+                }
+                float seconds = Math.max(rateWindowCounts.size, 1) / 60f;
+                transferRate = sum / seconds;
             }
         }
 
-        /**
-         * 工厂判定：需喂料的消费者（合成/转化/炮台/矿机）。
-         * 矿机虽产出为主，但补润滑剂/水等时也需 acceptItem，故归入工厂。
-         */
         private boolean isFactory(Building b) {
-            return b instanceof GenericCrafter.GenericCrafterBuild
-                || b instanceof MineConverter.MineConverterBuild
-                || b instanceof Drill.DrillBuild
-                || b instanceof ItemTurret.ItemTurretBuild;
+            return HubRouting.isFactory(b);
         }
 
         /**
          * 产出源判定：可被拉取的供源 —— 矿机产出 + 工厂产出。
          */
+        /**
+         * 消费者优先级：炮台(0) > 工厂(1) > 仓储(2)。数值越小越优先。
+         */
+        private int consumerPriority(Building b) {
+            return HubRouting.consumerPriority(b);
+        }
+
         private boolean isProducer(Building b) {
-            return b instanceof Drill.DrillBuild
-                || b instanceof GenericCrafter.GenericCrafterBuild
-                || b instanceof MineConverter.MineConverterBuild;
+            return HubRouting.isProducer(b);
         }
 
         /**
@@ -428,29 +519,19 @@ public class ItemTransferHub extends Block {
                 if (b.items == null || !b.isValid()) {
                     continue;
                 }
-                boolean isStorage = b instanceof StorageBlock.StorageBuild
-                    && !(b instanceof CoreBlock.CoreBuild);
-                boolean isFactoryC = isFactory(b);
-                if (!isFactoryC && !isStorage) {
+                // 只有工厂参与主动拉取；仓储不拉（仅被动接收核心满时的溢出推送）
+                if (!isFactory(b)) {
                     continue;
                 }
-                // 至少有一种物品待补才入队
                 boolean needs = false;
                 for (int i = 0; i < content.items().size; i++) {
                     Item it = content.item(i);
                     if (it == null || it.id >= b.items.length()) {
                         continue;
                     }
-                    if (isFactoryC) {
-                        if (b.items.get(it) < b.getMaximumAccepted(it)) {
-                            needs = true;
-                            break;
-                        }
-                    } else if (isStorage) {
-                        if (b.items.get(it) < b.block.itemCapacity * 0.9f && b.acceptItem(null, it)) {
-                            needs = true;
-                            break;
-                        }
+                    if (b.items.get(it) < b.getMaximumAccepted(it)) {
+                        needs = true;
+                        break;
                     }
                 }
                 if (needs) {
@@ -458,11 +539,20 @@ public class ItemTransferHub extends Block {
                 }
             }
 
-            // 缺口比 = 1 - 当前/上限，越大越缺；仓储按 0.9*capacity 归一
+            /**
+             * 消费者优先级（三级）：
+             * ① 炮台 —— 断弹即失去防御能力，供弹最优先
+             * ② 工厂 —— 保证生产线不断
+             * ③ 仓储 —— 最后补存
+             * 同级之间按缺口比例降序（最饿的先吃）
+             */
             consumers.sort((a, b) -> {
-                float ra = deficitRatio(a);
-                float rb = deficitRatio(b);
-                return Float.compare(rb, ra);
+                int ta = consumerPriority(a);
+                int tb = consumerPriority(b);
+                if (ta != tb) {
+                    return Integer.compare(ta, tb);
+                }
+                return Float.compare(deficitRatio(b), deficitRatio(a));
             });
 
             for (Building consumer : consumers) {
@@ -471,8 +561,6 @@ public class ItemTransferHub extends Block {
                     continue;
                 }
 
-                boolean isStorageConsumer = consumer instanceof StorageBlock.StorageBuild
-                    && !(consumer instanceof CoreBlock.CoreBuild);
                 boolean isFactoryConsumer = isFactory(consumer);
 
                 // 炮台：按弹药伤害从高到低优选
@@ -505,9 +593,7 @@ public class ItemTransferHub extends Block {
                 if (it == null || it.id >= consumer.items.length()) {
                     continue;
                 }
-                int cap = isStorageConsumer
-                    ? (int) (consumer.block.itemCapacity * 0.9f)
-                    : consumer.getMaximumAccepted(it);
+                int cap = consumer.getMaximumAccepted(it);
                 if (cap <= 0) {
                     continue;
                 }
@@ -516,10 +602,9 @@ public class ItemTransferHub extends Block {
                 }
             }
             final Building fc = consumer;
-            final boolean fStorage = isStorageConsumer;
             ordered.sort((a, b) -> Float.compare(
-                itemDeficitRatio(fc, b, fStorage),
-                itemDeficitRatio(fc, a, fStorage)));
+                itemDeficitRatio(fc, b, false),
+                itemDeficitRatio(fc, a, false)));
         }
 
         // 多源料工厂：同一帧可连续补多种输入（不提前 break），保证双料同时到位
@@ -538,17 +623,7 @@ public class ItemTransferHub extends Block {
                 if (consumer.items.get(item) >= consumer.getMaximumAccepted(item)) {
                     continue;
                 }
-                // 只拉该工厂真正接受的输入料（矿机空槽不算需求）
-                if (!consumer.acceptItem(this, item)) {
-                    continue;
-                }
-            } else if (isStorageConsumer) {
-                if (consumer.items.get(item) >= consumer.block.itemCapacity * 0.9f) {
-                    continue;
-                }
-                if (!consumer.acceptItem(this, item)) {
-                    continue;
-                }
+
             }
 
             Building supplier = findNearestSupplier(consumer, item);
@@ -606,63 +681,6 @@ public class ItemTransferHub extends Block {
         }
 
         /**
-         * 是否有待补需求（工厂缺料 或 仓储 <90%）。
-         * 有待补需求时，即使本帧未拉到，也不应把货推回核心。
-         */
-        private boolean hasPendingDemand() {
-
-            for (Building consumer : data.buildings) {
-
-                if (consumer.items == null || !consumer.isValid()) {
-                    continue;
-                }
-
-                boolean isStorageConsumer = consumer instanceof StorageBlock.StorageBuild
-                    && !(consumer instanceof CoreBlock.CoreBuild);
-                boolean isFactoryConsumer = isFactory(consumer);
-
-                if (!isFactoryConsumer && !isStorageConsumer) {
-                    continue;
-                }
-
-                for (int i = 0; i < content.items().size; i++) {
-
-                    Item item = content.item(i);
-                    if (item == null) {
-                        continue;
-                    }
-
-                    if (item.id >= consumer.items.length()) {
-                        continue;
-                    }
-
-                    if (isFactoryConsumer) {
-                        if (consumer.items.get(item) >= consumer.getMaximumAccepted(item)) {
-                            continue;
-                        }
-                        // 关键过滤：只统计真正接受的输入料。
-                        // 否则矿机/工厂的空槽位会被误判为需求，hasPendingDemand 恒真，
-                        // pushSurplusToCore 被永久门控——矿机满仓也不回仓库/核心。
-                        if (!consumer.acceptItem(this, item)) {
-                            continue;
-                        }
-                    } else if (isStorageConsumer) {
-                        if (consumer.items.get(item) >= consumer.block.itemCapacity * 0.9f) {
-                            continue;
-                        }
-                        if (!consumer.acceptItem(this, item)) {
-                            continue;
-                        }
-                    }
-
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        /**
          * 推送：仓储/矿机/工厂 溢出 -> 核心；核心满时不推。
          * - 仓储：>=90% 容量算溢出
          * - 矿机/工厂：任一输出满即堵线需要排空
@@ -691,7 +709,7 @@ public class ItemTransferHub extends Block {
                         if (ck == null) {
                             continue;
                         }
-                        if (producer.items.get(ck) >= producer.block.itemCapacity) {
+                        if (producer.items.get(ck) >= producer.block.itemCapacity * surplusPushAt) {
                             blocked = true;
                             break;
                         }
@@ -709,11 +727,7 @@ public class ItemTransferHub extends Block {
                         continue;
                     }
 
-                    if (isStorage) {
-                        if (producer.items.get(item) < producer.block.itemCapacity * 0.9f) {
-                            continue;
-                        }
-                    }
+                    // 仓储内容尽可能回核心（不再设 90% 保留阈值）
 
                     if (power == null || power.status <= 0) {
                         return;
@@ -721,13 +735,14 @@ public class ItemTransferHub extends Block {
 
                     CoreBlock.CoreBuild core = findNearestCore(producer, item);
 
-                    // 核心满或不收 → 回退到最近仓库（非核心）
                     Building target = core;
-                    if (core == null
+
+                    if (core == null || !core.acceptItem(producer, item)
                         || (core.items != null && item.id < core.items.length()
-                            && core.items.get(item) >= core.block.itemCapacity)
-                        || !core.acceptItem(producer, item)) {
-                        target = findNearestStorage(producer, item);
+                            && core.items.get(item) >= core.block.itemCapacity)) {
+                        // 矿机/工厂：核心满 → 回退最近仓库
+                        // 仓储自身：核心满则停止（避免仓库间乒乓倒手）
+                        target = isStorage ? null : findNearestStorage(producer, item);
                     }
 
                     if (target == null) {
@@ -756,25 +771,58 @@ public class ItemTransferHub extends Block {
          * 因此产出物即使未满仓也会被判定为可拉取——修复了中间链
          * （A 厂产物喂 B 厂原料）中 A 被整体跳过的问题。
          */
+        /**
+         * 判断建筑是否已在本中枢网络内（经由任意中枢链路可达的直连建筑）。
+         * 用于放置/双击自动连接时排除同网建筑——它们已被现有中枢服务。
+         */
+        private boolean inSameNetwork(Building b) {
+            if (b == null) return false;
+            if (data.buildings.contains(b)) return true;
+            bfsInit();
+            for (ItemTransferHubBuild h : data.hubs) {
+                if (bfsVisited.add(h.id)) {
+                    bfsQueue.add(h);
+                    bfsDists.add(1);
+                }
+            }
+            for (int i = 0; i < bfsQueue.size; i++) {
+                ItemTransferHubBuild cur = bfsQueue.get(i);
+                if (cur.data.buildings.contains(b)) return true;
+                for (ItemTransferHubBuild nb : cur.data.hubs) {
+                    if (bfsVisited.add(nb.id)) {
+                        bfsQueue.add(nb);
+                        bfsDists.add(bfsDists.get(i) + 1);
+                    }
+                }
+            }
+            return false;
+        }
+
         private boolean isInputStockOfFactory(Building supplier, Item item) {
             return isFactory(supplier)
                 && supplier.acceptItem(supplier, item)
                 && supplier.items.get(item) < supplier.getMaximumAccepted(item);
         }
 
+        /**
+         * 供源三级优先级（满足工厂/炮台拉取时的取货顺序）：
+         * ① 仓库（StorageBlock，非核心）—— 首选
+         * ② 核心
+         * ③ 矿机 / 工厂产出物
+         * 每级内部取 BFS 最近；全部落空后，兜底允许同类工厂输入库存（防饿死）。
+         */
         private Building findNearestSupplier(Building consumer, Item item) {
-            // Route-variable: dynamically evaluate distance each call; prefer local, then BFS nearest.
-            // Pass 1: 非工厂输入库存的供源（矿机产出/工厂成品/仓储/核心）。
-            // Pass 2: 兜底允许同类工厂输入库存（仅在无其它选择时，避免乒乓）。
-            for (int pass = 0; pass < 2; pass++) {
+
+            for (int pass = 0; pass < 4; pass++) {
 
                 Building best = null;
                 int bestDist = Integer.MAX_VALUE;
 
+                // 直连建筑：距离 1
                 for (Building b : data.buildings) {
+                    if (!supplierMatchesPass(b, item, pass)) continue;
                     if (b == consumer || !b.isValid() || b.items == null || b.items.get(item) <= 0) continue;
                     if (!consumer.acceptItem(b, item)) continue;
-                    if (pass == 0 && isInputStockOfFactory(b, item)) continue;
                     if (bestDist > 1) {
                         best = b;
                         bestDist = 1;
@@ -782,6 +830,7 @@ public class ItemTransferHub extends Block {
                 }
                 if (bestDist == 1) return best;
 
+                // BFS 全网层序
                 bfsInit();
                 for (ItemTransferHubBuild hub : data.hubs) {
                     if (bfsVisited.add(hub.id)) {
@@ -794,10 +843,10 @@ public class ItemTransferHub extends Block {
                     ItemTransferHubBuild hub = bfsQueue.get(idx);
                     int d = bfsDists.get(idx) + 1;
                     for (Building b : hub.data.buildings) {
+                        if (!supplierMatchesPass(b, item, pass)) continue;
                         if (b == consumer || !b.isValid()) continue;
                         if (b.items == null || b.items.get(item) <= 0) continue;
                         if (!consumer.acceptItem(b, item)) continue;
-                        if (pass == 0 && isInputStockOfFactory(b, item)) continue;
                         if (d < bestDist) {
                             best = b;
                             bestDist = d;
@@ -811,11 +860,19 @@ public class ItemTransferHub extends Block {
                     }
                 }
 
-                if (best != null) {
-                    return best;
-                }
+                if (best != null) return best;
             }
+
             return null;
+        }
+
+        private boolean supplierMatchesPass(Building b, Item item, int pass) {
+            switch (pass) {
+                case 0: return b instanceof StorageBlock.StorageBuild && !(b instanceof CoreBlock.CoreBuild);
+                case 1: return b instanceof CoreBlock.CoreBuild;
+                case 2: return isProducer(b) && !isInputStockOfFactory(b, item);
+                default: return true;
+            }
         }
 
         /**
@@ -921,10 +978,8 @@ public class ItemTransferHub extends Block {
             consumer.items.add(item, moved);
             supplier.items.remove(item, moved);
 
-            // 经由计费：按 BFS 最短路上的每个中枢各收 10/件
-            for (int i = 0; i < moved; i++) {
-                chargePath(supplier, consumer);
-            }
+            // 经由计费：路径与费用整批只计算一次，避免逐件重跑 BFS
+            chargeBatch(supplier, consumer, moved);
 
             transferCount += moved;
 
@@ -932,35 +987,38 @@ public class ItemTransferHub extends Block {
         }
 
         /**
-         * 经由计费：每经一枢 +10 瞬时，秒级由 updateTile 的 powerAccumulator 求和。
-         * 远端枢改为写入 powerConsumedNext（延迟一帧），避免被其帧首清零覆盖。
+         * 计费口径：物品每经过一个中枢，该中枢消耗 10/moved 件——单价 10。
+         * 均摊到路径上每个中枢；本枢直接入账，远端枢写入延迟队列（下一帧生效）。
          */
-        private void chargePath(Building supplier, Building consumer) {
+        private void chargeBatch(Building supplier, Building consumer, int moved) {
             ItemTransferHubBuild srcHub = findOwnerHub(supplier);
             ItemTransferHubBuild dstHub = findOwnerHub(consumer);
-            // 直连同枢：仅本枢
+
+            // 直连同枢 / 无法归属：仅本枢按件收费
             if (srcHub == null || dstHub == null || srcHub == dstHub) {
-                powerConsumed += 10f;
+                powerConsumed += 10f * moved;
                 return;
             }
+
             Seq<ItemTransferHubBuild> path = bfsPath(srcHub, dstHub);
             if (path == null || path.size == 0) {
-                powerConsumed += 10f;
+                powerConsumed += 10f * moved;
                 return;
             }
+
+            // 单价 10：物品每经过一个中枢，该中枢即消耗 10（不均摊）
+            float share = 10f * moved;
             IntSet charged = new IntSet();
             for (ItemTransferHubBuild h : path) {
                 if (!charged.add(h.id)) continue;
                 if (h == this) {
-                    h.powerConsumed += 10f;
+                    powerConsumed += share;
                 } else {
-                    h.powerConsumedNext += 10f;
+                    h.powerConsumedNext += share;
                 }
             }
-            if (charged.add(this.id)) {
-                powerConsumed += 10f;
-            }
         }
+
 
         private ItemTransferHubBuild findOwnerHub(Building b) {
             if (b instanceof ItemTransferHubBuild) return (ItemTransferHubBuild) b;
@@ -1056,8 +1114,8 @@ public class ItemTransferHub extends Block {
                 float x2 = other.x - cos * len2;
                 float y2 = other.y - sin * len2;
 
-                // 模仿电力线风格：淡绿色细实线（不拉伸虚线，改为填充）
-                Draw.color(Pal.powerLight, Renderer.laserOpacity);
+                // 物流连线：原版风格淡蓝灰，透明度随激光设置
+                Draw.color(Pal.lightishGray, Renderer.laserOpacity);
                 Lines.stroke(1f);
 
                 if (other instanceof ItemTransferHubBuild) {
@@ -1128,6 +1186,8 @@ public class ItemTransferHub extends Block {
                     // auto-connect all potential links like PowerNode.getPotentialLinks
                     hubBlock.getPotentialLinks(tile, team, b -> {
                         if (b == null || !b.isValid()) return;
+                        // 非中枢建筑已在相同网络内则跳过
+                        if (!(b instanceof ItemTransferHubBuild) && inSameNetwork(b)) return;
                         if (!links.contains(b.pos()) && links.size < hubBlock.maxConnections && linkValid(this, b)) {
                             configure(b.pos());
                         }

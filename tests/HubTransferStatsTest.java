@@ -5,7 +5,7 @@
  *
  * 镜像 ItemTransferHubBuild 当前实现的关键算法（a0.11.21.0 口径）：<p>
  * 1. chargeOne：本枢写入计费平滑缓冲（smoothBuf），远端枢走 *Next 延迟一帧<br>
- * 2. 瞬时请求 = 最近 SMOOTH_TICKS(10) 帧计费均值——摊平 6Hz 批量突发，电网侧不跳变<br>
+ * 2. 瞬时请求 = 最近 SMOOTH_TICKS(30) 帧计费均值——摊平 6Hz 批量突发，电网侧无耗电锋<br>
  * 3. 电力消耗按秒计算（60tick 滑动窗口）；运输速率为 10 秒滑动窗口——
  *    稳态流量下 耗电 ≈ 10 × 速率 仍然成立<br>
  * 4. 电力硬门控：status < POWER_OK 完全停止并进入冷却（60t）；冷却结束后先「探测」
@@ -44,11 +44,11 @@ public class HubTransferStatsTest {
         float perSecond() { return size == 0 ? 0f : sum / (size / 60f); }
     }
 
-    /** 枢纽模型：逐行镜像 updateTile 帧首折叠/门控/平滑/同窗统计 与 chargeOne。 */
+    /** 枢纽模型：逐行镜像 updateTile 帧首折叠/门控/平滑/统计 与 chargeOne。 */
     static class Hub {
         static final float POWER_OK = 0.999f;
         static final int COOLDOWN = 60;
-        static final int SMOOTH = 10;
+        static final int SMOOTH = 30;
         static final float PROBE_DRAW = 10f;
 
         final String name;
@@ -166,9 +166,9 @@ public class HubTransferStatsTest {
         // ========== 场景1：同枢直转计费进平滑缓冲，请求摊平不跳变且守恒 ==========
         Hub a = new Hub("A");
         a.beginFrame(); a.chargeOne(a, 10); a.endFrame();   // 单批 100 电费
-        check(near(a.powerConsumed, 10f, 0.001f), "场景1 单批100计费摊平为请求10");
+        check(near(a.powerConsumed, 100f / Hub.SMOOTH, 0.01f), "场景1 单批100计费摊平为请求 100/30");
         float integrated = a.powerConsumed;
-        for (int i = 0; i < 39; i++) { a.frame(); integrated += a.powerConsumed; }
+        for (int i = 0; i < 59; i++) { a.frame(); integrated += a.powerConsumed; }
         check(near(integrated, 100f, 0.5f), "场景1 请求积分总量 = 计费总额100（摊平不失守恒）");
 
         // ========== 场景2：跨枢延迟计费并入远端枢平滑缓冲 ==========
@@ -176,7 +176,7 @@ public class HubTransferStatsTest {
         a = new Hub("A");
         a.chargeOne(b, 10);                        // 远端一跳写 Next
         b.frame();
-        check(near(b.powerConsumed, 10f, 0.001f), "场景2 B 下一帧并入计费并摊平");
+        check(near(b.powerConsumed, 100f / Hub.SMOOTH, 0.01f), "场景2 B 下一帧并入计费并摊平");
         check(b.transferCount == 0 && b.counts.sum == 10, "场景2 计数已入滑动窗口桶");
 
         // ========== 场景3：稳态流量下耗电 ≈ 10 × 速率（耗电按秒、速率按 10 秒）==========

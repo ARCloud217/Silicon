@@ -15,7 +15,7 @@
 | S4 | 推送输入料保护门（静态配方判定） | `producer.block.consumesItem(item))` |
 | S5 | 炮台伤害优先 | `ammoTypes.get(b).damage` |
 | S6 | push 堵线触发 | `blocked = false` |
-| S7 | 核心阈值动态实际容量 + 未满即推 | `probe.getMaximumAccepted(item) * surplusPushAt`、`directTransfer(producer, core, item, 10);` |
+| S7 | 核心真实容量余量 + 未满即推 | `coreHasRoomFor(core, item)`、`probe.storageCapacity * surplusPushAt`、`directTransfer(producer, core, item, 10);` |
 | S8 | 越界防护 | `item.id >= consumer.items.length()` |
 | S9 | 电力硬门控（不足完全停止） | `power.status < POWER_OK`、`STARVE_COOLDOWN_TICKS`、`probing = true` |
 | S10 | 调度节流 | `timer(0, 10)` |

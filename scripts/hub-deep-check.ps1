@@ -13,7 +13,7 @@ $pass += ok (-not $route.Contains("if (other.items != null) return true")) "白�
 $pass += ok ($text.Contains("producer.block.consumesItem(item))")) "推送输入料保护门（静态配方判定）"
 $pass += ok ($text.Contains("ammoTypes.get(b).damage")) "炮台伤害优先"
 $pass += ok ($text.Contains("blocked = false")) "push 堵线触发"
-$pass += ok ($text.Contains("probe.getMaximumAccepted(item) * surplusPushAt")) "核心阈值按实际动态容量（getMaximumAccepted）"
+$pass += ok ($text.Contains("coreHasRoomFor(core, item)")) "核心余量按真实容量（storageCapacity，防焚烧）"
 $pass += ok ($text.Contains("directTransfer(producer, core, item, 10);")) "矿机/工厂产物核心未满即推"
 $pass += ok ($text.Contains("item.id >= consumer.items.length()")) "越界防护"
 $pass += ok ($text.Contains("power.status < POWER_OK")) "电力硬门控（不足完全停止）"

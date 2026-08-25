@@ -32,7 +32,7 @@
 ### A4. 电力硬门控与计费口径
 - [ ] 单价：物品每经过一个中枢，**该枢自身**消耗 10 电力、经手件数 +moved
 - [ ] 发起枢只计自己的一跳；远端经手枢经 powerConsumedNext/transferCountNext 延迟一帧并入
-- [ ] 计费写入平滑缓冲：瞬时请求 = 最近 SMOOTH_TICKS(10) 帧均值，调度先于求值（守恒：每笔费用恰好摊入 10 帧）
+- [ ] 计费写入平滑缓冲：瞬时请求 = 最近 SMOOTH_TICKS(30) 帧均值，调度先于求值（守恒：每笔费用恰好摊入 10 帧）
 - [ ] **电力不足完全停止**：status < POWER_OK(0.999) → 停转 + 60t 冷却；冷却结束先「探测」（真实请求、零搬运），
       请求被足额交付才恢复——无源电网永不空转
 - [ ] 路径过滤：BFS 种子/扩展、bfsPath 中继、directTransfer/forceTransferToStorage 端点全部经 `relayable` 校验

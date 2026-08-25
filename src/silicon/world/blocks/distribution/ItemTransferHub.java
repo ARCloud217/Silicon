@@ -51,8 +51,8 @@ public class ItemTransferHub extends Block {
     static final float POWER_OK = 0.999f;
     /** 欠压冷却时长（tick）：停止后须等待电网回血再重试，避免逐帧“要电/不要电”抖动。 */
     static final int STARVE_COOLDOWN_TICKS = 60;
-    /** 瞬时请求平滑窗口（tick）：与 6Hz 调度节流间隔一致，批量计费摊平后电网所见需求平稳。 */
-    static final int SMOOTH_TICKS = 10;
+    /** 瞬时请求平滑窗口（tick）：批量计费摊入 30 帧衰减，避免突兀的耗电锋；调度先于求值保证守恒。 */
+    static final int SMOOTH_TICKS = 30;
     /** 探测请求下限（电力）：至少相当于一件物品经手的电费，用于实证电网供电能力。 */
     static final float PROBE_DRAW = 10f;
     /** 调试日志开关（Silicon 设置页控制）。 */
@@ -892,11 +892,12 @@ public class ItemTransferHub extends Block {
                         float stock = producer.items.get(item);
                         boolean surplus = stock >= producer.block.itemCapacity * 0.9f;
                         if (!surplus) {
-                            // 核心该物品低于 75%（按核心实际容量动态计算）时，
+                            // 核心该物品低于 75%（按核心真实容量 storageCapacity 计算，
+                            // 不受 coreIncinerates 规则下 getMaximumAccepted 膨胀的影响）时，
                             // 仓库存量即可回收，不受仓库自身 90% 盈余阈值限制（与产出推送阈值对齐）
                             CoreBlock.CoreBuild probe = findNearestCore(producer, item);
                             if (probe == null
-                                || probe.items.get(item) >= probe.getMaximumAccepted(item) * surplusPushAt) continue;
+                                || probe.items.get(item) >= probe.storageCapacity * surplusPushAt) continue;
                         }
                     }
 
@@ -1127,13 +1128,23 @@ public class ItemTransferHub extends Block {
             return best;
         }
 
+        /**
+         * 核心该物品是否有真实剩余空间。
+         * 地图规则 coreIncinerates 开启时，原版 getMaximumAccepted 返回 10.7 亿、acceptItem 恒真——
+         * 若据此判定“核心有空间”，会把物品送进已满核心被焚烧丢弃。必须以 storageCapacity 为准。
+         */
+        private static boolean coreHasRoomFor(CoreBlock.CoreBuild core, Item item) {
+            return item.id < core.items.length() && core.items.get(item) < core.storageCapacity;
+        }
+
         private CoreBlock.CoreBuild findNearestCore(Building producer, Item item) {
             // Route-variable: same BFS nearest logic for cores
             CoreBlock.CoreBuild best = null;
             int bestDist = Integer.MAX_VALUE;
 
             for (Building b : data.buildings) {
-                if (b instanceof CoreBlock.CoreBuild core && b.isValid() && item.id < core.items.length() && core.acceptItem(producer, item)) {
+                if (b instanceof CoreBlock.CoreBuild core && b.isValid()
+                    && core.acceptItem(producer, item) && coreHasRoomFor(core, item)) {
                     best = core;
                     bestDist = 1;
                     break;
@@ -1154,7 +1165,8 @@ public class ItemTransferHub extends Block {
                 ItemTransferHubBuild hub = bfsQueue.get(idx);
                 int d = bfsDists.get(idx) + 1;
                 for (Building b : hub.data.buildings) {
-                    if (b instanceof CoreBlock.CoreBuild core && b.isValid() && core.acceptItem(producer, item)) {
+                    if (b instanceof CoreBlock.CoreBuild core && b.isValid()
+                        && core.acceptItem(producer, item) && coreHasRoomFor(core, item)) {
                         if (d < bestDist) {
                             best = core;
                             bestDist = d;
@@ -1203,6 +1215,10 @@ public class ItemTransferHub extends Block {
 
             int supplierStock = supplier.items.get(item);
             int consumerSpace = consumer.getMaximumAccepted(item) - consumer.items.get(item);
+            // 核心收方：以真实容量复核余量（coreIncinerates 规则下 getMaximumAccepted 膨胀为 10.7 亿）
+            if (consumer instanceof CoreBlock.CoreBuild coreConsumer) {
+                consumerSpace = Math.min(consumerSpace, coreConsumer.storageCapacity - coreConsumer.items.get(item));
+            }
 
             // 距离过近保护：仅保留给「原版自身就在吞吐」的建筑对——
             // 生产建筑与消费者贴面时，钻头等会直接向邻接建筑倾倒产出，
@@ -1388,6 +1404,9 @@ public class ItemTransferHub extends Block {
 
             if (Mathf.zero(Renderer.laserOpacity) || isPayload() || team == Team.derelict) return;
 
+            // 连线绘制在电力层；【必须恢复原层级】——否则后续实体全部继承电力层，
+            // 造成其它方块/特效随机出现渲染顺序异常（表现为“别处凭空出现视觉问题”）
+            float prevZ = Draw.z();
             Draw.z(Layer.power);
 
             Lines.stroke(2f);
@@ -1414,6 +1433,7 @@ public class ItemTransferHub extends Block {
                     x + cos * len1, y + sin * len1,
                     other.x - cos * len2, other.y - sin * len2, 0.25f);
             });
+            Draw.z(prevZ);
             Draw.reset();
         }
 

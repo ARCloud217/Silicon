@@ -531,7 +531,7 @@ public class ItemTransferHub extends Block {
             // 禁用 / 断电：不调度；瞬时请求清零——
             // 禁用时原版电网本就跳过本枢（shouldConsumePower=false），残留值只会冻结显示；
             // 断电时清零可避免“幽灵需求”挤占电池，且显示与实际消耗保持一致。
-            if (!enabled || power == null || power.status <= 0) {
+            if (!enabled || power == null || power.status < 0.5f) {
                 powerConsumed = 0f;
                 powerConsumedNext = 0f;
                 powerAccumulator = 0f;
@@ -555,7 +555,7 @@ public class ItemTransferHub extends Block {
             if (timer(0, 10)) {
                 // 电力效率门控：status<1 时按比例缩放本轮搬运预算，
                 // 电力不足不再能全力运转（与原版工厂降速行为一致）
-                float efficiency = power.status;
+                float efficiency = 1f; // 门控已确保 status ≥ 0.5，此处全额运行
                 if (network.enableDemandPull) {
                     pullOnDemand(efficiency);
                 }
@@ -811,7 +811,7 @@ public class ItemTransferHub extends Block {
                             // 不受仓库自身 90% 盈余阈值限制（与产出推送阈值对齐）
                             CoreBlock.CoreBuild probe = findNearestCore(producer, item);
                             if (probe == null
-                                || probe.items.get(item) >= probe.block.itemCapacity * surplusPushAt) continue;
+                                || probe.items.get(item) >= probe.getMaximumAccepted(item) * surplusPushAt) continue;
                         }
                     }
 
@@ -1223,6 +1223,11 @@ public class ItemTransferHub extends Block {
             if (debugFlows) debugFlow.put(tag, debugFlow.get(tag, 0) + moved);
         }
 
+        /** 该中枢是否可中转流量（启用且有电）。 */
+        private boolean canRelay(ItemTransferHubBuild h) {
+            return h.enabled && h.power != null && h.power.status > 0;
+        }
+
         /** 单跳计费/计数：本枢直接入账，远端枢写入延迟队列（下一帧并入）。 */
         private void chargeOne(ItemTransferHubBuild h, int moved) {
             float share = 10f * moved;
@@ -1292,6 +1297,7 @@ public class ItemTransferHub extends Block {
                     return path;
                 }
                 for (ItemTransferHubBuild nb : cur.data.hubs) {
+                    if (!canRelay(nb)) continue;
                     if (bfsVisited.add(nb.id)) {
                         bfsQueue.add(nb);
                         parentHub.add(cur);

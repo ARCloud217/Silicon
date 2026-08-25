@@ -297,26 +297,45 @@ public class ItemTransferHub extends Block {
         Seq<Building> cands = new Seq<>();
         getPotentialLinks(tile, player.team(), cands::add);
 
-        // 预览与实际建链口径一致：候选中枢网络内的建筑不显示连线
-        // （它们将由其所在中枢继续服务，新枢只连中枢本身）
-        arc.struct.ObjectSet<Building> servedByCandidateHubs = new arc.struct.ObjectSet<>();
+        // 模拟两阶段自动连接（与 autoConnectNearby 同口径：中枢优先、同网排除、连接数上限），
+        // 得出「实际会放下的连接」——蓝色标记 + 连线；
+        // 其余符合连接标准的候选——绿色标记（与单击配置显示的「可新建」同色），不画连线。
+        cands.sort((a, b) -> Boolean.compare(b instanceof ItemTransferHubBuild, a instanceof ItemTransferHubBuild));
+        arc.struct.ObjectSet<Building> actual = new arc.struct.ObjectSet<>();
+        // 虚拟网络的已覆盖建筑：直连的非中枢 + 已连中枢的网络可达建筑
+        arc.struct.ObjectSet<Building> covered = new arc.struct.ObjectSet<>();
+        int simulated = 0;
         for (Building cand : cands) {
-            if (cand instanceof ItemTransferHubBuild h) collectNetworkBuildings(h, servedByCandidateHubs);
+            if (!cand.isValid() || simulated >= maxConnections) continue;
+            if (cand instanceof ItemTransferHubBuild h) {
+                if (actual.add(cand)) {
+                    simulated++;
+                    collectNetworkBuildings(h, covered);
+                }
+            } else if (!covered.contains(cand)) {
+                actual.add(cand);
+                covered.add(cand);
+                simulated++;
+            }
         }
 
         for (Building other : cands) {
-            if (!(other instanceof ItemTransferHubBuild) && servedByCandidateHubs.contains(other)) continue;
             float angle = Angles.angle(cx, cy, other.x, other.y);
             float ca = Mathf.cosDeg(angle), sa = Mathf.sinDeg(angle);
             // 端点对齐原版 PowerNode.drawLaser：半边长【先内缩 1.5px】再投影——
             // 端点落在方块边缘内侧（先到边界再外推会让端点悬在方块外）
             float len1 = size * tilesize / 2f - 1.5f;
             float len2 = other.block.size * tilesize / 2f - 1.5f;
-            Draw.color(linkColor, linkOpacity());
-            Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
-                cx + ca * len1, cy + sa * len1,
-                other.x - ca * len2, other.y - sa * len2, 0.25f);
-            Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
+            if (actual.contains(other)) {
+                Draw.color(linkColor, linkOpacity());
+                Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
+                    cx + ca * len1, cy + sa * len1,
+                    other.x - ca * len2, other.y - sa * len2, 0.25f);
+                Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
+            } else {
+                Draw.color(Pal.heal, linkOpacity());
+                Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.heal);
+            }
         }
 
         Draw.reset();

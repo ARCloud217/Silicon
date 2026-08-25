@@ -63,8 +63,8 @@
 |---|---|
 | 常驻连线 Hub↔Hub | Pal.lightishGray 细实线 stroke(1f) |
 | 常驻连线 Hub→建筑 | 同色细实线（不再虚线拉伸） |
-| 放置预览线 | 同连线颜色（Pal.lightishGray + laserOpacity），非激光贴图 |
-| 预览高亮 | 可连目标 Drawf.square(Pal.place) |
+| 放置预览连线 | 仅画「实际会放下」的连接（原版电力激光贴图 + 透明度设置） |
+| 预览高亮 | **实际连接=蓝色** Drawf.square(Pal.place)；符合连接标准但不会连接=**绿色** Drawf.square(Pal.heal)（与单击显示一致） |
 | 范围圈 | drawPlace: Pal.placing 圆；drawSelect: Pal.accent 虚线圈 |
 | 透明度 | Renderer.laserOpacity 联动 |
 

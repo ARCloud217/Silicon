@@ -218,6 +218,22 @@ public class ItemTransferHub extends Block {
         }
     }
 
+    /**
+     * 收集以 (cx,cy) 为中心、2 倍连接范围内的全部同队中枢的【整网覆盖建筑】。
+     * 用于自动连接/预览的同网排除：这些网络内的非中枢建筑不应被新建中枢直连
+     * （它们已在其它中枢的服务下——无论该中枢是否也在新枢的连接范围内）。
+     */
+    private void collectNearbyHubCoverage(float cx, float cy, Team team, arc.struct.ObjectSet<Building> out) {
+        var tree = team.data().buildingTree;
+        if (tree == null) return;
+        float r = connectionRange * 2f * tilesize;
+        tree.intersect(cx - r, cy - r, r * 2f, r * 2f, b -> {
+            if (b instanceof ItemTransferHubBuild h && b.isValid() && b.team == team) {
+                collectNetworkBuildings(h, out);
+            }
+        });
+    }
+
     @Override
     public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
         if (!(config instanceof arc.math.geom.Point2[] links)) return;
@@ -297,26 +313,25 @@ public class ItemTransferHub extends Block {
         Seq<Building> cands = new Seq<>();
         getPotentialLinks(tile, player.team(), cands::add);
 
-        // 模拟自动连接（与 autoConnectNearby 同口径：距离就近、同网排除、连接数上限），
-        // 得出「实际会放下的连接」——蓝色标记 + 连线；
-        // 其余符合连接标准的候选——绿色标记（与单击配置显示的「可新建」同色），不画连线。
+        // 模拟自动连接（与 autoConnectNearby 同口径）：
+        // 【范围内的中枢全部连接】；非中枢建筑只要已在任一同队中枢的网络内
+        // （含即将连接的中枢网络、以及范围外邻近中枢的网络）就不直连——
+        // 蓝色标记 + 连线只给实际会放下的连接，
+        // 其余符合连接标准的候选——绿色标记（与单击配置显示的「可新建」同色）。
         cands.sort((a, b) -> Float.compare(
             Mathf.dst2(a.x - cx, a.y - cy),
             Mathf.dst2(b.x - cx, b.y - cy)));
+        arc.struct.ObjectSet<Building> coveredByHubs = new arc.struct.ObjectSet<>();
+        collectNearbyHubCoverage(cx, cy, player.team(), coveredByHubs);
         arc.struct.ObjectSet<Building> actual = new arc.struct.ObjectSet<>();
-        // 虚拟网络的已覆盖建筑：直连的非中枢 + 已连中枢的网络可达建筑
-        arc.struct.ObjectSet<Building> covered = new arc.struct.ObjectSet<>();
         int simulated = 0;
         for (Building cand : cands) {
             if (!cand.isValid() || simulated >= maxConnections) continue;
-            if (cand instanceof ItemTransferHubBuild h) {
-                if (actual.add(cand)) {
-                    simulated++;
-                    collectNetworkBuildings(h, covered);
-                }
-            } else if (!covered.contains(cand)) {
+            if (cand instanceof ItemTransferHubBuild) {
                 actual.add(cand);
-                covered.add(cand);
+                simulated++;
+            } else if (!coveredByHubs.contains(cand)) {
+                actual.add(cand);
                 simulated++;
             }
         }
@@ -472,19 +487,31 @@ public class ItemTransferHub extends Block {
         }
 
         /**
-         * 自动连接（放置 / 双击共用）：候选按【距离就近】排序——默认优先连接最近的目标；
-         * 非中枢目标仍做同网排除（inSameNetwork 实时含已连入的中枢网络），
-         * 连接数达到上限即停止。预览 drawPlace 以同一排序口径模拟，保证所见即所得。
+         * 自动连接（放置 / 双击共用）：候选按【距离就近】排序。
+         * 排除规则：非中枢建筑只要已在任何同队中枢的网络内（邻近中枢整网，
+         * 含即将连入的中枢网络）一律不直连；范围内的中枢则全部连接
+         * （仅受连接数上限约束）。预览 drawPlace 以同一口径模拟，所见即所得。
          */
         private void autoConnectNearby(ItemTransferHub hubBlock) {
             Seq<Building> cands = new Seq<>();
             hubBlock.getPotentialLinks(tile, team, cands::add);
             cands.sort((a, b) -> Float.compare(Mathf.dst2(a.x - x, a.y - y), Mathf.dst2(b.x - x, b.y - y)));
+
+            arc.struct.ObjectSet<Building> coveredByHubs = new arc.struct.ObjectSet<>();
+            collectNearbyHubCoverage(x, y, team, coveredByHubs);
+
             for (Building other : cands) {
                 if (links.size >= hubBlock.maxConnections) break;
                 if (links.contains(other.pos())) continue;
-                if (!autoConnectTargetValid(this, other)) continue;
-                configure(other.pos());
+                if (other instanceof ItemTransferHubBuild) {
+                    // 范围内的中枢全部连接
+                    configure(other.pos());
+                } else {
+                    // 已在网络内 / 即将连接的网络内的建筑不直连
+                    if (coveredByHubs.contains(other)) continue;
+                    if (!autoConnectTargetValid(this, other)) continue;
+                    configure(other.pos());
+                }
             }
         }
 

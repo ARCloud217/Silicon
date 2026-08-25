@@ -820,24 +820,22 @@ public class ItemTransferHub extends Block {
                         continue;
                     }
 
-                    // ② 其次：推核心（该物品存量低于 75% 阈值时）
+                    // ② 其次：推核心（acceptItem 为真即可推，核心满时自然拒收）
                     CoreBlock.CoreBuild core = findNearestCore(producer, item);
                     boolean coreHasRoom = false;
                     if (core != null && core.acceptItem(producer, item)) {
-                        int cap = Math.max(core.block.itemCapacity, 1);
-                        int cur = (core.items != null && item.id < core.items.length()) ? core.items.get(item) : 0;
-                        // 与推送阈值统一：核心该物品存量低于 75% 即可接收
-                        coreHasRoom = cur < cap * surplusPushAt;
+                        coreHasRoom = true;
                     }
-                    // ③ 核心≥75%或拒收：产物回流仓库
-                    if (!coreHasRoom || core == null) {
+                    // ③ 核心满或拒收：产物回流仓库
+                    if (!coreHasRoom) {
                         StorageBlock.StorageBuild storage = findNearestStorage(producer, item);
                         if (storage != null) {
                             forceTransferToStorage(producer, storage, item, 10);
+                            addFlow("推:仓库", 10);
                             continue;
                         }
                     }
-                    if (coreHasRoom && core != null) {
+                    if (coreHasRoom) {
                         directTransfer(producer, core, item, 10);
                         addFlow("推:核心", 10);
                     }

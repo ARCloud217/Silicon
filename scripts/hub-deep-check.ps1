@@ -13,7 +13,7 @@ $pass += ok (-not $route.Contains("if (other.items != null) return true")) "白�
 $pass += ok ($text.Contains("producer.acceptItem(producer, item)")) "推送输入料保护门"
 $pass += ok ($text.Contains("ammoTypes.get(b).damage")) "炮台伤害优先"
 $pass += ok ($text.Contains("blocked = false")) "push 堵线触发"
-$pass += ok ($text.Contains("coreHasRoom = cur < cap * surplusPushAt")) "核心 75% 门控"
+$pass += ok ($text.Contains("if (core != null && core.acceptItem(producer, item))")) "核心未满即接收（acceptItem）"
 $pass += ok ($text.Contains("item.id >= consumer.items.length()")) "越界防护"
 $pass += ok ($text.Contains("power == null || power.status <= 0")) "电力门控"
 $pass += ok ($text.Contains("timer(0, 10)")) "调度节流 6Hz"

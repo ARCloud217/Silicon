@@ -373,9 +373,6 @@ public class ItemTransferHub extends Block {
         Draw.reset();
     }
 
-    /** 复制连接预览的绘制层级：规划幽灵（Layer.plans=85）之下、电力线（Layer.power=70）之上。 */
-    static final float linkPreviewLayer = Layer.plans - 5f;
-
     /** 队列/原理图计划的配置预览相机裁剪半径：覆盖整网连线范围，防止预览被裁剪消失。 */
     @Override
     public float planConfigClipSize(){
@@ -406,13 +403,10 @@ public class ItemTransferHub extends Block {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
                 + " @" + plan.x + "," + plan.y + " config=" + plan.config.getClass().getSimpleName());
         }
-        float prevZ = Draw.z();
-        // 画在规划幽灵之下、电力线之上：连线被方块压住，不与电力激光混叠
-        Draw.z(linkPreviewLayer);
-        // drawOverPlan/drawBuildPlans 调用前会套 mixcol 白色脉冲——复位防止虚线被冲淡
+        // 不改绘制层级（与电力节点 drawPlanConfigTop 同款）：跟随调用方的
+        // 计划层原样绘制——画在同批方块幽灵之后，天然浮于其上不被遮挡
         Draw.mixcol(Color.white, 0f);
         drawCopyLinks(plan, list);
-        Draw.z(prevZ);
     }
 
     /**

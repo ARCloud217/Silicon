@@ -43,15 +43,29 @@ Push-Location $root
 & ".\gradlew.bat" deploy --console=plain "-Dorg.gradle.java.home=$env:JAVA_HOME" | Out-Null
 if($LASTEXITCODE -ne 0){ Write-Host "BUILD FAIL" -ForegroundColor Red; Pop-Location; exit 1 }
 Write-Host "BUILD SUCCESS" -ForegroundColor Green
-# 部署一致性：最新产物 vs 游戏模组目录（目录不存在则跳过）
+# 部署一致性：最新产物同步到两个游戏模组目录
+# ① %APPDATA%\Mindustry\mods（默认数据目录）
+# ② D:\Games\Mindustry-HotReload\data\mods（热重载启动器 MINDUSTRY_DATA_DIR 指向的目录——漏掉它游戏会一直加载旧包）
 $jar = Get-ChildItem "build/libs/Silicon-*-v159.7.jar" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 Copy-Item $jar.FullName "Silicon.mod.jar" -Force
 Write-Host "已部署 Silicon.mod.jar ($((Get-Item 'Silicon.mod.jar').Length) bytes)"
-$gameDir = Join-Path $env:APPDATA "Mindustry\mods"
-if (Test-Path $gameDir) {
+$targets = @(
+  (Join-Path $env:APPDATA "Mindustry\mods"),
+  "D:\Games\Mindustry-HotReload\data\mods"
+)
+foreach ($dir in $targets) {
+  if (-not (Test-Path $dir)) { Write-Host "跳过不存在的模组目录: $dir" -ForegroundColor Yellow; continue }
   # 移除全部旧版 Silicon 包防同模组双载，替换为最新构建
-  Get-ChildItem $gameDir -Filter 'Silicon*.jar' | Remove-Item -Force
-  Copy-Item $jar.FullName (Join-Path $gameDir 'Silicon.jar') -Force
-  Write-Host "已同步游戏目录 Silicon.jar ($((Get-Item (Join-Path $gameDir 'Silicon.jar')).Length) bytes)" -ForegroundColor Green
+  Get-ChildItem $dir -Filter 'Silicon*.jar' | Remove-Item -Force
+  Copy-Item $jar.FullName (Join-Path $dir 'Silicon.jar') -Force
+  # 校验同步后 jar 内的版本号，防止旧包滞留
+  $vtmp = Join-Path $env:TEMP ("si-ver-check-" + [guid]::NewGuid().ToString("N").Substring(0,8))
+  New-Item -ItemType Directory -Force $vtmp | Out-Null
+  Push-Location $vtmp
+  jar xf (Join-Path $dir 'Silicon.jar') mod.hjson
+  $ver = (Select-String -Path (Join-Path $vtmp 'mod.hjson') -Pattern '^version:').Line.Trim()
+  Pop-Location
+  Remove-Item $vtmp -Recurse -Force -ErrorAction SilentlyContinue
+  Write-Host "已同步 $dir\Silicon.jar ($ver, $((Get-Item (Join-Path $dir 'Silicon.jar')).Length) bytes)" -ForegroundColor Green
 }
 Pop-Location

@@ -416,10 +416,12 @@ public class ItemTransferHub extends Block {
     }
 
     /**
-     * 复制/原理图连接预览（电力节点式）：
-     * - 同批规划中的其它中枢：粉色激光（findPlan 计划间连线，PowerNode Top 同款）
-     * - 已放置建筑：仅限新位置范围内真正可连的目标（距离校验＝放置后实际链接口径），
-     *   范围外一律不画——杜绝相对偏移落在远处无关建筑上的莫名虚线
+     * 复制/原理图连接预览（电力节点式——只画【计划↔计划】，绝不画向实际建筑）：
+     * 对配置里的每个相对偏移，在同批计划中找落点方块：
+     * - 兄弟中枢 → 粉色虚线（未来网络骨架）
+     * - 其它可连方块计划（矿机/仓库/炮台等）→ 物流色虚线（未来直连链路）
+     * 均需通过距离校验（新位置范围内真正可连），范围外不画——杜绝莫名虚线。
+     * 放置后由 configured(Point2[]) 精确重建这些链接，所见即所得。
      */
     private void drawCopyLinks(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
         arc.math.geom.Point2[] ps = (arc.math.geom.Point2[]) plan.config;
@@ -430,33 +432,21 @@ public class ItemTransferHub extends Block {
             final int fx = cx + p.x, fy = cy + p.y;
             mindustry.entities.units.BuildPlan otherReq = findPlan(list, fx, fy, other ->
                 other != plan && other.block != null && other.block.size > 0);
+            if (otherReq == null || otherReq.block == null) continue;
 
-            // 与已放置建筑连线：仅限新位置范围内可连的目标（与放置后的实际链接同口径）
-            Tile placedTile = world.tile(fx, fy);
-            boolean placeable = placedTile != null && placedTile.build != null && shouldConnect(placedTile.build)
-                && Intersector.overlaps(Tmp.cr1.set(plan.drawx(), plan.drawy(), connectionRange * tilesize),
-                    Tmp.r1.setCentered(placedTile.build.x, placedTile.build.y,
-                        placedTile.build.block.size * tilesize, placedTile.build.block.size * tilesize));
-            if (placeable) {
-                Color lc = lineColorFor(placedTile.build);
-                Draw.color(lc, linkOpacity());
-                Lines.stroke(2f);
-                Drawf.dashLine(lc,
-                    plan.drawx(), plan.drawy(),
-                    placedTile.build.x, placedTile.build.y);
-                Drawf.square(placedTile.build.x, placedTile.build.y,
-                    placedTile.build.block.size * tilesize / 2f + 2f, Pal.place);
-            }
+            // 距离校验：新位置范围内真正可连才画（与放置后 configured 的 linkValid 同口径）
+            boolean inRange = Intersector.overlaps(Tmp.cr1.set(plan.drawx(), plan.drawy(), connectionRange * tilesize),
+                Tmp.r1.setCentered(otherReq.drawx(), otherReq.drawy(),
+                    otherReq.block.size * tilesize, otherReq.block.size * tilesize));
+            if (!inRange) continue;
 
-            // 与同批规划的其他中枢连线：粉色
-            if (otherReq != null && otherReq.block == self) {
-                Draw.color(hubLinkColor, linkOpacity());
-                Lines.stroke(2f);
-                Drawf.dashLine(hubLinkColor, plan.drawx(), plan.drawy(),
-                    otherReq.drawx(), otherReq.drawy());
-                Drawf.square(otherReq.drawx(), otherReq.drawy(),
-                    otherReq.block.size * tilesize / 2f + 2f, Pal.place);
-            }
+            Color lc = otherReq.block == self ? hubLinkColor : linkColor;
+            Draw.color(lc, linkOpacity());
+            Lines.stroke(2f);
+            Drawf.dashLine(lc, plan.drawx(), plan.drawy(),
+                otherReq.drawx(), otherReq.drawy());
+            Drawf.square(otherReq.drawx(), otherReq.drawy(),
+                otherReq.block.size * tilesize / 2f + 2f, Pal.place);
         }
         Draw.reset();
     }

@@ -60,6 +60,16 @@ public class ItemTransferHub extends Block {
 
     /** 物流连线颜色：与「连接数」状态栏一致（Pal.items）。 */
     public static final Color linkColor = Pal.items;
+    /** 中枢间连线颜色：粉色——区别于中枢→建筑的物流色，一眼可辨网络骨架。 */
+    public static final Color hubLinkColor = Color.valueOf("ff88dd");
+
+    /**
+     * 连线颜色按目标类型区分：中枢→中枢为粉色，中枢→建筑为物流色。
+     * 常驻连线 / 放置预览 / 规划虚线三处共用，保证所见即所得。
+     */
+    private static Color lineColorFor(Building other) {
+        return other instanceof ItemTransferHubBuild ? hubLinkColor : linkColor;
+    }
     /** 电力节点风格激光贴图。 */
     public TextureRegion laserRegion, laserEndRegion;
 
@@ -298,9 +308,10 @@ public class ItemTransferHub extends Block {
         getPotentialLinks(tile, player.team(), cands::add);
 
         // 模拟自动连接（与 autoConnectNearby 同口径），两阶段均按【距离就近】：
-        // ① 优先连接范围内的全部中枢——蓝色方框 + 连线；
-        // ② 其次连接「已选中枢所在网络之外」的非中枢建筑；
-        //    网络之内 / 超出上限的候选——绿色方框（与单击配置显示同色），不画连线。
+        // ① 优先连接范围内的全部中枢——蓝色方框 + 连线（中枢间粉线）；
+        // ② 其次连接「已选中枢所在网络之外」的非中枢建筑——蓝色方框 + 物流色连线；
+        // 三色标记与单击配置显示同口径：
+        // 蓝 = 将连接；紫 = 即将连入的网络内（coveredByHubs）；绿 = 可新建（网络外、未入选）。
         cands.sort((a, b) -> Float.compare(
             Mathf.dst2(a.x - cx, a.y - cy),
             Mathf.dst2(b.x - cx, b.y - cy)));
@@ -333,13 +344,17 @@ public class ItemTransferHub extends Block {
             float len1 = size * tilesize / 2f - 1.5f;
             float len2 = other.block.size * tilesize / 2f - 1.5f;
             if (actual.contains(other)) {
-                Draw.color(linkColor, linkOpacity());
+                // 将连接：蓝框 + 连线（中枢间粉色，其余物流色）
+                Draw.color(lineColorFor(other), linkOpacity());
                 Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
                     cx + ca * len1, cy + sa * len1,
                     other.x - ca * len2, other.y - sa * len2, 0.25f);
                 Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
+            } else if (coveredByHubs.contains(other)) {
+                // 即将连入的网络内成员：紫色方框提示（不画连线——不会直连）
+                Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.reactorPurple);
             } else {
-                Draw.color(Pal.heal, linkOpacity());
+                // 可新建直连（不在任何即将连入的网络内）：绿色方框
                 Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.heal);
             }
         }
@@ -359,23 +374,24 @@ public class ItemTransferHub extends Block {
             mindustry.entities.units.BuildPlan otherReq = findPlan(list, fx, fy, other ->
                 other != plan && other.block != null && other.block.size > 0);
 
-            // 与已放置建筑连线
+            // 与已放置建筑连线：中枢间粉色、中枢→建筑物流色（与常驻连线同口径）
             Tile placedTile = world.tile(fx, fy);
             if (placedTile != null && placedTile.build != null && shouldConnect(placedTile.build)) {
-                Draw.color(linkColor, Renderer.laserOpacity);
+                Color lc = lineColorFor(placedTile.build);
+                Draw.color(lc, Renderer.laserOpacity);
                 Lines.stroke(1.5f);
-                Drawf.dashLine(linkColor,
+                Drawf.dashLine(lc,
                     plan.drawx(), plan.drawy(),
                     placedTile.build.x, placedTile.build.y);
                 Drawf.square(placedTile.build.x, placedTile.build.y,
                     placedTile.build.block.size * tilesize / 2f + 2f, Pal.place);
             }
 
-            // 与同批规划的其他中枢连线
+            // 与同批规划的其他中枢连线：粉色
             if (otherReq != null && otherReq.block == self) {
-                Draw.color(linkColor, Renderer.laserOpacity);
+                Draw.color(hubLinkColor, Renderer.laserOpacity);
                 Lines.stroke(1.5f);
-                Drawf.dashLine(linkColor, plan.drawx(), plan.drawy(),
+                Drawf.dashLine(hubLinkColor, plan.drawx(), plan.drawy(),
                     otherReq.drawx(), otherReq.drawy());
                 Drawf.square(otherReq.drawx(), otherReq.drawy(),
                     otherReq.block.size * tilesize / 2f + 2f, Pal.place);
@@ -974,12 +990,15 @@ public class ItemTransferHub extends Block {
         /**
          * 判断建筑是否已在本中枢网络内（经由任意中枢链路可达的直连建筑）。
          * 用于放置/双击自动连接时排除同网建筑——它们已被现有中枢服务。
+         * 注意：BFS 队列中的【中枢本身】也是网络成员——判定必须含 cur == b，
+         * 否则隔一个中枢单元的中枢会被误判为「不在网络内」（只考虑了直接连接的旧 bug）。
          */
         private boolean inSameNetwork(Building b) {
             if (b == null) return false;
-            if (data.buildings.contains(b)) return true;
+            if (b == this || data.buildings.contains(b)) return true;
             bfsInit();
             for (ItemTransferHubBuild h : data.hubs) {
+                if (h == b) return true;
                 if (bfsVisited.add(h.id)) {
                     bfsQueue.add(h);
                     bfsDists.add(1);
@@ -987,8 +1006,9 @@ public class ItemTransferHub extends Block {
             }
             for (int i = 0; i < bfsQueue.size; i++) {
                 ItemTransferHubBuild cur = bfsQueue.get(i);
-                if (cur.data.buildings.contains(b)) return true;
+                if (cur == b || cur.data.buildings.contains(b)) return true;
                 for (ItemTransferHubBuild nb : cur.data.hubs) {
+                    if (nb == b) return true;
                     if (bfsVisited.add(nb.id)) {
                         bfsQueue.add(nb);
                         bfsDists.add(bfsDists.get(i) + 1);
@@ -1435,8 +1455,8 @@ public class ItemTransferHub extends Block {
                 float len1 = block.size * tilesize / 2f - 1.5f;
                 float len2 = other.block.size * tilesize / 2f - 1.5f;
 
-                // 物流连线：电力节点激光样式，稳定色不闪烁
-                Draw.color(linkColor, linkOpacity());
+                // 连线：中枢间粉色、中枢→建筑物流色；电力节点激光样式，稳定色不闪烁
+                Draw.color(lineColorFor(other), linkOpacity());
                 // 原版大小：PowerNode 默认 laserScale=0.25
                 Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
                     x + cos * len1, y + sin * len1,
@@ -1469,15 +1489,16 @@ public class ItemTransferHub extends Block {
                     Building link = world.build(ix, iy);
                     if (link == this || link == null) continue;
                     boolean linked = links.contains(link.pos());
+                    // 三色标记与放置预览同口径：蓝=已直连、紫=同网络未直连、绿=可新建
                     if (linked && linkValid(this, link)) {
-                        // 已直连：蓝白色
+                        // 已直连：蓝色
                         Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.place);
                     } else if (linkValid(this, link)) {
                         if (inSameNetwork(link)) {
-                            // 同网络但未直连：紫色（区别于蓝=直连、绿=可新建）
+                            // 同网络但未直连（跨枢链路可达，含中枢本身）：紫色
                             Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.reactorPurple);
                         } else {
-                            // 可新建直连：绿色提示
+                            // 可新建直连（不在网络内）：绿色提示
                             Drawf.square(link.x, link.y, link.block.size * tilesize / 2f + 1f, Pal.heal);
                         }
                     }

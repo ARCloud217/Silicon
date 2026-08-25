@@ -134,20 +134,33 @@ supplier.items.remove(item, 1);       // 扣除
 ### draw() - 常驻绘制
 - `super.draw()` 先绘制方块贴图
 - 仅在 `Renderer.laserOpacity > 0` 且非 payload 时绘制连线
-- 绘制层级 `Draw.z(Layer.power)`（电力层，高于方块层）
-- 只遍历 `links`（手动连接），不再有 `data.hubs` 自动发现连线
-- Hub↔Hub：蓝色实线（边缘到边缘，`Lines.line`）
-- Hub→Building：蓝色虚线（边缘到边缘，`Drawf.dashLine`）
-- 去重：Hub对之间只画一次（`other.id >= id` 跳过）
-- `linkValid` 验证每个链接有效性
+- 绘制层级 `Draw.z(Layer.power)`（电力层），**画完必须恢复原层级**
+- 只遍历 `links`（手动连接）；去重：Hub 对之间只画一次（`other.id >= id` 跳过）；`linkValid` 验证每个链接
+- 连线样式：电力节点激光贴图（laser/laser-end，laserScale=0.25，端点内缩 1.5px 投影），稳定色不闪烁，透明度走「中枢连线透明度」设置
+- **颜色按目标类型区分（lineColorFor）**：
+  - Hub↔Hub：**粉色 `hubLinkColor = #ff88dd`**——网络骨架一眼可辨
+  - Hub→建筑：物流色 `linkColor = Pal.items`
 
 ### drawSelect() - 选中时绘制
-- 蓝色虚线范围圈（电力节点式）
+- 强调色虚线范围圈（电力节点式）
 
-### drawConfigure() - 配置模式绘制
-- 脉冲圆圈（自身）
-- 范围圆圈
-- 已链接建筑高亮（蓝色=已连接，强调色=可连接）
+### drawConfigure() - 单击配置模式绘制（三色标记）
+- 脉冲圆圈（自身）+ 范围圆圈
+- 扫描范围内全部可连目标，与放置预览同口径：
+  - **蓝 `Pal.place` = 已直连**
+  - **紫 `Pal.reactorPurple` = 同网络但未直连**（跨枢链路可达；判定含中枢本身，
+    A—B—C 链上单击 C 时 A 正确显示紫色——修复旧版「同网只考虑直接连接」漏判）
+  - **绿 `Pal.heal` = 可新建直连（不在任何网络内）**
+
+### drawPlace() - 放置预览绘制（三色标记 + 连线）
+- 范围圈 `Pal.placing`；候选按【距离就近】模拟两阶段自动连接（中枢优先 / 网络外非中枢 / 上限截断），所见即所得：
+  - **蓝 `Pal.place` 方框 + 连线 = 将连接**（连线颜色与放置结果一致：中枢间粉色、其余物流色）
+  - **紫 `Pal.reactorPurple` 方框 = 即将连入的网络内成员**（coveredByHubs 整网 BFS，含跨枢覆盖；不画连线——不会直连）
+  - **绿 `Pal.heal` 方框 = 可新建直连（网络外、未入选）**
+
+### drawPlanConfigTop() - 复制配置的规划预览
+- F 键拾取复制 / 原理图粘贴出的连接配置以虚线预览；
+- 虚线颜色与常驻连线同口径（中枢间粉色、其余物流色），端点蓝框
 
 ## 状态栏 (Bars)
 
@@ -223,4 +236,4 @@ supplier.items.remove(item, 1);       // 扣除
 | a0.11.22.0 | **核心满防焚烧 + 耗电锋消除 + 用途介绍重写**：①coreIncinerates 规则下 getMaximumAccepted 膨胀为 10.7 亿导致"核心已满仍运送→物品被焚烧丢弃、不入仓库"——推送目标与 75% 回收阈值全部改用真实容量 storageCapacity（coreHasRoomFor），directTransfer 对核心收方复核余量；②计费平滑窗口 10→30 帧，耗电峰值降至 1/3（守恒不变）；③修复 draw() 设置 Layer.power 后不恢复层级导致的随机渲染顺序异常；④中英双语用途介绍全面重写（富文本分节排版） |
 | a0.11.22.1 | **两处预期外行为修正**：①关闭原版 copyConfig——F 键拾取复制会把整组连接配置带到异地新枢，产生预期外链路；②断电时运输速率不再瞬间清零，改为随 10 秒窗口推入零桶平滑衰减（耗电约 1 秒内自然归零），镜像测试新增衰减场景（31 断言） |
 | a0.11.22.2 | **恢复连接可复制**（撤回 copyConfig=false）：实现 config() 返回以自身为原点的相对坐标 Point2[]——F 键拾取复制后异地放置时由 placeEnded 按相对偏移 + linkValid 现场校验，只连得上合法目标；另修复 mod.hjson 被 PS 5.1 Set-Content 写入 BOM 导致模组不加载的问题（已知坑已固化流程） |
-| a0.11.22.0 | **核心满防焚烧 + 耗电锋消除 + 用途介绍重写**：①coreIncinerates 规则下 getMaximumAccepted 膨胀为 10.7 亿导致"核心已满仍运送→物品被焚烧丢弃、不入仓库"——推送目标与 75% 回收阈值全部改用真实容量 storageCapacity（coreHasRoomFor），directTransfer 对核心收方复核余量；②计费平滑窗口 10→30 帧，耗电峰值降至 1/3（守恒不变）；③修复 draw() 设置 Layer.power 后不恢复层级导致的随机渲染顺序异常；④中英双语用途介绍全面重写（富文本分节排版） |
+| （待定版） | **三色标记统一 + 中枢间粉色连线**：①放置预览与单击配置同口径三色——蓝=已/将直连、紫=网络内（预览时=即将连入的网络，整网 BFS 含跨枢覆盖）、绿=可新建（网络外）；②修复 inSameNetwork 漏判跨枢中枢本身（A—B—C 链单击 C 时 A 误显绿色）——同网判定补 cur==b/nb==b；③连线颜色按目标类型区分：中枢↔中枢粉色 #ff88dd、中枢→建筑物流色，常驻连线/放置预览/复制规划虚线三处共用 lineColorFor；④反编译验证 v159 复制链路（PlacementFragment Binding.pick → copyConfig=true 读 build.config() → 写 lastConfig → ConstructBuild.finish 经 configured() 自动应用相对坐标 + placeEnded 兜底） |

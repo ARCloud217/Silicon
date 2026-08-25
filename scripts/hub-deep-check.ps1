@@ -6,7 +6,7 @@ $routing = "src/silicon/world/blocks/distribution/HubRouting.java"
 $text    = Get-Content $hub -Raw -Encoding UTF8
 $route   = Get-Content $routing -Raw -Encoding UTF8
 function ok([bool]$c,[string]$m){ if($c){ Write-Host "PASS $m" -ForegroundColor Green; return 1 } else { Write-Host "FAIL $m" -ForegroundColor Red; return 0 } }
-$pass=0; $total=26
+$pass=0; $total=30
 $pass += ok ($text.Contains("HubRouting.isFactory(b)")) "isFactory 委托 HubRouting"
 $pass += ok ($route.Contains("Reconstructor.ReconstructorBuild")) "isFactory 含重构工厂"
 $pass += ok (-not $route.Contains("if (other.items != null) return true")) "白名单无『有物品栏即连』泛化"
@@ -33,6 +33,10 @@ $pass += ok ($text.Contains("!relayable(srcHub)") -and $text.Contains("!relayabl
 $pass += ok ($text.Contains("b == producer) continue")) "仓库落点自排除（防自投自收）"
 $pass += ok ($text.Contains("isProducer(b) && !b.block.consumesItem(item)")) "供源仅产出物——不抽工厂输入料"
 $pass += ok (-not $text.Contains("isInputStockOfFactory")) "无兜底动用工厂输入库存（pass3 已删）"
+$pass += ok ($text.Contains("public static final Color hubLinkColor")) "中枢间粉色连线常量（ff88dd）"
+$pass += ok ([regex]::Matches($text, "lineColorFor\(").Count -ge 3) "连线颜色按目标类型三处共用（常驻/预览/规划虚线）"
+$pass += ok ($text.Contains("cur == b") -and $text.Contains("nb == b")) "同网判定含跨枢中枢本身（紫色不漏判）"
+$pass += ok ([regex]::Matches($text, "Pal\.reactorPurple").Count -ge 2) "网络内紫色标记（单击+放置预览两处）"
 Write-Host "--- $pass/$total ---" -ForegroundColor Cyan
 if($pass -ne $total){ exit 1 }
 # 编译（JDK17：build-tools 34 d8 需要）

@@ -66,7 +66,8 @@
 | 常驻连线 Hub→建筑 | 物流色 `linkColor=Pal.items` 电力激光（同一透明度设置） |
 | 放置预览连线 | 仅画「实际会放下」的连接，颜色与放置结果一致（中枢间粉、其余物流色） |
 | 预览/单击三色标记 | **已/将直连=蓝** Pal.place；**网络内未直连=紫** Pal.reactorPurple（预览时=即将连入的网络）；**可新建（网络外）=绿** Pal.heal——预览与单击同口径 |
-| 复制配置预览 | F 键拾取/原理图粘贴的连接在悬停幽灵（drawPlanConfig）与入队/拖线计划（drawPlan）两处显示虚线（saveConfig=true 供配置）；只画新位置范围内真正可连的目标（距离校验防莫名虚线）；层级 Layer.plans-5：规划幽灵之下、电力线之上 |
+| 复制配置预览 | **电力节点同款双钩子**：悬停幽灵走 drawPlanConfig（DesktopInput 每帧附加 lastConfig 后调用，与 saveConfig 无关），入队/原理图粘贴/拖线计划走 drawPlanConfigTop；已放置目标仅画新位置范围内真正可连者（距离校验防莫名虚线）；层级 Layer.plans-5：规划幽灵之下、电力线之上；重写 planConfigClipSize 防相机裁剪 |
+| 配置持久化 | `saveConfig=false`（电力节点同款）：放置计划不携带历史配置——杜绝旧 Point2[] 粘到后续放置产生莫名虚线；复制一律走原理图序列化或 F 键拾取；placeEnded 应用后清空 lastConfig（一次性消费） |
 | 范围圈 | drawPlace: Pal.placing 圆；drawSelect: Pal.accent 虚线圈 |
 | 透明度 | 「中枢连线透明度」设置（规划虚线走 Renderer.laserOpacity） |
 

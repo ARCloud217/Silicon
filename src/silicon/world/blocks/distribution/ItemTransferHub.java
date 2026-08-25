@@ -98,10 +98,10 @@ public class ItemTransferHub extends Block {
         size = 3;
         timers = 4;
         configurable = true;
-        // 电力节点/分拣器式「配置随放置延续」：拾取复制（F 键）得到的连接配置
-        // 会附加到悬停幽灵与新建计划上（InputHandler.drawPlan 的 saveConfig 闸门），
-        // 复制时才能实时看到连接预览、放置时才会真正应用
-        saveConfig = true;
+        // saveConfig 保持默认 false（电力节点同款）：放置计划不携带历史配置——
+        // 若为 true，Block.nextConfig() 会把旧 Point2[] 粘到之后每次拖线/单击
+        // 放置的中枢上，产生「莫名虚线」与预期外链接；复制一律走
+        // 原理图（Schematics 序列化配置）或 F 键拾取的悬停预览
         group = BlockGroup.transportation;
 
         config(Integer.class, (ItemTransferHubBuild entity, Integer pos) -> {
@@ -234,7 +234,11 @@ public class ItemTransferHub extends Block {
 
     @Override
     public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
-        if (!(config instanceof arc.math.geom.Point2[] links)) return;
+        if (!(config instanceof arc.math.geom.Point2[] links)) {
+            // 非复制放置：清空残留配置，防止旧 Point2[] 继续喂给悬停预览
+            lastConfig = null;
+            return;
+        }
 
         Building hubB = tile.build;
         if (!(hubB instanceof ItemTransferHubBuild hub)) return;
@@ -248,6 +252,9 @@ public class ItemTransferHub extends Block {
             if (hub.links.size >= maxConnections) break;
             hub.configure(other.build.pos());
         }
+        // 一次性消费：复制模式应用后立即清空 lastConfig，
+        // 后续普通放置不再携带旧连接模式（电力节点同款 saveConfig=false 语义）
+        lastConfig = null;
     }
 
     /**
@@ -369,17 +376,23 @@ public class ItemTransferHub extends Block {
     /** 复制连接预览的绘制层级：规划幽灵（Layer.plans=85）之下、电力线（Layer.power=70）之上。 */
     static final float linkPreviewLayer = Layer.plans - 5f;
 
+    /** 队列/原理图计划的配置预览相机裁剪半径：覆盖整网连线范围，防止预览被裁剪消失。 */
+    @Override
+    public float planConfigClipSize(){
+        return connectionRange * tilesize * 2f;
+    }
+
     @Override
     public void drawPlanConfig(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list){
         // 悬停幽灵专用路径：DesktopInput 每帧把 lastConfig 附到 bplan 后调用本钩子并立即清空
-        // （不经过 drawPlan）——复制时「放置前预览」必须挂在这里才会显示
+        // （不经过 drawPlan，也与 saveConfig 无关）——F 键拾取后的「放置前预览」挂在这里
         drawCopyLinksIfCopied(plan, list);
     }
 
     @Override
-    public void drawPlan(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list, boolean valid){
-        super.drawPlan(plan, list, valid);
-        // 入队计划 / 拖线计划 / 原理图粘贴路径：精灵渲染全部经由本方法
+    public void drawPlanConfigTop(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
+        // 入队计划 / 原理图粘贴路径（drawBuildPlans）：与电力节点同款钩子——
+        // 成批粘贴时画出计划间激光网；拖线计划经 drawOverPlan 也走这里
         drawCopyLinksIfCopied(plan, list);
     }
 
@@ -394,10 +407,10 @@ public class ItemTransferHub extends Block {
     }
 
     /**
-     * 复制/原理图连接预览：与已放置建筑及同批规划的其它中枢画虚线，
-     * 颜色与常驻连线同口径（中枢间粉色、中枢→建筑物流色），端点蓝框。
-     * 已放置目标须通过距离校验（新位置范围内真正可连），避免相对偏移
-     * 落在远处无关建筑上产生莫名虚线。
+     * 复制/原理图连接预览（电力节点式）：
+     * - 同批规划中的其它中枢：粉色激光（findPlan 计划间连线，PowerNode Top 同款）
+     * - 已放置建筑：仅限新位置范围内真正可连的目标（距离校验＝放置后实际链接口径），
+     *   范围外一律不画——杜绝相对偏移落在远处无关建筑上的莫名虚线
      */
     private void drawCopyLinks(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
         arc.math.geom.Point2[] ps = (arc.math.geom.Point2[]) plan.config;

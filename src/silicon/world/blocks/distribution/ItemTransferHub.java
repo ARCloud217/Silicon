@@ -553,8 +553,11 @@ public class ItemTransferHub extends Block {
             // 零缓冲批量直转单轮即可搬 10 件，逐帧调度会产生远超产线需求的吞吐，
             // 导致耗电与速率统计虚高；节流后数值回归合理量级，调度行为本身不变。
             if (timer(0, 10)) {
+                // 电力效率门控：status<1 时按比例缩放本轮搬运预算，
+                // 电力不足不再能全力运转（与原版工厂降速行为一致）
+                float efficiency = power.status;
                 if (network.enableDemandPull) {
-                    pullOnDemand();
+                    pullOnDemand(efficiency);
                 }
 
                 if (network.enableSurplusPush) {
@@ -614,7 +617,7 @@ public class ItemTransferHub extends Block {
          * 同级按缺口比例降序；工厂内多输入物品同帧连补。
          * 供源四级：仓库 → 核心 → 矿机/工厂产出 → 兜底同类输入料。
          */
-        private boolean pullOnDemand() {
+        private boolean pullOnDemand(float efficiency) {
 
             boolean any = false;
 
@@ -688,12 +691,14 @@ public class ItemTransferHub extends Block {
 
                     if (power == null || power.status <= 0) return any;
 
-                    // 预算：非炮台 = 真实消耗量 + 2 缓冲（首轮回看快照缺省 2）
+                    // 预算：非炮台 = 真实消耗量 + 缓冲，再乘电力效率；
+                    // 首轮回看快照缺省 2。效率 <1 时按比例缩减吞吐
                     int budget = 10;
                     if (!turret) {
                         int consumedSince = snap == null || item.id >= snap.length
                             ? 0 : Math.max(0, snap[item.id] - consumer.items.get(item));
                         budget = Math.min(10, consumedSince + 2);
+                        budget = Math.max(1, Math.round(budget * efficiency));
                         if (budget <= 0) continue;
                     }
 

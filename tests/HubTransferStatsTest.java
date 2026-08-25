@@ -105,13 +105,10 @@ public class HubTransferStatsTest {
             counts.push(transferCount); transferCount = 0;
             powerWin.push(actualPower);
 
-            if (!powerStarved) {
-                if (tick % 10 == 0) {
-                    transferRate = counts.ratePerSecond();
-                    powerPerSecond = powerWin.perSecond();
-                }
-            } else if (tick % 60 == 0) {
-                powerPerSecond = 0f; transferRate = 0f;
+            // 统计刷新不区分停止态：窗口推入零桶自然衰减（速率 10s 内平滑降零）
+            if (tick % 10 == 0) {
+                transferRate = counts.ratePerSecond();
+                powerPerSecond = powerWin.perSecond();
             }
         }
 
@@ -287,6 +284,21 @@ public class HubTransferStatsTest {
         Hub p = new Hub("P");
         p.status = 0f; p.frame();
         check(p.powerConsumed == 0f && p.powerPerSecond == 0f, "场景10 断电帧请求归零、秒级显示归零");
+
+        // ========== 场景11：断电后运输速率随 10s 窗口平滑衰减（而非瞬间清零）==========
+        Hub w = new Hub("W");
+        for (int f = 1; f <= 600; f++) {
+            if (f % 10 == 0) { w.beginFrame(); w.chargeOne(w, 10); w.endFrame(); } else { w.frame(); }
+        }
+        float rateFull = w.transferRate;              // 满载 ≈ 60/s
+        w.status = 0f;
+        for (int k = 1; k <= 300; k++) w.frame();     // 断电 5 秒
+        float rateMid = w.transferRate;
+        check(rateFull > 55f, "场景11a 满载速率 ≈ 60/s（" + rateFull + "）");
+        check(near(rateMid, rateFull / 2f, 6f), "场景11b 断电 5 秒后速率平滑过半（" + rateMid + "）");
+        for (int k = 301; k <= 595; k++) w.frame();   // 断电约 10 秒
+        float rateEnd = w.transferRate;
+        check(rateMid > rateEnd && rateEnd < 3f, "场景11c 断电 10 秒后速率平滑降至零附近（" + rateEnd + "）");
 
         System.out.println("== 结果: " + pass + "/" + total + " 通过 ==");
         if (pass != total) System.exit(1);

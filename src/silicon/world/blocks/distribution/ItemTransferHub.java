@@ -89,6 +89,9 @@ public class ItemTransferHub extends Block {
         timers = 4;
         configurable = true;
         group = BlockGroup.transportation;
+        // 关闭原版「拾取复制配置」：中枢的连接必须由范围/网络规则现场推导，
+        // F 键复制旧配置会在异地放下时产生预期外的链路
+        copyConfig = false;
 
         config(Integer.class, (ItemTransferHubBuild entity, Integer pos) -> {
             Building other = world.build(pos);
@@ -639,14 +642,8 @@ public class ItemTransferHub extends Block {
                 powerSecondSum -= powerSecondWindow.removeIndex(0);
             }
 
-            // 停止态：显示按秒归零（窗口内历史自然衰减）
-            if (powerStarved) {
-                if (timer(3, 60)) {
-                    powerPerSecond = 0f;
-                    transferRate = 0f;
-                }
-                return;
-            }
+            // 停止态不调度，但统计照常刷新——窗口内推入零桶自然衰减：
+            // 运输速率在断电后 10 秒内平滑降零（而非瞬间清零）；耗电约 1 秒内归零
 
             // 刷新：运输速率 = 10 秒窗口均值；电力消耗 = 最近 1 秒实际取电
             if (rateTickCounter % 10 == 0) {

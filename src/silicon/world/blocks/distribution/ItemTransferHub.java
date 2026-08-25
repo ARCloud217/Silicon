@@ -370,23 +370,34 @@ public class ItemTransferHub extends Block {
     static final float linkPreviewLayer = Layer.plans - 5f;
 
     @Override
+    public void drawPlanConfig(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list){
+        // 悬停幽灵专用路径：DesktopInput 每帧把 lastConfig 附到 bplan 后调用本钩子并立即清空
+        // （不经过 drawPlan）——复制时「放置前预览」必须挂在这里才会显示
+        drawCopyLinksIfCopied(plan, list);
+    }
+
+    @Override
     public void drawPlan(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list, boolean valid){
         super.drawPlan(plan, list, valid);
-        // 复制连接预览：悬停幽灵（saveConfig=true 时 bplan 携带拾取的配置）、
-        // 拖线计划与已入队计划（含原理图粘贴）的精灵渲染全部经由本方法，
-        // 在此统一画出将建立的连接——与电力节点复制表现对齐，放置前即可见
-        if (plan.config instanceof arc.math.geom.Point2[]) {
-            float prevZ = Draw.z();
-            // 画在规划幽灵之下、电力线之上：连线被方块压住，不与电力激光混叠
-            Draw.z(linkPreviewLayer);
-            drawCopyLinks(plan, list);
-            Draw.z(prevZ);
-        }
+        // 入队计划 / 拖线计划 / 原理图粘贴路径：精灵渲染全部经由本方法
+        drawCopyLinksIfCopied(plan, list);
+    }
+
+    /** 携带 Point2[] 连接配置的计划才画预览（Integer 等其它配置类型忽略）。 */
+    private void drawCopyLinksIfCopied(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list){
+        if (!(plan.config instanceof arc.math.geom.Point2[])) return;
+        float prevZ = Draw.z();
+        // 画在规划幽灵之下、电力线之上：连线被方块压住，不与电力激光混叠
+        Draw.z(linkPreviewLayer);
+        drawCopyLinks(plan, list);
+        Draw.z(prevZ);
     }
 
     /**
      * 复制/原理图连接预览：与已放置建筑及同批规划的其它中枢画虚线，
      * 颜色与常驻连线同口径（中枢间粉色、中枢→建筑物流色），端点蓝框。
+     * 已放置目标须通过距离校验（新位置范围内真正可连），避免相对偏移
+     * 落在远处无关建筑上产生莫名虚线。
      */
     private void drawCopyLinks(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
         arc.math.geom.Point2[] ps = (arc.math.geom.Point2[]) plan.config;
@@ -398,9 +409,13 @@ public class ItemTransferHub extends Block {
             mindustry.entities.units.BuildPlan otherReq = findPlan(list, fx, fy, other ->
                 other != plan && other.block != null && other.block.size > 0);
 
-            // 与已放置建筑连线：中枢间粉色、中枢→建筑物流色（与常驻连线同口径）
+            // 与已放置建筑连线：仅限新位置范围内可连的目标（与放置后的实际链接同口径）
             Tile placedTile = world.tile(fx, fy);
-            if (placedTile != null && placedTile.build != null && shouldConnect(placedTile.build)) {
+            boolean placeable = placedTile != null && placedTile.build != null && shouldConnect(placedTile.build)
+                && Intersector.overlaps(Tmp.cr1.set(plan.drawx(), plan.drawy(), connectionRange * tilesize),
+                    Tmp.r1.setCentered(placedTile.build.x, placedTile.build.y,
+                        placedTile.build.block.size * tilesize, placedTile.build.block.size * tilesize));
+            if (placeable) {
                 Color lc = lineColorFor(placedTile.build);
                 Draw.color(lc, Renderer.laserOpacity);
                 Lines.stroke(1.5f);

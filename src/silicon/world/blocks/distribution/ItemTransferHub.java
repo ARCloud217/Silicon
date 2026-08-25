@@ -89,9 +89,6 @@ public class ItemTransferHub extends Block {
         timers = 4;
         configurable = true;
         group = BlockGroup.transportation;
-        // 关闭原版「拾取复制配置」：中枢的连接必须由范围/网络规则现场推导，
-        // F 键复制旧配置会在异地放下时产生预期外的链路
-        copyConfig = false;
 
         config(Integer.class, (ItemTransferHubBuild entity, Integer pos) -> {
             Building other = world.build(pos);
@@ -454,6 +451,21 @@ public class ItemTransferHub extends Block {
         @Override
         public boolean acceptItem(Building source, Item item) {
             return false;
+        }
+
+        /**
+         * 供原版「拾取复制」（F 键）使用：返回以自身为原点的相对连接坐标。
+         * 异地放置时 placeEnded 按相对偏移 + linkValid 现场校验——
+         * 只连得上新位置合法范围内的目标，不会复制出无效链路。
+         */
+        @Override
+        public Object config() {
+            arc.math.geom.Point2[] arr = new arc.math.geom.Point2[links.size];
+            for (int i = 0; i < links.size; i++) {
+                int pos = links.get(i);
+                arr[i] = new arc.math.geom.Point2(arc.math.geom.Point2.x(pos) - tile.x, arc.math.geom.Point2.y(pos) - tile.y);
+            }
+            return arr;
         }
 
         @Override

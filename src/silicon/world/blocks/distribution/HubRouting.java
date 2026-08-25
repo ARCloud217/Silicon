@@ -128,11 +128,4 @@ public class HubRouting {
             || b instanceof GenericCrafter.GenericCrafterBuild
             || b instanceof MineConverter.MineConverterBuild;
     }
-
-    /** 工厂仍在接收该物品 → 属于其自身输入库存，不应被同类工厂拉走。 */
-    public static boolean isInputStockOfFactory(Building supplier, Item item) {
-        return isFactory(supplier)
-            && supplier.acceptItem(supplier, item)
-            && supplier.items.get(item) < supplier.getMaximumAccepted(item);
-    }
 }

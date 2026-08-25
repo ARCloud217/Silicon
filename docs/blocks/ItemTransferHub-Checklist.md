@@ -17,8 +17,8 @@
 - [ ] 工厂含 GenericCrafter / MineConverter / Drill / ItemTurret / **UnitFactory / Reconstructor**
 - [ ] 同级按缺口比例降序（最饿先吃）
 - [ ] 多源料工厂：同帧连续补多种输入（不提前 break）
-- [ ] 供源三级：①仓库 ②核心 ③矿机/工厂产出
-- [ ] 同类工厂输入料互斥：pass0 排除 isInputStockOfFactory；pass1 兜底防饿死
+- [ ] 供源三级：①仓库 ②核心 ③矿机/工厂**产出物**（静态 `consumesItem` 判定）
+- [ ] **绝不抽用工厂/消费者的输入原料**——无论其槽位是否已满；无兜底第四级
 - [ ] 不自拉：supplier != consumer 全程过滤
 
 ### A3. 推送（溢出回流，只面向存储）

@@ -921,15 +921,6 @@ public class ItemTransferHub extends Block {
         }
 
         /**
-         * 同类工厂互斥（精确版）：仅当该工厂【仍在接收】此物品（acceptItem 为真，
-         * 即其配方输入料）且未满时，才视为输入料库存而不作为供源——
-         * 避免同类工厂互相吸输入料形成乒乓。
-         *
-         * 工厂的【产出物】其 itemFilter 通常不含自身（acceptItem=false），
-         * 因此产出物即使未满仓也会被判定为可拉取——修复了中间链
-         * （A 厂产物喂 B 厂原料）中 A 被整体跳过的问题。
-         */
-        /**
          * 判断建筑是否已在本中枢网络内（经由任意中枢链路可达的直连建筑）。
          * 用于放置/双击自动连接时排除同网建筑——它们已被现有中枢服务。
          */
@@ -956,23 +947,18 @@ public class ItemTransferHub extends Block {
             return false;
         }
 
-        private boolean isInputStockOfFactory(Building supplier, Item item) {
-            return isFactory(supplier)
-                && supplier.acceptItem(supplier, item)
-                && supplier.items.get(item) < supplier.getMaximumAccepted(item);
-        }
-
         /**
          * 供源三级优先级（满足工厂/炮台拉取时的取货顺序）：
          * ① 仓库（StorageBlock，非核心）—— 首选
          * ② 核心
-         * ③ 矿机 / 工厂产出物
-         * 每级内部取 BFS 最近；全部落空后，兜底允许同类工厂输入库存（防饿死）。
-         * BFS 不经过欠压/禁用中枢（relayable）——无电中枢的辖内建筑视为不可达。
+         * ③ 矿机/工厂的【产出物】—— 静态配方判定：该建筑自己配方消耗的原料绝不外供，
+         *    不受“该槽位是否已满”影响（旧版按 acceptItem 判定，满仓时变假导致输入料被抽走）
+         * 【不兜底动用任何工厂/消费者的输入库存】——拿工厂原料做供给会把被抽工厂断粮停摆。
+         * 每级内部取 BFS 最近；路径不经过欠压/禁用中枢（relayable）——无电中枢的辖内建筑视为不可达。
          */
         private Building findNearestSupplier(Building consumer, Item item) {
 
-            for (int pass = 0; pass < 4; pass++) {
+            for (int pass = 0; pass < 3; pass++) {
 
                 Building best = null;
                 int bestDist = Integer.MAX_VALUE;
@@ -1033,8 +1019,8 @@ public class ItemTransferHub extends Block {
             switch (pass) {
                 case 0: return b instanceof StorageBlock.StorageBuild && !(b instanceof CoreBlock.CoreBuild);
                 case 1: return b instanceof CoreBlock.CoreBuild;
-                case 2: return isProducer(b) && !isInputStockOfFactory(b, item);
-                default: return true;
+                // 供源仅产出物：静态配方判定，绝不抽走任何工厂/消费者的输入原料
+                default: return isProducer(b) && !b.block.consumesItem(item);
             }
         }
 
@@ -1177,10 +1163,15 @@ public class ItemTransferHub extends Block {
             int supplierStock = supplier.items.get(item);
             int consumerSpace = consumer.getMaximumAccepted(item) - consumer.items.get(item);
 
-            // 距离过近保护：供源与工厂/炮台贴面时，原版邻接卸货已在工作；
-            // 中枢再抽会造成同帧供需倒手。跳过贴面供源，改由其它供源层级满足。
-            // 核心/仓库无原版邻接进料机制，豁免（否则贴面仓库永远推不进核心）。
-            if (!(consumer instanceof CoreBlock.CoreBuild) && !(consumer instanceof StorageBlock.StorageBuild)) {
+            // 距离过近保护：仅保留给「原版自身就在吞吐」的建筑对——
+            // 生产建筑与消费者贴面时，钻头等会直接向邻接建筑倾倒产出，
+            // 中枢再抽会造成同帧供需倒手。存储（仓库/核心）原版不会自动向邻居送料，
+            // 作为供源或收方均豁免——否则贴面仓库永远喂不到旁边的工厂。
+            boolean vanillaAutoMoves =
+                supplier instanceof StorageBlock.StorageBuild
+                || consumer instanceof CoreBlock.CoreBuild
+                || consumer instanceof StorageBlock.StorageBuild;
+            if (!vanillaAutoMoves) {
                 int half = (supplier.block.size + consumer.block.size) / 2 + 1;
                 if (Math.abs(supplier.tile.x - consumer.tile.x) <= half
                     && Math.abs(supplier.tile.y - consumer.tile.y) <= half) {

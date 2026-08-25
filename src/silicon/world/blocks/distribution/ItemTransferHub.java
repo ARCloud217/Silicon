@@ -7,6 +7,7 @@ import arc.graphics.g2d.Lines;
 import arc.graphics.g2d.TextureRegion;
 import arc.math.Angles;
 import arc.math.Mathf;
+import arc.struct.FloatSeq;
 import arc.struct.IntSeq;
 import arc.struct.IntSet;
 import arc.struct.Seq;
@@ -46,6 +47,14 @@ public class ItemTransferHub extends Block {
     public int maxConnections = 20;
     /** 矿机/工厂产出达到该容量比例即视为“快满”，触发向核心/仓库推送。 */
     public float surplusPushAt = 0.75f;
+    /** 满电判定阈值：电网供给达到该比例才允许中枢工作/中转（电力不足完全停止工作）。 */
+    static final float POWER_OK = 0.999f;
+    /** 欠压冷却时长（tick）：停止后须等待电网回血再重试，避免逐帧“要电/不要电”抖动。 */
+    static final int STARVE_COOLDOWN_TICKS = 60;
+    /** 瞬时请求平滑窗口（tick）：与 6Hz 调度节流间隔一致，批量计费摊平后电网所见需求平稳。 */
+    static final int SMOOTH_TICKS = 10;
+    /** 探测请求下限（电力）：至少相当于一件物品经手的电费，用于实证电网供电能力。 */
+    static final float PROBE_DRAW = 10f;
     /** 调试日志开关（Silicon 设置页控制）。 */
     public static boolean debugFlows = false;
 
@@ -374,7 +383,15 @@ public class ItemTransferHub extends Block {
         // 延迟计费：跨枢 charge 分摊到下一帧，避免同帧执行顺序导致的清零覆盖
         public float powerConsumedNext = 0f;
         public float powerPerSecond = 0f;
-        private float powerAccumulator = 0f;
+        /** 计费平滑环形缓冲：瞬时请求 = 最近 SMOOTH_TICKS 帧计费均值，杜绝电网侧消耗跳变。 */
+        private final float[] smoothBuf = new float[SMOOTH_TICKS];
+        private int smoothIdx = 0;
+        /** 欠压冷却剩余 tick：>0 时完全停止工作（不调度、不计费、不可中转）。 */
+        int starveCooldown = 0;
+        /** 探测态：冷却结束后先发真实电力请求验证供电，交付满格才恢复搬运。 */
+        boolean probing = false;
+        /** 处于欠压/禁用停止态：路径选择据此跳过本枢（见 relayable）。 */
+        boolean powerStarved = false;
         /** 本帧经手件数（含上一帧跨枢延迟并入的 transferCountNext）。 */
         private int transferCount = 0;
         /** 跨枢延迟计数：物品途经本枢（由其它枢纽发起调度）时写入，下一帧并入吞吐统计。 */
@@ -384,6 +401,9 @@ public class ItemTransferHub extends Block {
         private static final int RATE_WINDOW_TICKS = 600; // 10s * 60fps，真实 10 秒滑动窗口
         private final IntSeq rateWindowCounts = new IntSeq();
         private long rateWindowSum = 0;
+        /** 与吞吐同一滑动窗口的每帧实际取电桶——耗电与速率同窗同源，严格满足 耗电 ≈ 10×速率。 */
+        private final FloatSeq rateWindowPower = new FloatSeq();
+        private float ratePowerSum = 0f;
         private int rateTickCounter = 0;
 
         private final Seq<ItemTransferHubBuild> bfsQueue = new Seq<>();
@@ -497,7 +517,8 @@ public class ItemTransferHub extends Block {
         // ── 建筑级更新（Building Update）──────────────────────
         // 职责：本中枢直连的工厂拉取 / 仓储溢出推送 + 本枢 power/transfer 统计。
         // 网络级（ItemTransferHubNetwork）只提供 enableDemandPull/SurplusPush 总开关与寻址辅助。
-        // 电力统计：consumePowerDynamic 拉 powerConsumed 瞬时值，秒级取 powerAccumulator 积分求均。
+        // 电力统计：瞬时请求取「最近 SMOOTH_TICKS 帧计费均值」（平稳不跳变），
+        //           秒级耗电与运输速率共用同一 10s 滑动窗口（严格 10:1）。
         @Override
         public void updateTile() {
 
@@ -509,75 +530,89 @@ public class ItemTransferHub extends Block {
                 updateTopology();
             }
 
-            // 帧首并入跨枢延迟计费/计数——两者语义【刻意不对称】：
-            // powerConsumed 用【赋值】：其值跨帧有意义（电网读取最新请求），且供电路径
-            //   无其它清零点，+= 会随时间无限膨胀（a0.11.9.0 前的耗电虚高根因）；
-            // transferCount 用【+=】：入口恒为上帧清零后的 0，若用赋值会把
-            //   【本帧刚调度产生的自有件数】连同延迟量一起覆盖丢失 → 速率恒 0 而耗电正常。
-            powerConsumed = powerConsumedNext;
+            // 帧首推进计费平滑窗口：清出最旧槽位供本帧写入
+            smoothIdx = (smoothIdx + 1) % SMOOTH_TICKS;
+            smoothBuf[smoothIdx] = 0f;
+
+            // 并入跨枢延迟计费/计数——两者语义【刻意不对称】：
+            // 计费写入平滑槽随窗口摊平（远端一跳费用同样平稳生效）；
+            // 计数用【+=】：入口恒为上帧清零后的 0，若用赋值会把
+            // 【本帧刚调度产生的自有件数】连同延迟量一起覆盖丢失 → 速率恒 0 而耗电正常。
+            smoothBuf[smoothIdx] += powerConsumedNext;
             powerConsumedNext = 0f;
             transferCount += transferCountNext;
             transferCountNext = 0;
 
-            // 将上一帧转移数写入 10s 滑动窗口（每 tick 一个桶），随后本帧计数清零
-            rateWindowCounts.add(transferCount);
-            rateWindowSum += transferCount;
-            if (rateWindowCounts.size > RATE_WINDOW_TICKS) {
-                rateWindowSum -= rateWindowCounts.removeIndex(0);
-            }
-            transferCount = 0;
             rateTickCounter++;
 
-            // 禁用 / 断电：不调度；瞬时请求清零——
-            // 禁用时原版电网本就跳过本枢（shouldConsumePower=false），残留值只会冻结显示；
-            // 断电时清零可避免“幽灵需求”挤占电池，且显示与实际消耗保持一致。
-            if (!enabled || power == null || power.status < 0.5f) {
+            // 门控判定（「电力不足时完全停止工作」）：
+            // 只有满电（status ≥ POWER_OK）才允许调度与中转；一旦欠压立即停转并进入冷却，
+            // 冷却期请求清零（无幻影需求挤占电网）。冷却结束后先「探测」：发出与近期水平
+            // 相当的真实请求但绝不搬运，下一帧该请求被电网全额交付（status 仍满格）才恢复
+            // 工作——杜绝无源电网上因“零请求→status 恒为 1”而产生的白嫖式突发搬运，
+            // 也避免逐帧在“要电/不要电”之间抖动造成消耗跳变与半功率偷跑。
+            if (!enabled || power == null || power.status < POWER_OK) {
+                powerStarved = true;
+                probing = false;
+                starveCooldown = STARVE_COOLDOWN_TICKS;
+                java.util.Arrays.fill(smoothBuf, 0f);
                 powerConsumed = 0f;
-                powerConsumedNext = 0f;
-                powerAccumulator = 0f;
+            } else if (starveCooldown > 0) {
+                powerStarved = true;
+                if (--starveCooldown == 0) {
+                    // 冷却结束：本帧发出探测请求（至少一件的经手电费），下一帧验证是否足额供给
+                    probing = true;
+                    powerConsumed = Math.max(smoothSum() / SMOOTH_TICKS, PROBE_DRAW);
+                } else {
+                    probing = false;
+                    java.util.Arrays.fill(smoothBuf, 0f);
+                    powerConsumed = 0f;
+                }
+            } else {
+                // 运行态（含探测验证帧——能走到这里说明上一帧请求已被电网足额交付）
+                powerStarved = false;
+                probing = false;
+                // 调度节流 6Hz：计费写入当前平滑槽后再求均值，保证每笔费用恰好摊入 10 帧
+                if (timer(0, 10)) {
+                    if (network.enableDemandPull) {
+                        pullOnDemand();
+                    }
+                    if (network.enableSurplusPush) {
+                        pushSurplusToCore();
+                    }
+                }
+                // 平稳瞬时请求：最近 SMOOTH_TICKS 帧计费均值（摊平 6Hz 批量突发）
+                powerConsumed = smoothSum() / SMOOTH_TICKS;
+            }
 
+            // 本帧实际取电：运行/探测帧按电网满足率折算（门控确保满电，即等于全额请求）
+            float actualPower = powerConsumed * (power == null ? 0f : Math.min(power.status, 1f));
+
+            // 统一口径：吞吐桶与本帧实际取电桶写入同一 10s 滑动窗口
+            rateWindowCounts.add(transferCount);
+            rateWindowSum += transferCount;
+            transferCount = 0;
+            rateWindowPower.add(actualPower);
+            ratePowerSum += actualPower;
+            if (rateWindowCounts.size > RATE_WINDOW_TICKS) {
+                rateWindowSum -= rateWindowCounts.removeIndex(0);
+                ratePowerSum -= rateWindowPower.removeIndex(0);
+            }
+
+            // 停止态：显示按秒归零（窗口内历史自然衰减）
+            if (powerStarved) {
                 if (timer(3, 60)) {
                     powerPerSecond = 0f;
                     transferRate = 0f;
                 }
-
                 return;
             }
 
-            // 调度优先级（每帧顺序执行）：
-            // ① 拉取：先满足工厂 / 炮台的原料需求（最高优先）
-            // ② 推送：矿机 / 工厂溢出 → 核心（全网 BFS 找可收核心，无视距离）
-            // ③ 兜底：核心满 / 无核时才落入仓库
-
-            // 调度节流：每 10 tick（6Hz）执行一轮拉取/推送。
-            // 零缓冲批量直转单轮即可搬 10 件，逐帧调度会产生远超产线需求的吞吐，
-            // 导致耗电与速率统计虚高；节流后数值回归合理量级，调度行为本身不变。
-            if (timer(0, 10)) {
-                // 电力效率门控：status<1 时按比例缩放本轮搬运预算，
-                // 电力不足不再能全力运转（与原版工厂降速行为一致）
-                float efficiency = 1f; // 门控已确保 status ≥ 0.5，此处全额运行
-                if (network.enableDemandPull) {
-                    pullOnDemand(efficiency);
-                }
-
-                if (network.enableSurplusPush) {
-                    pushSurplusToCore();
-                }
-            }
-
-            // 积分口径 = 实际取电量：电网欠载（status<1）时按满足率折算，
-            // 与电网实际供给一致；满电时 status=1 即全额请求（10 × 经手件数）。
-            powerAccumulator += powerConsumed * Math.min(power.status, 1f);
-
-            if (timer(3, 60)) {
-                powerPerSecond = powerAccumulator;
-                powerAccumulator = 0f;
-            }
-
-            // 10 秒平均运输速率：滑动窗口各 tick 件数之和 ÷ 窗口覆盖的秒数
+            // 吞吐与耗电同窗刷新：10 秒滑动窗口之和 ÷ 窗口覆盖秒数
             if (rateTickCounter % 10 == 0) {
                 float seconds = Math.max(rateWindowCounts.size, 1) / 60f;
                 transferRate = rateWindowSum / seconds;
+                powerPerSecond = ratePowerSum / seconds;
             }
 
             // 调试流量聚合输出（设置页开关控制，每 2 秒一次）
@@ -591,6 +626,13 @@ public class ItemTransferHub extends Block {
                 debugFlow.clear();
                 debugTicks = 0;
             }
+        }
+
+        /** 平滑缓冲当前总和。 */
+        private float smoothSum() {
+            float s = 0f;
+            for (float v : smoothBuf) s += v;
+            return s;
         }
 
         private boolean isFactory(Building b) {
@@ -613,11 +655,12 @@ public class ItemTransferHub extends Block {
 
         /**
          * 拉取调度：
-         * 消费者三级优先：炮台(0) > 工厂(1)；仓储不拉取。
+         * 消费者两级优先：炮台(0) > 工厂(1)；仓储不拉取。
          * 同级按缺口比例降序；工厂内多输入物品同帧连补。
          * 供源四级：仓库 → 核心 → 矿机/工厂产出 → 兜底同类输入料。
+         * 路径约束：BFS 不经过欠压/禁用中枢（relayable 过滤）。
          */
-        private boolean pullOnDemand(float efficiency) {
+        private boolean pullOnDemand() {
 
             boolean any = false;
 
@@ -681,7 +724,6 @@ public class ItemTransferHub extends Block {
                 }
 
                 // 多源料工厂：同一帧连续补多种输入，不提前 break
-                boolean fed = false;
                 for (Item item : ordered) {
                     if (item.id >= consumer.items.length()) continue;
                     if (consumer.items.get(item) >= consumer.getMaximumAccepted(item)) continue;
@@ -689,22 +731,20 @@ public class ItemTransferHub extends Block {
                     Building supplier = findNearestSupplier(consumer, item);
                     if (supplier == null || !consumer.acceptItem(supplier, item)) continue;
 
-                    if (power == null || power.status <= 0) return any;
+                    // 电力硬门控：本枢欠压即停止一切搬运（与 updateTile 门控同口径）
+                    if (!relayable(this)) return any;
 
-                    // 预算：非炮台 = 真实消耗量 + 缓冲，再乘电力效率；
-                    // 首轮回看快照缺省 2。效率 <1 时按比例缩减吞吐
+                    // 预算：非炮台 = 真实消耗量 + 缓冲；首轮回看快照缺省 2
                     int budget = 10;
                     if (!turret) {
                         int consumedSince = snap == null || item.id >= snap.length
                             ? 0 : Math.max(0, snap[item.id] - consumer.items.get(item));
                         budget = Math.min(10, consumedSince + 2);
-                        budget = Math.max(1, Math.round(budget * efficiency));
                         if (budget <= 0) continue;
                     }
 
                     if (directTransfer(supplier, consumer, item, budget)) {
                         any = true;
-                        fed = true;
                         addFlow("拉:" + consumer.block.name, budget);
                     }
                 }
@@ -758,10 +798,15 @@ public class ItemTransferHub extends Block {
         }
 
         /**
-         * 推送优先级：
-         * ① 工厂 / 炮台（需要该原料且未满的消费者）
-         * ② 核心
-         * ③ 仓库（兜底）
+         * 推送调度（产出上行，只面向存储）：
+         * - 矿机/工厂：任一物品达 75% 容量即排空——核心未满即推（acceptItem/getMaximumAccepted
+         *   均为动态实际容量，随核心联动扩容实时更新）；核心满/拒收/无核才落仓库。
+         * - 仓库：单物品 ≥90% 溢出强制回运；或核心该物品低于 75% 时回收存量（不受 90% 限制）。
+         * - 配方输入料用 consumesItem 静态判定保护，绝不外运——
+         *   旧版按 acceptItem 判定在「满仓」时失真（满仓 → acceptItem=false → 输入料被当产物
+         *   推走 → 又被拉取补回），是仓库↔工厂乒乓空转、速率/耗电虚高的根因。
+         * - 工厂补料一律由拉取侧按消耗预算执行；推送不再直接分发给消费者，
+         *   避免绕过预算造成双重供给与乒乓倒手。
          */
         private void pushSurplusToCore() {
 
@@ -798,82 +843,55 @@ public class ItemTransferHub extends Block {
                     Item item = content.item(i);
                     if (item == null || producer.items.get(item) == 0) continue;
 
-                    // 输入料保护：该物品仍是本生产建筑愿意接收的原料（未满）时不外运，
-                    // 否则推送出去会被拉取逻辑再抽回来，形成乒乓倒手、虚增吞吐与耗电。
-                    // 输出物必然不被自身接收（acceptItem=false），不受影响；仓库分支除外。
-                    if (!isStorage && producer.acceptItem(producer, item)) continue;
+                    // 输入料保护（静态配方判定）：该建筑配方愿意消耗的物品绝不外运，
+                    // 不受“当前是否已满”影响（满仓时 acceptItem 变假是乒乓根源）
+                    if (!isStorage && producer.block.consumesItem(item)) continue;
 
                     if (isStorage) {
                         float stock = producer.items.get(item);
                         boolean surplus = stock >= producer.block.itemCapacity * 0.9f;
                         if (!surplus) {
-                            // 核心该物品低于 75% 阈值时，仓库存量即可回收，
-                            // 不受仓库自身 90% 盈余阈值限制（与产出推送阈值对齐）
+                            // 核心该物品低于 75%（按核心实际容量动态计算）时，
+                            // 仓库存量即可回收，不受仓库自身 90% 盈余阈值限制（与产出推送阈值对齐）
                             CoreBlock.CoreBuild probe = findNearestCore(producer, item);
                             if (probe == null
                                 || probe.items.get(item) >= probe.getMaximumAccepted(item) * surplusPushAt) continue;
                         }
                     }
 
-                    if (power == null || power.status <= 0) return;
+                    // 电力硬门控：本枢欠压即停止一切搬运
+                    if (!relayable(this)) return;
 
-                    // ① 优先：找需要该原料的工厂/炮台
-                    Building factoryTarget = findNearestConsumer(producer, item);
-                    if (factoryTarget != null) {
-                        directTransfer(producer, factoryTarget, item, 10);
-                        addFlow("分:" + factoryTarget.block.name, 10);
+                    // ① 核心未满即推（findNearestCore 内含 acceptItem 动态校验）
+                    CoreBlock.CoreBuild core = findNearestCore(producer, item);
+                    if (core != null) {
+                        directTransfer(producer, core, item, 10);
+                        addFlow("推:核心", 10);
                         continue;
                     }
 
-                    // ② 其次：推核心（acceptItem 为真即可推，核心满时自然拒收）
-                    CoreBlock.CoreBuild core = findNearestCore(producer, item);
-                    boolean coreHasRoom = false;
-                    if (core != null && core.acceptItem(producer, item)) {
-                        coreHasRoom = true;
-                    }
-                    // ③ 核心满或拒收：产物回流仓库
-                    if (!coreHasRoom) {
-                        StorageBlock.StorageBuild storage = findNearestStorage(producer, item);
-                        if (storage != null) {
-                            forceTransferToStorage(producer, storage, item, 10);
-                            addFlow("推:仓库", 10);
-                            continue;
-                        }
-                    }
-                    if (coreHasRoom) {
-                        directTransfer(producer, core, item, 10);
-                        addFlow("推:核心", 10);
+                    // ② 核心满 / 拒收 / 无核：产物回流仓库
+                    //    （findNearestStorage 排除推送源自身，防自投自收虚增吞吐）
+                    StorageBlock.StorageBuild storage = findNearestStorage(producer, item);
+                    if (storage != null) {
+                        forceTransferToStorage(producer, storage, item, 10);
+                        addFlow("推:仓库", 10);
                     }
                 }
             }
-        }
-
-        /**
-         * 找最近的需要该物品的工厂/炮台消费者。
-         */
-        private Building findNearestConsumer(Building producer, Item item) {
-            Building best = null;
-            int bestDist = Integer.MAX_VALUE;
-
-            for (Building b : data.buildings) {
-                if (b == producer || !b.isValid()) continue;
-                if (!isFactory(b)) continue;
-                if (b.items == null || b.items.get(item) >= b.getMaximumAccepted(item)) continue;
-                if (!b.acceptItem(producer, item)) continue;
-                int d = Math.abs(b.tile.x - producer.tile.x) + Math.abs(b.tile.y - producer.tile.y);
-                if (d < bestDist) {
-                    best = b;
-                    bestDist = d;
-                }
-            }
-            return best;
         }
         /**
          * 强制入库：供源 → 仓库。跳过收方 acceptItem（规避原版仓库-核心容量联动），
          * 仅以仓库自身剩余容量为约束。
          */
         private boolean forceTransferToStorage(Building supplier, StorageBlock.StorageBuild storage, Item item, int maxAmount){
+            if (!relayable(this)) return false;
             if (supplier.items == null || !supplier.isValid() || item.id >= supplier.items.length()) return false;
+            // 端点归属枢不可中转（欠压/禁用）→ 整条路径不可用：不搬运、不计费
+            ItemTransferHubBuild srcHub = findOwnerHub(supplier);
+            if (srcHub != null && !relayable(srcHub)) return false;
+            ItemTransferHubBuild dstHub = findOwnerHub(storage);
+            if (dstHub != null && !relayable(dstHub)) return false;
             int stock = supplier.items.get(item);
             if (stock <= 0) return false;
             if (item.id >= storage.items.length()) return false;
@@ -950,6 +968,7 @@ public class ItemTransferHub extends Block {
          * ② 核心
          * ③ 矿机 / 工厂产出物
          * 每级内部取 BFS 最近；全部落空后，兜底允许同类工厂输入库存（防饿死）。
+         * BFS 不经过欠压/禁用中枢（relayable）——无电中枢的辖内建筑视为不可达。
          */
         private Building findNearestSupplier(Building consumer, Item item) {
 
@@ -974,6 +993,7 @@ public class ItemTransferHub extends Block {
                 // BFS 全网层序
                 bfsInit();
                 for (ItemTransferHubBuild hub : data.hubs) {
+                    if (!relayable(hub)) continue; // 路径不经过欠压/禁用中枢
                     if (bfsVisited.add(hub.id)) {
                         bfsQueue.add(hub);
                         bfsDists.add(1);
@@ -995,6 +1015,7 @@ public class ItemTransferHub extends Block {
                         }
                     }
                     for (ItemTransferHubBuild neighbor : hub.data.hubs) {
+                        if (!relayable(neighbor)) continue; // 路径不经过欠压/禁用中枢
                         if (bfsVisited.add(neighbor.id)) {
                             bfsQueue.add(neighbor);
                             bfsDists.add(bfsDists.get(idx) + 1);
@@ -1021,6 +1042,7 @@ public class ItemTransferHub extends Block {
          * 最近可收货仓储（非核心）。用于核心满或无核时的次级落点。
          * 直连与跨中枢 BFS 双层查找：仓库常连在其它中枢上，
          * 仅扫直连会导致“核心满却推不进仓库”。
+         * 排除推送源自身（防自投自收虚增吞吐）；BFS 不经过欠压/禁用中枢。
          */
         private StorageBlock.StorageBuild findNearestStorage(Building producer, Item item) {
             StorageBlock.StorageBuild best = null;
@@ -1030,6 +1052,7 @@ public class ItemTransferHub extends Block {
             for (Building b : data.buildings) {
                 if (!(b instanceof StorageBlock.StorageBuild st)) continue;
                 if (b instanceof CoreBlock.CoreBuild) continue;
+                if (b == producer) continue; // 防自投自收：推送源不能作为自己的落点
                 if (!b.isValid() || b.items == null || item.id >= b.items.length()) continue;
                 // 不检查 acceptItem：原版仓库与核心容量联动，核心满会连带拒收；
                 // 以仓库自身容量为准即可
@@ -1045,6 +1068,7 @@ public class ItemTransferHub extends Block {
             // 第二层：BFS 全网层序，寻找其它中枢直连的仓库
             bfsInit();
             for (ItemTransferHubBuild hub : data.hubs) {
+                if (!relayable(hub)) continue; // 路径不经过欠压/禁用中枢
                 if (bfsVisited.add(hub.id)) {
                     bfsQueue.add(hub);
                     bfsDists.add(1);
@@ -1057,6 +1081,7 @@ public class ItemTransferHub extends Block {
                 for (Building b : hub.data.buildings) {
                     if (!(b instanceof StorageBlock.StorageBuild st)) continue;
                     if (b instanceof CoreBlock.CoreBuild) continue;
+                    if (b == producer) continue; // 防自投自收
                     if (!b.isValid() || b.items == null || item.id >= b.items.length()) continue;
                     if (b.items.get(item) >= b.block.itemCapacity) continue;
                     if (d < bestDist) {
@@ -1065,6 +1090,7 @@ public class ItemTransferHub extends Block {
                     }
                 }
                 for (ItemTransferHubBuild neighbor : hub.data.hubs) {
+                    if (!relayable(neighbor)) continue; // 路径不经过欠压/禁用中枢
                     if (bfsVisited.add(neighbor.id)) {
                         bfsQueue.add(neighbor);
                         bfsDists.add(bfsDists.get(idx) + 1);
@@ -1090,6 +1116,7 @@ public class ItemTransferHub extends Block {
 
             bfsInit();
             for (ItemTransferHubBuild hub : data.hubs) {
+                if (!relayable(hub)) continue; // 路径不经过欠压/禁用中枢
                 if (bfsVisited.add(hub.id)) {
                     bfsQueue.add(hub);
                     bfsDists.add(1);
@@ -1108,6 +1135,7 @@ public class ItemTransferHub extends Block {
                     }
                 }
                 for (ItemTransferHubBuild neighbor : hub.data.hubs) {
+                    if (!relayable(neighbor)) continue; // 路径不经过欠压/禁用中枢
                     if (bfsVisited.add(neighbor.id)) {
                         bfsQueue.add(neighbor);
                         bfsDists.add(bfsDists.get(idx) + 1);
@@ -1117,17 +1145,14 @@ public class ItemTransferHub extends Block {
             return best;
         }
 
-        private boolean directTransfer(Building supplier, Building consumer, Item item) {
-            return directTransfer(supplier, consumer, item, 1);
-        }
-
         /**
          * 批量直转：单次最多搬 maxAmount 件（受供源存量 / 收方余位约束），
          * 大幅提升矿机/工厂产物的吞吐速率。计费仍为每件经一枢 +10。
+         * 路径约束：本枢与两端点归属枢必须可中转（relayable——满电且未停转）。
          */
         private boolean directTransfer(Building supplier, Building consumer, Item item, int maxAmount) {
 
-            if (power == null || power.status <= 0) {
+            if (!relayable(this)) {
                 return false;
             }
 
@@ -1139,15 +1164,28 @@ public class ItemTransferHub extends Block {
                 return false;
             }
 
+            // 端点归属枢不可中转（欠压/禁用）→ 整条路径不可用：不搬运、不计费
+            ItemTransferHubBuild srcHub = findOwnerHub(supplier);
+            if (srcHub != null && !relayable(srcHub)) {
+                return false;
+            }
+            ItemTransferHubBuild dstHub = findOwnerHub(consumer);
+            if (dstHub != null && !relayable(dstHub)) {
+                return false;
+            }
+
             int supplierStock = supplier.items.get(item);
             int consumerSpace = consumer.getMaximumAccepted(item) - consumer.items.get(item);
 
-            // 距离过近保护：供源与消费者贴面时，原版邻接卸货已在工作；
+            // 距离过近保护：供源与工厂/炮台贴面时，原版邻接卸货已在工作；
             // 中枢再抽会造成同帧供需倒手。跳过贴面供源，改由其它供源层级满足。
-            int half = (supplier.block.size + consumer.block.size) / 2 + 1;
-            if (Math.abs(supplier.tile.x - consumer.tile.x) <= half
-                && Math.abs(supplier.tile.y - consumer.tile.y) <= half) {
-                return false;
+            // 核心/仓库无原版邻接进料机制，豁免（否则贴面仓库永远推不进核心）。
+            if (!(consumer instanceof CoreBlock.CoreBuild) && !(consumer instanceof StorageBlock.StorageBuild)) {
+                int half = (supplier.block.size + consumer.block.size) / 2 + 1;
+                if (Math.abs(supplier.tile.x - consumer.tile.x) <= half
+                    && Math.abs(supplier.tile.y - consumer.tile.y) <= half) {
+                    return false;
+                }
             }
 
             // 供源保留配额：最多抽走存量的一半（向下取整），防止源头被瞬间抽干后
@@ -1190,7 +1228,7 @@ public class ItemTransferHub extends Block {
             if (srcHub == null || dstHub == null) {
                 if ((srcHub == null && data.buildings.contains(supplier))
                     || (dstHub == null && data.buildings.contains(consumer))) {
-                    powerConsumed += 10f * moved;
+                    smoothBuf[smoothIdx] += 10f * moved;
                     transferCount += moved;
                 }
                 return;
@@ -1223,16 +1261,20 @@ public class ItemTransferHub extends Block {
             if (debugFlows) debugFlow.put(tag, debugFlow.get(tag, 0) + moved);
         }
 
-        /** 该中枢是否可中转流量（启用且有电）。 */
-        private boolean canRelay(ItemTransferHubBuild h) {
-            return h.enabled && h.power != null && h.power.status > 0;
+        /**
+         * 该中枢是否可参与传输（作为路径节点或端点）：
+         * 已启用、有电网、满电（status ≥ POWER_OK）且未处于欠压冷却——
+         * 「电力不足时完全停止工作」，路径选择不得经过不满足条件的中枢。
+         */
+        boolean relayable(ItemTransferHubBuild h) {
+            return h.enabled && h.power != null && h.power.status >= POWER_OK && !h.powerStarved;
         }
 
-        /** 单跳计费/计数：本枢直接入账，远端枢写入延迟队列（下一帧并入）。 */
+        /** 单跳计费/计数：本枢写入计费平滑缓冲，远端枢写入延迟队列（下一帧并入）。 */
         private void chargeOne(ItemTransferHubBuild h, int moved) {
             float share = 10f * moved;
             if (h == this) {
-                powerConsumed += share;
+                smoothBuf[smoothIdx] += share;
                 transferCount += moved;
             } else {
                 h.powerConsumedNext += share;
@@ -1297,7 +1339,7 @@ public class ItemTransferHub extends Block {
                     return path;
                 }
                 for (ItemTransferHubBuild nb : cur.data.hubs) {
-                    if (!canRelay(nb)) continue;
+                    if (!relayable(nb)) continue; // 路径不经过欠压/禁用中枢
                     if (bfsVisited.add(nb.id)) {
                         bfsQueue.add(nb);
                         parentHub.add(cur);

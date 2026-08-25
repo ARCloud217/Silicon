@@ -132,13 +132,21 @@ public class ItemTransferHub extends Block {
             }
         });
 
-        // 长按拖线放置：InputHandler 将拖过的相对坐标以 Point2[] 传入
+        // 长按拖线放置 / 复制配置：InputHandler 将相对坐标以 Point2[] 传入。
+        // 目标尚未建成的偏移进入 pendingLinks 挂起队列，由 updateTile 周期重试——
+        // 粘贴蓝图时中枢可能先于矿机/仓库建成，电力节点的边存在两端所以无此问题，
+        // 中枢的边只存于本端，必须自行补连才能保证「后建的建筑也能接上」
         config(arc.math.geom.Point2[].class, (ItemTransferHubBuild entity, arc.math.geom.Point2[] dragLinks) -> {
             entity.links.clear();
+            entity.pendingLinks.clear();
             for (arc.math.geom.Point2 link : dragLinks) {
                 Building other = world.build(entity.tile.x + link.x, entity.tile.y + link.y);
-                if (other == null || !other.isValid() || other == entity) continue;
-                if (!linkValid(entity, other)) continue;
+                if (other == null || other == entity) {
+                    // 目标未建成：挂起等待（建造完成后由周期任务自动接上）
+                    entity.pendingLinks.addUnique(link);
+                    continue;
+                }
+                if (!other.isValid() || !linkValid(entity, other)) continue;
                 if (entity.links.size >= maxConnections) break;
                 entity.links.addUnique(other.pos());
                 if (other instanceof ItemTransferHubBuild otherHub
@@ -234,26 +242,8 @@ public class ItemTransferHub extends Block {
 
     @Override
     public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
-        if (!(config instanceof arc.math.geom.Point2[] links)) {
-            // 非复制放置：清空残留配置，防止旧 Point2[] 继续喂给悬停预览
-            lastConfig = null;
-            return;
-        }
-
-        Building hubB = tile.build;
-        if (!(hubB instanceof ItemTransferHubBuild hub)) return;
-
-        for (arc.math.geom.Point2 link : links) {
-            Tile other = world.tile(tile.x + link.x, tile.y + link.y);
-            if (other == null || other.build == null || other.build == hub) continue;
-            // 白名单 + 整体检测统一走 linkValid（排除核心旁已合并容器等）
-            if (!linkValid(hub, other.build)) continue;
-            if (hub.links.contains(other.build.pos())) continue;
-            if (hub.links.size >= maxConnections) break;
-            hub.configure(other.build.pos());
-        }
-        // 一次性消费：复制模式应用后立即清空 lastConfig，
-        // 后续普通放置不再携带旧连接模式（电力节点同款 saveConfig=false 语义）
+        // 链接应用与未建成目标的挂起均由 Point2[] 配置处理器完成（configured 先于本钩子触发）；
+        // 此处只做一次性消费：清空 lastConfig，防止旧连接模式继续喂给悬停预览
         lastConfig = null;
     }
 
@@ -403,10 +393,14 @@ public class ItemTransferHub extends Block {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
                 + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
         }
-        // 不改绘制层级（与电力节点 drawPlanConfigTop 同款）：跟随调用方的
-        // 计划层原样绘制——画在同批方块幽灵之后，天然浮于其上不被遮挡
+        // 固定层级 96：实测调用方 ambient 在 90~110 间漂移（拖动阶段会被同批幽灵/单位层
+        // 遮挡）——固定到 flyingUnitLow 之上、bullet(100)/effect(110) 之下，
+        // 保证预览在拖动全程稳定可见、不被任何方块或幽灵遮挡
+        float prevZ = Draw.z();
+        Draw.z(96f);
         Draw.mixcol(Color.white, 0f);
         drawCopyLinks(plan, list);
+        Draw.z(prevZ);
     }
 
     /**
@@ -463,6 +457,8 @@ public class ItemTransferHub extends Block {
         public ItemTransferHubNetwork network = new ItemTransferHubNetwork();
         public ItemTransferHubNetwork.HubData data;
         public IntSeq links = new IntSeq();
+        /** 复制/粘贴时目标尚未建成的挂起偏移：建造完成后由 updateTile 周期补连（会话内有效，不入存档）。 */
+        public Seq<arc.math.geom.Point2> pendingLinks = new Seq<>();
         public float powerConsumed = 0f;
         // 延迟计费：跨枢 charge 分摊到下一帧，避免同帧执行顺序导致的清零覆盖
         public float powerConsumedNext = 0f;
@@ -642,6 +638,20 @@ public class ItemTransferHub extends Block {
             // 定时剔除失效路径并回收连接数（timers=4 中使用 id=2）。
             if (timer(2, 120)) {
                 updateTopology();
+            }
+
+            // 挂起链接补连：复制/粘贴时目标未建成的偏移，每秒重试一次
+            // （timers=4 中使用 id=3）；目标建成即接上，被其它方块占用则放弃
+            if (!pendingLinks.isEmpty() && timer(3, 60)) {
+                for (int i = pendingLinks.size - 1; i >= 0; i--) {
+                    arc.math.geom.Point2 p = pendingLinks.get(i);
+                    Building other = world.build(tile.x + p.x, tile.y + p.y);
+                    if (other == null) continue; // 仍在建造中：继续等待
+                    pendingLinks.remove(p);
+                    if (other == this || !other.isValid() || !linkValid(this, other)) continue;
+                    if (links.contains(other.pos()) || links.size >= maxConnections) continue;
+                    configure(other.pos());
+                }
             }
 
             // 帧首推进计费平滑窗口：清出最旧槽位供本帧写入

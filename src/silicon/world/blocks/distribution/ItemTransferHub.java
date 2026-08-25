@@ -297,10 +297,12 @@ public class ItemTransferHub extends Block {
         Seq<Building> cands = new Seq<>();
         getPotentialLinks(tile, player.team(), cands::add);
 
-        // 模拟两阶段自动连接（与 autoConnectNearby 同口径：中枢优先、同网排除、连接数上限），
+        // 模拟自动连接（与 autoConnectNearby 同口径：距离就近、同网排除、连接数上限），
         // 得出「实际会放下的连接」——蓝色标记 + 连线；
         // 其余符合连接标准的候选——绿色标记（与单击配置显示的「可新建」同色），不画连线。
-        cands.sort((a, b) -> Boolean.compare(b instanceof ItemTransferHubBuild, a instanceof ItemTransferHubBuild));
+        cands.sort((a, b) -> Float.compare(
+            Mathf.dst2(a.x - cx, a.y - cy),
+            Mathf.dst2(b.x - cx, b.y - cy)));
         arc.struct.ObjectSet<Building> actual = new arc.struct.ObjectSet<>();
         // 虚拟网络的已覆盖建筑：直连的非中枢 + 已连中枢的网络可达建筑
         arc.struct.ObjectSet<Building> covered = new arc.struct.ObjectSet<>();
@@ -470,14 +472,14 @@ public class ItemTransferHub extends Block {
         }
 
         /**
-         * 两阶段自动连接：候选按【中枢优先】排序——先建好全部枢-枢链路，
-         * 再对非中枢目标做同网排除（inSameNetwork 此时已含刚连入的中枢），
-         * 避免“既连中枢、又抢走该中枢网络内建筑”的重复服务。
+         * 自动连接（放置 / 双击共用）：候选按【距离就近】排序——默认优先连接最近的目标；
+         * 非中枢目标仍做同网排除（inSameNetwork 实时含已连入的中枢网络），
+         * 连接数达到上限即停止。预览 drawPlace 以同一排序口径模拟，保证所见即所得。
          */
         private void autoConnectNearby(ItemTransferHub hubBlock) {
             Seq<Building> cands = new Seq<>();
             hubBlock.getPotentialLinks(tile, team, cands::add);
-            cands.sort((x, y) -> Boolean.compare(y instanceof ItemTransferHubBuild, x instanceof ItemTransferHubBuild));
+            cands.sort((a, b) -> Float.compare(Mathf.dst2(a.x - x, a.y - y), Mathf.dst2(b.x - x, b.y - y)));
             for (Building other : cands) {
                 if (links.size >= hubBlock.maxConnections) break;
                 if (links.contains(other.pos())) continue;
@@ -1457,7 +1459,7 @@ public class ItemTransferHub extends Block {
                 }
                 rebuildData(this);
                 } else {
-                    // 双击自动连接：与放置同一套【中枢优先两阶段】逻辑
+                    // 双击自动连接：与放置同一套【距离就近】逻辑
                     autoConnectNearby(hubBlock);
                 }
                 deselect();

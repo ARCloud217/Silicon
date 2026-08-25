@@ -22,7 +22,7 @@
 | S11 | chargeOne 单跳计费 | `private void chargeOne(` |
 | S12 | 延迟计费/计数并入 | `transferCount += transferCountNext`、`smoothBuf[smoothIdx] += powerConsumedNext` |
 | S13 | 瞬时请求平滑 | `smoothSum() / SMOOTH_TICKS` |
-| S14 | 耗电与速率同窗统计（10:1） | `rateWindowPower.add(actualPower)` |
+| S14 | 耗电按秒(60t窗)/速率10s窗统计 | `powerSecondWindow.add(actualPower)` |
 | S15 | 存档序列化 v1 | `write.i(network.id)` + `revision < 1` |
 | S16 | 核心满回退仓库跨网 BFS | `寻找其它中枢直连的仓库` |
 | S17 | 加载期防误删链接 | `world.isGenerating()` |

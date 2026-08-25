@@ -218,22 +218,6 @@ public class ItemTransferHub extends Block {
         }
     }
 
-    /**
-     * 收集以 (cx,cy) 为中心、2 倍连接范围内的全部同队中枢的【整网覆盖建筑】。
-     * 用于自动连接/预览的同网排除：这些网络内的非中枢建筑不应被新建中枢直连
-     * （它们已在其它中枢的服务下——无论该中枢是否也在新枢的连接范围内）。
-     */
-    private void collectNearbyHubCoverage(float cx, float cy, Team team, arc.struct.ObjectSet<Building> out) {
-        var tree = team.data().buildingTree;
-        if (tree == null) return;
-        float r = connectionRange * 2f * tilesize;
-        tree.intersect(cx - r, cy - r, r * 2f, r * 2f, b -> {
-            if (b instanceof ItemTransferHubBuild h && b.isValid() && b.team == team) {
-                collectNetworkBuildings(h, out);
-            }
-        });
-    }
-
     @Override
     public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
         if (!(config instanceof arc.math.geom.Point2[] links)) return;
@@ -313,24 +297,29 @@ public class ItemTransferHub extends Block {
         Seq<Building> cands = new Seq<>();
         getPotentialLinks(tile, player.team(), cands::add);
 
-        // 模拟自动连接（与 autoConnectNearby 同口径）：
-        // 【范围内的中枢全部连接】；非中枢建筑只要已在任一同队中枢的网络内
-        // （含即将连接的中枢网络、以及范围外邻近中枢的网络）就不直连——
-        // 蓝色标记 + 连线只给实际会放下的连接，
-        // 其余符合连接标准的候选——绿色标记（与单击配置显示的「可新建」同色）。
+        // 模拟自动连接（与 autoConnectNearby 同口径），两阶段均按【距离就近】：
+        // ① 优先连接范围内的全部中枢——蓝色方框 + 连线；
+        // ② 其次连接「已选中枢所在网络之外」的非中枢建筑；
+        //    网络之内 / 超出上限的候选——绿色方框（与单击配置显示同色），不画连线。
         cands.sort((a, b) -> Float.compare(
             Mathf.dst2(a.x - cx, a.y - cy),
             Mathf.dst2(b.x - cx, b.y - cy)));
         arc.struct.ObjectSet<Building> coveredByHubs = new arc.struct.ObjectSet<>();
-        collectNearbyHubCoverage(cx, cy, player.team(), coveredByHubs);
         arc.struct.ObjectSet<Building> actual = new arc.struct.ObjectSet<>();
         int simulated = 0;
+        // ① 中枢：范围内全部连接，并记录其整网覆盖
         for (Building cand : cands) {
             if (!cand.isValid() || simulated >= maxConnections) continue;
-            if (cand instanceof ItemTransferHubBuild) {
+            if (cand instanceof ItemTransferHubBuild h) {
                 actual.add(cand);
                 simulated++;
-            } else if (!coveredByHubs.contains(cand)) {
+                collectNetworkBuildings(h, coveredByHubs);
+            }
+        }
+        // ② 非中枢：只连「已选中枢网络之外」的
+        for (Building cand : cands) {
+            if (!cand.isValid() || simulated >= maxConnections) continue;
+            if (!(cand instanceof ItemTransferHubBuild) && !coveredByHubs.contains(cand)) {
                 actual.add(cand);
                 simulated++;
             }
@@ -432,12 +421,13 @@ public class ItemTransferHub extends Block {
         public int transferCountNext = 0;
         /** 传输速率：10 秒滑动窗口平均（件/秒），含路过本枢的所有件数 */
         public float transferRate = 0f;
-        private static final int RATE_WINDOW_TICKS = 600; // 10s * 60fps，真实 10 秒滑动窗口
+        private static final int RATE_WINDOW_TICKS = 600; // 运输速率：10s * 60fps 真实滑动窗口
+        private static final int POWER_WINDOW_TICKS = 60; // 电力消耗：每秒（60 tick）滑动窗口
         private final IntSeq rateWindowCounts = new IntSeq();
         private long rateWindowSum = 0;
-        /** 与吞吐同一滑动窗口的每帧实际取电桶——耗电与速率同窗同源，严格满足 耗电 ≈ 10×速率。 */
-        private final FloatSeq rateWindowPower = new FloatSeq();
-        private float ratePowerSum = 0f;
+        /** 最近 1 秒逐帧实际取电桶——电力消耗按秒计算。 */
+        private final FloatSeq powerSecondWindow = new FloatSeq();
+        private float powerSecondSum = 0f;
         private int rateTickCounter = 0;
 
         private final Seq<ItemTransferHubBuild> bfsQueue = new Seq<>();
@@ -487,31 +477,33 @@ public class ItemTransferHub extends Block {
         }
 
         /**
-         * 自动连接（放置 / 双击共用）：候选按【距离就近】排序。
-         * 排除规则：非中枢建筑只要已在任何同队中枢的网络内（邻近中枢整网，
-         * 含即将连入的中枢网络）一律不直连；范围内的中枢则全部连接
-         * （仅受连接数上限约束）。预览 drawPlace 以同一口径模拟，所见即所得。
+         * 自动连接（放置 / 双击共用），两阶段均按【距离就近】排序：
+         * ① 优先连接范围内的全部中枢；
+         * ② 其次连接「已选中枢所在网络之外」的非中枢建筑——
+         *    已在任何同队中枢网络内（含刚连入中枢的整网）的建筑一律不直连。
+         * 预览 drawPlace 以同一口径模拟，所见即所得。
          */
         private void autoConnectNearby(ItemTransferHub hubBlock) {
             Seq<Building> cands = new Seq<>();
             hubBlock.getPotentialLinks(tile, team, cands::add);
             cands.sort((a, b) -> Float.compare(Mathf.dst2(a.x - x, a.y - y), Mathf.dst2(b.x - x, b.y - y)));
 
+            // ① 范围内的中枢按距离依次全部连接，并记录其整网覆盖
             arc.struct.ObjectSet<Building> coveredByHubs = new arc.struct.ObjectSet<>();
-            collectNearbyHubCoverage(x, y, team, coveredByHubs);
-
             for (Building other : cands) {
                 if (links.size >= hubBlock.maxConnections) break;
-                if (links.contains(other.pos())) continue;
-                if (other instanceof ItemTransferHubBuild) {
-                    // 范围内的中枢全部连接
-                    configure(other.pos());
-                } else {
-                    // 已在网络内 / 即将连接的网络内的建筑不直连
-                    if (coveredByHubs.contains(other)) continue;
-                    if (!autoConnectTargetValid(this, other)) continue;
-                    configure(other.pos());
-                }
+                if (!(other instanceof ItemTransferHubBuild) || links.contains(other.pos())) continue;
+                configure(other.pos());
+                collectNetworkBuildings((ItemTransferHubBuild) other, coveredByHubs);
+            }
+
+            // ② 非中枢建筑：只连「已选中枢网络之外」的，同样就近
+            for (Building other : cands) {
+                if (links.size >= hubBlock.maxConnections) break;
+                if (other instanceof ItemTransferHubBuild || links.contains(other.pos())) continue;
+                if (coveredByHubs.contains(other)) continue;
+                if (!autoConnectTargetValid(this, other)) continue;
+                configure(other.pos());
             }
         }
 
@@ -563,8 +555,8 @@ public class ItemTransferHub extends Block {
         // ── 建筑级更新（Building Update）──────────────────────
         // 职责：本中枢直连的工厂拉取 / 仓储溢出推送 + 本枢 power/transfer 统计。
         // 网络级（ItemTransferHubNetwork）只提供 enableDemandPull/SurplusPush 总开关与寻址辅助。
-        // 电力统计：瞬时请求取「最近 SMOOTH_TICKS 帧计费均值」（平稳不跳变），
-        //           秒级耗电与运输速率共用同一 10s 滑动窗口（严格 10:1）。
+        // 电力统计：瞬时请求取「最近 SMOOTH_TICKS 帧计费均值」（平稳不跳变）；
+        //           电力消耗按秒计算（60 tick 窗口），运输速率为 10 秒滑动窗口。
         @Override
         public void updateTile() {
 
@@ -634,15 +626,17 @@ public class ItemTransferHub extends Block {
             // 本帧实际取电：运行/探测帧按电网满足率折算（门控确保满电，即等于全额请求）
             float actualPower = powerConsumed * (power == null ? 0f : Math.min(power.status, 1f));
 
-            // 统一口径：吞吐桶与本帧实际取电桶写入同一 10s 滑动窗口
+            // 统计口径：吞吐入 10s 窗口（速率），取电入 1s 窗口（耗电按秒计算）
             rateWindowCounts.add(transferCount);
             rateWindowSum += transferCount;
             transferCount = 0;
-            rateWindowPower.add(actualPower);
-            ratePowerSum += actualPower;
+            powerSecondWindow.add(actualPower);
+            powerSecondSum += actualPower;
             if (rateWindowCounts.size > RATE_WINDOW_TICKS) {
                 rateWindowSum -= rateWindowCounts.removeIndex(0);
-                ratePowerSum -= rateWindowPower.removeIndex(0);
+            }
+            if (powerSecondWindow.size > POWER_WINDOW_TICKS) {
+                powerSecondSum -= powerSecondWindow.removeIndex(0);
             }
 
             // 停止态：显示按秒归零（窗口内历史自然衰减）
@@ -654,11 +648,12 @@ public class ItemTransferHub extends Block {
                 return;
             }
 
-            // 吞吐与耗电同窗刷新：10 秒滑动窗口之和 ÷ 窗口覆盖秒数
+            // 刷新：运输速率 = 10 秒窗口均值；电力消耗 = 最近 1 秒实际取电
             if (rateTickCounter % 10 == 0) {
-                float seconds = Math.max(rateWindowCounts.size, 1) / 60f;
-                transferRate = rateWindowSum / seconds;
-                powerPerSecond = ratePowerSum / seconds;
+                float rateSeconds = Math.max(rateWindowCounts.size, 1) / 60f;
+                transferRate = rateWindowSum / rateSeconds;
+                float powerSeconds = Math.max(powerSecondWindow.size, 1) / 60f;
+                powerPerSecond = powerSecondSum / powerSeconds;
             }
 
             // 调试流量聚合输出（设置页开关控制，每 2 秒一次）

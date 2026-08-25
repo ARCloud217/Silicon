@@ -3,10 +3,11 @@
  *
  * 用法：javac --release 17 -encoding UTF-8 HubTransferStatsTest.java && java HubTransferStatsTest
  *
- * 镜像 ItemTransferHubBuild 当前实现的关键算法（a0.11.17.0 口径）：<p>
+ * 镜像 ItemTransferHubBuild 当前实现的关键算法（a0.11.21.0 口径）：<p>
  * 1. chargeOne：本枢写入计费平滑缓冲（smoothBuf），远端枢走 *Next 延迟一帧<br>
  * 2. 瞬时请求 = 最近 SMOOTH_TICKS(10) 帧计费均值——摊平 6Hz 批量突发，电网侧不跳变<br>
- * 3. 耗电与吞吐共用同一 600tick 滑动窗口 → 严格满足 耗电 ≈ 10 × 速率<br>
+ * 3. 电力消耗按秒计算（60tick 滑动窗口）；运输速率为 10 秒滑动窗口——
+ *    稳态流量下 耗电 ≈ 10 × 速率 仍然成立<br>
  * 4. 电力硬门控：status < POWER_OK 完全停止并进入冷却（60t）；冷却结束后先「探测」
  *    （发真实请求但不搬运），请求被足额交付后才恢复——无源电网永不空转白嫖<br>
  * 5. relayable 路径过滤：欠压/禁用中枢不可作为路径节点或端点<br>
@@ -31,7 +32,7 @@ public class HubTransferStatsTest {
         float ratePerSecond() { return size == 0 ? 0f : sum / (size / 60f); }
     }
 
-    /** 浮点滑动窗口：与吞吐窗口同长，记录每帧实际取电。 */
+    /** 浮点滑动窗口：电力消耗用（60 tick = 每秒），记录每帧实际取电。 */
     static class PowerWindow {
         final float[] buf; int head = 0, size = 0; float sum = 0;
         PowerWindow(int cap) { buf = new float[cap]; }
@@ -61,7 +62,7 @@ public class HubTransferStatsTest {
         boolean probing = false, powerStarved = false; int starveCooldown = 0;
 
         final Window counts = new Window(600);
-        final PowerWindow powerWin = new PowerWindow(600);
+        final PowerWindow powerWin = new PowerWindow(60);
         float powerPerSecond = 0f, transferRate = 0f;
         int tick = 0;
 
@@ -178,7 +179,7 @@ public class HubTransferStatsTest {
         check(near(b.powerConsumed, 10f, 0.001f), "场景2 B 下一帧并入计费并摊平");
         check(b.transferCount == 0 && b.counts.sum == 10, "场景2 计数已入滑动窗口桶");
 
-        // ========== 场景3：突发流量下耗电 ≈ 10 × 速率（同窗口径）==========
+        // ========== 场景3：稳态流量下耗电 ≈ 10 × 速率（耗电按秒、速率按 10 秒）==========
         Hub relay = new Hub("R"), src = new Hub("S");
         for (int f = -99; f <= 600; f++) {         // 先预热 100 帧排空启动瞬态，再计量
             if (((f % 10) + 10) % 10 == 0) {       // 每 10 帧 S 发起 10 件途经 R
@@ -198,7 +199,7 @@ public class HubTransferStatsTest {
         // ========== 场景4：瞬时请求平稳性（旧实现单帧尖峰100，现≤10+探测下限）==========
         Hub g = new Hub("G");
         float maxReq = 0f;
-        for (int f = 0; f < 300; f++) {
+        for (int f = 0; f < 700; f++) {            // ≥10s：让速率的 600t 窗口也饱和
             if (f % 10 == 0) {
                 g.beginFrame(); g.chargeOne(g, 10); g.endFrame();   // 每帧一批 100 电费
             } else {
@@ -207,7 +208,7 @@ public class HubTransferStatsTest {
             maxReq = Math.max(maxReq, g.powerConsumed);
         }
         check(maxReq <= 10.5f, "场景4 瞬时请求峰值 ≤ 单帧摊平值（" + maxReq + "）");
-        check(near(g.powerPerSecond, 10f * g.transferRate, 8f), "场景4 长跑后耗电仍 ≈ 10×速率");
+        check(near(g.powerPerSecond, 10f * g.transferRate, 8f), "场景4 稳态下耗电 ≈ 10×速率");
 
         // ========== 场景5：连续帧折叠无膨胀（赋值语义镜像：槽位推进即清出）==========
         Hub m = new Hub("M");

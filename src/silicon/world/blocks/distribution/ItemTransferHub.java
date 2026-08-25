@@ -386,22 +386,31 @@ public class ItemTransferHub extends Block {
     public void drawPlanConfig(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list){
         // 悬停幽灵专用路径：DesktopInput 每帧把 lastConfig 附到 bplan 后调用本钩子并立即清空
         // （不经过 drawPlan，也与 saveConfig 无关）——F 键拾取后的「放置前预览」挂在这里
-        drawCopyLinksIfCopied(plan, list);
+        drawCopyLinksIfCopied(plan, list, "hover");
     }
 
     @Override
     public void drawPlanConfigTop(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
         // 入队计划 / 原理图粘贴路径（drawBuildPlans）：与电力节点同款钩子——
         // 成批粘贴时画出计划间激光网；拖线计划经 drawOverPlan 也走这里
-        drawCopyLinksIfCopied(plan, list);
+        drawCopyLinksIfCopied(plan, list, "top");
     }
 
+    /** 复制预览触发频率诊断计数（仅 debugFlows 开启时输出）。 */
+    static int copyPreviewTick;
+
     /** 携带 Point2[] 连接配置的计划才画预览（Integer 等其它配置类型忽略）。 */
-    private void drawCopyLinksIfCopied(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list){
-        if (!(plan.config instanceof arc.math.geom.Point2[])) return;
+    private void drawCopyLinksIfCopied(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list, String via){
+        if (!(plan.config instanceof arc.math.geom.Point2[] ps)) return;
+        if (debugFlows && ++copyPreviewTick % 30 == 1) {
+            SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
+                + " @" + plan.x + "," + plan.y + " config=" + plan.config.getClass().getSimpleName());
+        }
         float prevZ = Draw.z();
         // 画在规划幽灵之下、电力线之上：连线被方块压住，不与电力激光混叠
         Draw.z(linkPreviewLayer);
+        // drawOverPlan/drawBuildPlans 调用前会套 mixcol 白色脉冲——复位防止虚线被冲淡
+        Draw.mixcol(Color.white, 0f);
         drawCopyLinks(plan, list);
         Draw.z(prevZ);
     }
@@ -430,8 +439,8 @@ public class ItemTransferHub extends Block {
                         placedTile.build.block.size * tilesize, placedTile.build.block.size * tilesize));
             if (placeable) {
                 Color lc = lineColorFor(placedTile.build);
-                Draw.color(lc, Renderer.laserOpacity);
-                Lines.stroke(1.5f);
+                Draw.color(lc, linkOpacity());
+                Lines.stroke(2f);
                 Drawf.dashLine(lc,
                     plan.drawx(), plan.drawy(),
                     placedTile.build.x, placedTile.build.y);
@@ -441,8 +450,8 @@ public class ItemTransferHub extends Block {
 
             // 与同批规划的其他中枢连线：粉色
             if (otherReq != null && otherReq.block == self) {
-                Draw.color(hubLinkColor, Renderer.laserOpacity);
-                Lines.stroke(1.5f);
+                Draw.color(hubLinkColor, linkOpacity());
+                Lines.stroke(2f);
                 Drawf.dashLine(hubLinkColor, plan.drawx(), plan.drawy(),
                     otherReq.drawx(), otherReq.drawy());
                 Drawf.square(otherReq.drawx(), otherReq.drawy(),

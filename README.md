@@ -60,8 +60,8 @@ powershell -ExecutionPolicy Bypass -File scripts\hub-deep-check.ps1
 ## 开发流程（固化）
 
 1. 修改代码后先跑单元测试（`tests/` 下三个套件，javac 直接编译运行，不依赖 Mindustry 运行时）
-2. 运行 `scripts/hub-deep-check.ps1`：任一锚点 FAIL 即阻断；通过则自动 deploy 并把最新 jar 同步到 `D:\Games\Mindustry-HotReload\data\mods\Silicon.jar`
-3. 重启游戏（或使用 HotReload 热重载）实测
+2. 运行 `scripts/hub-deep-check.ps1`：任一锚点 FAIL 即阻断；通过则自动 deploy 并把最新 jar 同步到 `%APPDATA%\Mindustry\mods\Silicon.jar`
+3. 重启游戏实测
 4. 版本号按 AGENTS.md 规范 bump，commit 格式 `[版本] 类型: 描述`
 
 ## 链接
@@ -71,7 +71,22 @@ powershell -ExecutionPolicy Bypass -File scripts\hub-deep-check.ps1
 
 ## 更新日志
 
-### a0.11.10.0（最新）
+### a0.11.16.0（最新）
+- **修复物品传输中枢六项实测回归**：中枢互连恢复；传输速率恒 0（计数折叠覆盖）修复；放置预览与双击/放置统一"中枢优先"建链并过滤候选中枢网络内建筑；超速投影器等可选增幅消耗建筑纳入自动供料；核心缺货时仓库存量不受 90% 阈值限制回运核心；核心旁已合并仓库排除改用 linkedCore 判据
+- 连线改电力节点激光样式（Pal.items 脉动配色）；去闪烁稳定色；透明度滑杆下限 0%
+- 消耗匹配补货：非炮台消费者按真实消耗量供给，杜绝批量补满放大吞吐
+- 新增「中枢流量调试日志」设置开关
+
+### a0.11.9.0
+- **关键修复**：计费折叠误用 `+=` 导致耗电随时间无限膨胀
+
+### a0.11.8.x
+- 重构工厂纳入供料；白名单收紧；单跳计费归属；调度节流 6Hz
+
+### a0.11.6.0
+- 恢复连接存档序列化；耗电对齐实际取电；核心满跨网回退仓库；途经吞吐统计
+
+### a0.10.1.0
 - **修复物品传输中枢六项实测回归**：中枢互连恢复；传输速率恒 0（计数折叠覆盖）修复；放置预览与双击/放置统一"中枢优先"建链并过滤候选中枢网络内建筑；超速投影器等可选增幅消耗建筑纳入自动供料；核心缺货时仓库存量不受 90% 阈值限制回运核心；核心旁已合并仓库排除改用 linkedCore 判据
 - 新增 `tests/HubTransferStatsTest`：22+ 断言镜像计费/统计算法
 

@@ -99,7 +99,8 @@ public class ItemTransferHub extends Block {
                 if (!linkValid(entity, other)) return;
                 entity.links.addUnique(pos);
                 if (other instanceof ItemTransferHubBuild otherHub) {
-                    if (!otherHub.links.contains(entity.pos()) && otherHub.links.size < maxConnections) {
+                    // 中枢间连接只占发起方的连接数，被动方不检查上限
+                    if (!otherHub.links.contains(entity.pos())) {
                         otherHub.links.addUnique(entity.pos());
                     }
                     rebuildData(otherHub);
@@ -118,7 +119,8 @@ public class ItemTransferHub extends Block {
                 if (entity.links.size >= maxConnections) break;
                 entity.links.addUnique(other.pos());
                 if (other instanceof ItemTransferHubBuild otherHub
-                    && !otherHub.links.contains(entity.pos()) && otherHub.links.size < maxConnections) {
+                    && !otherHub.links.contains(entity.pos())) {
+                    // 中枢间连接只占发起方连接数，被动方不检查上限
                     otherHub.links.addUnique(entity.pos());
                 }
             }
@@ -257,9 +259,7 @@ public class ItemTransferHub extends Block {
                 return;
             }
 
-            if (b instanceof ItemTransferHubBuild hub && hub.links.size >= maxConnections) {
-                return;
-            }
+            // 中枢间连接不检查被动方的连接数上限（只占主动方配额）
 
             cons.get(b);
         });

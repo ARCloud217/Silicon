@@ -98,6 +98,10 @@ public class ItemTransferHub extends Block {
         size = 3;
         timers = 4;
         configurable = true;
+        // 电力节点/分拣器式「配置随放置延续」：拾取复制（F 键）得到的连接配置
+        // 会附加到悬停幽灵与新建计划上（InputHandler.drawPlan 的 saveConfig 闸门），
+        // 复制时才能实时看到连接预览、放置时才会真正应用
+        saveConfig = true;
         group = BlockGroup.transportation;
 
         config(Integer.class, (ItemTransferHubBuild entity, Integer pos) -> {
@@ -362,10 +366,30 @@ public class ItemTransferHub extends Block {
         Draw.reset();
     }
 
-    @Override
-    public void drawPlanConfigTop(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
-        if (!(plan.config instanceof arc.math.geom.Point2[] ps)) return;
+    /** 复制连接预览的绘制层级：规划幽灵（Layer.plans=85）之下、电力线（Layer.power=70）之上。 */
+    static final float linkPreviewLayer = Layer.plans - 5f;
 
+    @Override
+    public void drawPlan(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list, boolean valid){
+        super.drawPlan(plan, list, valid);
+        // 复制连接预览：悬停幽灵（saveConfig=true 时 bplan 携带拾取的配置）、
+        // 拖线计划与已入队计划（含原理图粘贴）的精灵渲染全部经由本方法，
+        // 在此统一画出将建立的连接——与电力节点复制表现对齐，放置前即可见
+        if (plan.config instanceof arc.math.geom.Point2[]) {
+            float prevZ = Draw.z();
+            // 画在规划幽灵之下、电力线之上：连线被方块压住，不与电力激光混叠
+            Draw.z(linkPreviewLayer);
+            drawCopyLinks(plan, list);
+            Draw.z(prevZ);
+        }
+    }
+
+    /**
+     * 复制/原理图连接预览：与已放置建筑及同批规划的其它中枢画虚线，
+     * 颜色与常驻连线同口径（中枢间粉色、中枢→建筑物流色），端点蓝框。
+     */
+    private void drawCopyLinks(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
+        arc.math.geom.Point2[] ps = (arc.math.geom.Point2[]) plan.config;
         mindustry.world.Block self = this;
         int cx = plan.x, cy = plan.y;
 

@@ -307,17 +307,15 @@ public class ItemTransferHub extends Block {
         for (Building other : cands) {
             if (!(other instanceof ItemTransferHubBuild) && servedByCandidateHubs.contains(other)) continue;
             float angle = Angles.angle(cx, cy, other.x, other.y);
-            float len1 = size * tilesize / 2f;
-            float len2 = other.block.size * tilesize / 2f;
             float ca = Mathf.cosDeg(angle), sa = Mathf.sinDeg(angle);
-            float x1 = cx + ca * len1;
-            float y1 = cy + sa * len1;
-            float x2 = other.x - ca * len2;
-            float y2 = other.y - sa * len2;
+            // 端点对齐原版 PowerNode.drawLaser：半边长【先内缩 1.5px】再投影——
+            // 端点落在方块边缘内侧（先到边界再外推会让端点悬在方块外）
+            float len1 = size * tilesize / 2f - 1.5f;
+            float len2 = other.block.size * tilesize / 2f - 1.5f;
             Draw.color(linkColor, linkOpacity());
             Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
-                x1 + ca * 1.5f, y1 + sa * 1.5f,
-                x2 - ca * 1.5f, y2 - sa * 1.5f, 0.25f);
+                cx + ca * len1, cy + sa * len1,
+                other.x - ca * len2, other.y - sa * len2, 0.25f);
             Drawf.square(other.x, other.y, other.block.size * tilesize / 2f + 2f, Pal.place);
         }
 
@@ -1361,20 +1359,17 @@ public class ItemTransferHub extends Block {
                 float cos = Mathf.cosDeg(angle);
                 float sin = Mathf.sinDeg(angle);
 
-                float len1 = block.size * tilesize / 2f;
-                float len2 = other.block.size * tilesize / 2f;
-
-                float x1 = x + cos * len1;
-                float y1 = y + sin * len1;
-                float x2 = other.x - cos * len2;
-                float y2 = other.y - sin * len2;
+                // 端点对齐原版 PowerNode.drawLaser：半边长【先内缩 1.5px】再投影——
+                // 端点落在方块边缘内侧（旧写法先到边界再外推 1.5px，端点会悬在方块外）
+                float len1 = block.size * tilesize / 2f - 1.5f;
+                float len2 = other.block.size * tilesize / 2f - 1.5f;
 
                 // 物流连线：电力节点激光样式，稳定色不闪烁
                 Draw.color(linkColor, linkOpacity());
-                // 原版大小：PowerNode 默认 laserScale=0.25，且端点向内收缩 1.5px
+                // 原版大小：PowerNode 默认 laserScale=0.25
                 Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
-                    x1 + cos * 1.5f, y1 + sin * 1.5f,
-                    x2 - cos * 1.5f, y2 - sin * 1.5f, 0.25f);
+                    x + cos * len1, y + sin * len1,
+                    other.x - cos * len2, other.y - sin * len2, 0.25f);
             });
             Draw.reset();
         }

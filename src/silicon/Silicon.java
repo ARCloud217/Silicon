@@ -126,6 +126,9 @@ public class Silicon extends Mod {
         });
 
         Events.on(EventType.ClientLoadEvent.class, e -> {
+            // 启动时从持久化设置恢复调试开关（checkPref 的变更回调只在用户手动切换时触发，
+            // 不初始化的话每次启动都要重新关闭再打开才生效）
+            silicon.world.blocks.distribution.ItemTransferHub.debugFlows = Core.settings.getBool("hubDebugLog", false);
             if (netServer != null) {
                 netServer.addPacketHandler("pause", (p, time) -> {
                     if (p.admin || p.name.equals(state.map.author())) {

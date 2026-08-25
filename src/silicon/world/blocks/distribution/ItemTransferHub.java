@@ -401,7 +401,7 @@ public class ItemTransferHub extends Block {
         if (!(plan.config instanceof arc.math.geom.Point2[] ps)) return;
         if (debugFlows && ++copyPreviewTick % 30 == 1) {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
-                + " @" + plan.x + "," + plan.y + " config=" + plan.config.getClass().getSimpleName());
+                + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
         }
         // 不改绘制层级（与电力节点 drawPlanConfigTop 同款）：跟随调用方的
         // 计划层原样绘制——画在同批方块幽灵之后，天然浮于其上不被遮挡

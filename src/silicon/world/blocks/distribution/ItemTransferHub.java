@@ -74,12 +74,23 @@ public class ItemTransferHub extends Block {
             if (e.breaking || e.tile == null || e.tile.build == null) return;
             Building nb = e.tile.build;
             if (nb.team == Team.derelict) return;
+
+            // 找最近的范围内可连中枢（只连一个，避免多中枢竞争同一目标）
+            ItemTransferHubBuild best = null;
+            float bestDist = Float.MAX_VALUE;
             for (int i = 0; i < allHubs.size; i++) {
                 ItemTransferHubBuild hub = allHubs.get(i);
                 if (!hub.isValid() || hub.team != nb.team || hub == nb) continue;
-                if (hub.hasAnyLink(nb.pos())) continue;
+                if (hub.hasAnyLink(nb.pos())) return; // 已有中枢接入：不重复
+                // 目标在某中枢的挂起队列中：该中枢会自行处理，事件不再干预
+                if (hub.pendingLinks.contains(new arc.math.geom.Point2(
+                        nb.tile.x - hub.tile.x, nb.tile.y - hub.tile.y))) return;
                 if (!linkValid(hub, nb)) continue;
-                hub.configure(nb.pos());
+                float d = Mathf.dst2(hub.x, hub.y, nb.x, nb.y);
+                if (d < bestDist) { bestDist = d; best = hub; }
+            }
+            if (best != null) {
+                best.configure(nb.pos());
             }
         });
         // 世界重载：清空注册表（建筑随加载重新加入）

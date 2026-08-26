@@ -95,6 +95,85 @@ public class ItemTransferHub extends Block {
         });
         // 世界重载：清空注册表（建筑随加载重新加入）
         Events.on(EventType.WorldLoadEvent.class, e -> allHubs.clear());
+
+        // ── 全局连线覆盖层（Trigger.drawOver：世界渲染收尾后统一绘制）──────────
+        // 电力节点家族的连线始终完全可见，同款「上层绘画」思路：不在方块自身
+        // draw() 里穿插绘制（与方块批次交织、受同层后续精灵影响），而是等全部
+        // 方块/单位更新绘制完成后，按固定层级一次性画完所有中枢连线——
+        // 严格位于一切方块几何之上、不随单个方块的绘制顺序波动。
+        // 同一挂点顺带绘制放置侧预览：放置可连建筑时提前显示将被哪个中枢自动接入。
+        Events.run(EventType.Trigger.drawOver, () -> {
+            if (mindustry.Vars.state.isMenu() || allHubs.isEmpty()) return;
+            boolean placingConnectable = isPlacingConnectable();
+            if (!placingConnectable && Mathf.zero(Renderer.laserOpacity)) return;
+
+            float prevZ = Draw.z();
+            Lines.stroke(2f);
+            Draw.z(Layer.plans + 3f);
+            for (int i = 0; i < allHubs.size; i++) {
+                ItemTransferHubBuild hub = allHubs.get(i);
+                if (!hub.isValid() || hub.team == Team.derelict || hub.isPayload()) continue;
+                hub.drawLinksGlobal();
+            }
+            if (placingConnectable) {
+                Draw.z(Layer.plans + 4f);
+                drawPlaceClaimPreview();
+            }
+            Draw.z(prevZ);
+            Draw.reset();
+        });
+    }
+
+    /** 当前是否正在放置「会被中枢自动接入」的非中枢方块（放置侧预览触发条件）。 */
+    private static boolean isPlacingConnectable() {
+        mindustry.input.InputHandler input = mindustry.Vars.control.input;
+        Block b = input == null ? null : input.block;
+        return b != null && input.isPlacing() && !input.isBreaking()
+            && !(b instanceof ItemTransferHub) && HubRouting.shouldConnectBlock(b);
+    }
+
+    /**
+     * 放置侧连接预览：光标处的可连建筑尚未放下，提前显示自动接入结果——
+     * 范围内最近的中枢（与建造完成事件的「最近中枢」同口径）以实线激光连向
+     * 幽灵位置（物流色）+ 幽灵蓝框 + 该枢范围虚线圈；无中枢覆盖时不作标记
+     * （即放下后不会自动连接）。所见即放置后的连接归属。
+     */
+    private static void drawPlaceClaimPreview() {
+        mindustry.input.InputHandler input = mindustry.Vars.control.input;
+        Block block = input.block;
+        Tile t = world.tileWorld(Core.input.mouseWorldX(), Core.input.mouseWorldY());
+        if (t == null) return;
+        float gx = t.x * tilesize + block.offset, gy = t.y * tilesize + block.offset;
+
+        ItemTransferHubBuild best = null;
+        float bestDist = Float.MAX_VALUE;
+        for (int i = 0; i < allHubs.size; i++) {
+            ItemTransferHubBuild hub = allHubs.get(i);
+            if (!hub.isValid() || hub.team != player.team()) continue;
+            float range = ((ItemTransferHub) hub.block).connectionRange * tilesize;
+            if (!Intersector.overlaps(Tmp.cr1.set(hub.x, hub.y, range),
+                Tmp.r1.setCentered(gx, gy, block.size * tilesize, block.size * tilesize))) continue;
+            float d = Mathf.dst2(hub.x, hub.y, gx, gy);
+            if (d < bestDist) { bestDist = d; best = hub; }
+        }
+        if (best == null) return;
+
+        ItemTransferHub hubBlock = (ItemTransferHub) best.block;
+        Lines.stroke(1f);
+        Draw.color(Pal.accent, 0.35f * linkOpacity());
+        Drawf.dashCircle(best.x, best.y, hubBlock.connectionRange * tilesize, Pal.accent);
+
+        float angle = Angles.angle(best.x, best.y, gx, gy);
+        float ca = Mathf.cosDeg(angle), sa = Mathf.sinDeg(angle);
+        float len1 = best.block.size * tilesize / 2f - 1.5f;
+        float len2 = block.size * tilesize / 2f - 1.5f;
+        Lines.stroke(2f);
+        Draw.color(linkColor, linkOpacity());
+        Drawf.laser(hubBlock.laserRegion, hubBlock.laserEndRegion, hubBlock.laserEndRegion,
+            best.x + ca * len1, best.y + sa * len1,
+            gx - ca * len2, gy - sa * len2, 0.25f);
+        Drawf.square(gx, gy, block.size * tilesize / 2f + 2f, Pal.place);
+        Draw.reset();
     }
 
     /** 物流连线颜色：与「连接数」状态栏一致（Pal.items）。 */
@@ -162,10 +241,13 @@ public class ItemTransferHub extends Block {
                 }
                 rebuildData(entity);
             } else {
+                // 容量闸门先于单一归属裁决：满连接时点击同网/他网建筑必须原样不动——
+                // 否则会先把目标从原中枢抢回、再因无空位入列失败返回，
+                // 造成「点击一下反而断开其与原中枢的连接」的孤儿链接
+                if (!hubTarget && entity.links.size >= maxConnections) return;
                 // 单一归属裁决：普通目标若已被其它中枢占有/挂起，先整体抢回再入列——
                 // 否则复制粘贴/挂起补连/双击自动连会产生两枢同拉一目标的重复竞争连接
                 if (!hubTarget) stealFromOtherHubs(entity, other);
-                if (!hubTarget && entity.links.size >= maxConnections) return;
                 mine.addUnique(pos);
                 if (hubTarget) {
                     ItemTransferHubBuild oh = (ItemTransferHubBuild) other;
@@ -1699,13 +1781,19 @@ public class ItemTransferHub extends Block {
         @Override
         public void draw() {
             super.draw();
+            // 连线不再随方块自身绘制：改由 Trigger.drawOver 全局覆盖层统一驱动
+            // （见类顶部静态注册处）——电力节点家族式「上层绘画」，全部更新后一次画完，
+            // 严格位于一切方块几何之上且不受方块绘制批次影响。
+        }
 
-            if (Mathf.zero(Renderer.laserOpacity) || isPayload() || team == Team.derelict) return;
-
-            // 连线绘制在计划层之上（Layer.plans=85 → +3=88）：
-            // 拖动放置时计划幽灵(85+)不会遮挡已有连线；【必须恢复原层级】
-            float prevZ = Draw.z();
-            Draw.z(Layer.plans + 3f);
+        /** 全局覆盖层调用：绘制本枢全部连线（普通物流色 + 中枢间粉色）。层级由调用方设定。 */
+        void drawLinksGlobal() {
+            // 视口裁剪：范围圈外且在屏外的枢不提交精灵
+            float range = block.size * tilesize + connectionRange * tilesize;
+            if (Math.abs(x - Core.camera.position.x) > Core.camera.width / 2f + range
+                || Math.abs(y - Core.camera.position.y) > Core.camera.height / 2f + range) {
+                return;
+            }
 
             Lines.stroke(2f);
             // 普通连接（物流色）
@@ -1750,8 +1838,6 @@ public class ItemTransferHub extends Block {
                     x + cos * len1, y + sin * len1,
                     other.x - cos * len2, other.y - sin * len2, 0.25f);
             });
-            Draw.z(prevZ);
-            Draw.reset();
         }
 
         @Override

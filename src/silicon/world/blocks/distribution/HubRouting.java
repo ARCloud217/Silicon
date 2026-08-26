@@ -72,6 +72,23 @@ public class HubRouting {
         return consumesItems(b);
     }
 
+    /**
+     * 方块级可连判定（shouldConnect(Building) 的放置预览版）：
+     * 在还没有建筑的幽灵/计划上提前判断该方块是否属于中枢自动接入白名单。
+     * 判定口径与建筑版一致（存储 + 生产 + 物品消耗泛化），仅少了
+     * linkedCore 等运行时状态——那些由建造完成事件按实际情况裁决。
+     */
+    public static boolean shouldConnectBlock(Block b) {
+        if (b instanceof ItemTransferHub) return true;
+        if (b == null || !b.hasItems) return false;
+        if (b instanceof CoreBlock || b instanceof StorageBlock) return true;
+        if (b instanceof GenericCrafter || b instanceof MineConverter || b instanceof Drill) return true;
+        if (b instanceof ItemTurret) return true;
+        if (b instanceof mindustry.world.blocks.units.UnitFactory
+            || b instanceof mindustry.world.blocks.units.Reconstructor) return true;
+        return consumesItems(b);
+    }
+
     /** 方块类型是否有物品消耗（itemFilter 任一为真），按 Block 缓存。 */
     public static boolean consumesItems(Block b) {
         Boolean cached = itemConsumerCache.get(b);

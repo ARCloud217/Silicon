@@ -34,8 +34,10 @@ import static mindustry.type.ItemStack.with;
  * - 卫星由卫星控制台点击发射
  */
 public class SatelliteLauncher extends Block {
-    /** 生产一颗卫星耗时（tick），60 秒 */
-    public static final float PRODUCE_TIME = 60f * 60f;
+    /** 信号卫星生产耗时（tick），60 秒 */
+    public static final float PRODUCE_TIME_SIGNAL = 60f * 60f;
+    /** 测试卫星生产耗时（tick），1 秒 */
+    public static final float PRODUCE_TIME_TEST = 60f;
     /** 生产阶段耗电（/秒，Mindustry 按 /60 tick 计） */
     public static final float POWER_CONSUMPTION = 5000f / 60f;
     /** 发射所需缓冲电力 */
@@ -56,6 +58,26 @@ public class SatelliteLauncher extends Block {
 
     /** 卫星种类：信号卫星 */
     public static final int TYPE_SIGNAL = 0;
+    /** 卫星种类：测试卫星（材料 1 铜，无实际效果，仅用于测试） */
+    public static final int TYPE_TEST = 1;
+
+    /** 测试卫星的生产材料（1 铜，无冷冻液） */
+    public static final ItemStack[] TEST_PRODUCTION_ITEMS = with(Items.copper, 1);
+
+    /** 按种类返回生产所需物品材料 */
+    public static ItemStack[] productionItems(int type) {
+        return type == TYPE_TEST ? TEST_PRODUCTION_ITEMS : PRODUCTION_ITEMS;
+    }
+
+    /** 按种类返回生产所需冷冻液 */
+    public static int productionCryofluid(int type) {
+        return type == TYPE_TEST ? 0 : COST_CRYOFLUID;
+    }
+
+    /** 按种类返回生产耗时（测试卫星 1 秒，信号卫星 60 秒） */
+    public static float produceTime(int type) {
+        return type == TYPE_TEST ? PRODUCE_TIME_TEST : PRODUCE_TIME_SIGNAL;
+    }
 
     public SatelliteLauncher(String name) {
         super(name);
@@ -79,7 +101,7 @@ public class SatelliteLauncher extends Block {
     public void setStats() {
         super.setStats();
         stats.add(Stat.powerCapacity, LAUNCH_POWER, StatUnit.powerSecond);
-        stats.add(Stat.productionTime, PRODUCE_TIME / 60f, StatUnit.seconds);
+        stats.add(Stat.productionTime, produceTime(TYPE_SIGNAL) / 60f, StatUnit.seconds);
         for (ItemStack stack : PRODUCTION_ITEMS) {
             stats.add(Stat.input, stack);
         }
@@ -116,27 +138,27 @@ public class SatelliteLauncher extends Block {
                 consumeProductionMaterials();
             }
             progress += delta();
-            if (progress >= PRODUCE_TIME) {
-                progress = PRODUCE_TIME;
+            if (progress >= produceTime(selectedType)) {
+                progress = produceTime(selectedType);
                 produced = true;
                 register();
             }
         }
 
-        /** 生产材料是否充足（物品 + 冷冻液） */
+        /** 生产材料是否充足（按当前所选种类：物品 + 冷冻液） */
         public boolean hasProductionMaterials() {
-            for (ItemStack stack : PRODUCTION_ITEMS) {
+            for (ItemStack stack : productionItems(selectedType)) {
                 if (items.get(stack.item) < stack.amount) return false;
             }
-            return liquids.get(Liquids.cryofluid) >= COST_CRYOFLUID;
+            return liquids.get(Liquids.cryofluid) >= productionCryofluid(selectedType);
         }
 
-        /** 扣除生产材料（一次性） */
+        /** 扣除生产材料（一次性，按当前所选种类） */
         public void consumeProductionMaterials() {
-            for (ItemStack stack : PRODUCTION_ITEMS) {
+            for (ItemStack stack : productionItems(selectedType)) {
                 items.remove(stack.item, stack.amount);
             }
-            liquids.remove(Liquids.cryofluid, COST_CRYOFLUID);
+            liquids.remove(Liquids.cryofluid, productionCryofluid(selectedType));
         }
 
         void register() {
@@ -224,7 +246,7 @@ public class SatelliteLauncher extends Block {
                 Draw.reset();
             } else if (power != null && power.status > 0.001f) {
                 Draw.color(Pal.ammo);
-                Draw.rect(Core.atlas.find("status-bar-top"), x, y + size * 4f, 14f * progress / PRODUCE_TIME, 4f);
+                Draw.rect(Core.atlas.find("status-bar-top"), x, y + size * 4f, 14f * progress / produceTime(selectedType), 4f);
                 Draw.reset();
             }
         }
@@ -241,7 +263,19 @@ public class SatelliteLauncher extends Block {
             signalBtn.setChecked(selectedType == TYPE_SIGNAL);
             signalBtn.clicked(() -> selectedType = TYPE_SIGNAL);
             group.add(signalBtn);
-            table.add(signalBtn).size(180f, 44f).pad(3f);
+            table.add(signalBtn).size(200f, 44f).pad(3f);
+            table.row();
+            TextButton testBtn = new TextButton(Core.bundle.get("block.silicon-satellite-launcher.type.test"), Styles.flatTogglet);
+            testBtn.setChecked(selectedType == TYPE_TEST);
+            testBtn.clicked(() -> selectedType = TYPE_TEST);
+            group.add(testBtn);
+            table.add(testBtn).size(200f, 44f).pad(3f);
+        }
+
+        /** 当前种类显示名（bundle 键） */
+        String typeNameKey() {
+            return selectedType == TYPE_TEST
+                    ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
         /** 选中时显示种类、材料（实时刷新）、生产状态、缓冲电力与燃料 */
@@ -249,14 +283,16 @@ public class SatelliteLauncher extends Block {
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get("block.silicon-satellite-launcher.type.signal"))).color(Pal.accent);
+            table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get(typeNameKey()))).color(Pal.accent);
             // 所需材料实时清单：每个材料一行、居中显示（每帧刷新；缺失项标红）
-            for (ItemStack stack : PRODUCTION_ITEMS) {
+            for (ItemStack stack : productionItems(selectedType)) {
                 table.row();
                 table.label(() -> materialLine(stack.item, stack.amount, items.get(stack.item)));
             }
-            table.row();
-            table.label(() -> materialLine(Liquids.cryofluid, COST_CRYOFLUID, (int) liquids.get(Liquids.cryofluid)));
+            if (productionCryofluid(selectedType) > 0) {
+                table.row();
+                table.label(() -> materialLine(Liquids.cryofluid, COST_CRYOFLUID, (int) liquids.get(Liquids.cryofluid)));
+            }
             if (produced) {
                 table.row();
                 table.add(Core.bundle.get("block.silicon-satellite-launcher.ready")).color(Pal.accent);
@@ -264,9 +300,9 @@ public class SatelliteLauncher extends Block {
                 // 始终显示卫星制造进度（材料不足时进度 0%）
                 table.row();
                 if (progress <= 0f && !hasProductionMaterials()) {
-                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)) + "\n" + Core.bundle.get("block.silicon-satellite-launcher.missing")).color(Pal.remove);
+                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / produceTime(selectedType) * 100f)) + "\n" + Core.bundle.get("block.silicon-satellite-launcher.missing")).color(Pal.remove);
                 } else {
-                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)));
+                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / produceTime(selectedType) * 100f)));
                 }
             }
             table.row();

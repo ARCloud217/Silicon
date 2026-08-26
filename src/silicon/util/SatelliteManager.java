@@ -1,6 +1,7 @@
 package silicon.util;
 
 import arc.Core;
+import arc.struct.ObjectIntMap;
 import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import mindustry.content.Fx;
@@ -28,8 +29,8 @@ public class SatelliteManager {
     /** 缓冲电力不足（< 10000） */
     public static final int LAUNCH_NO_POWER = 3;
 
-    /** 在轨卫星数量（按队伍） */
-    private static final ObjectMap<Team, Integer> launched = new ObjectMap<>();
+    /** 在轨卫星数量（按队伍、按种类） */
+    private static final ObjectMap<Team, ObjectIntMap<Integer>> launched = new ObjectMap<>();
     /** 已生产完成、待发射的中枢列表（按队伍） */
     private static final ObjectMap<Team, Seq<SatelliteLauncher.SatelliteLauncherBuild>> readyLaunchers = new ObjectMap<>();
 
@@ -39,9 +40,17 @@ public class SatelliteManager {
         readyLaunchers.clear();
     }
 
-    /** 某队伍在轨卫星数 */
+    /** 某队伍在轨卫星总数 */
     public static int launchedCount(Team team) {
-        return launched.get(team, 0);
+        ObjectIntMap<Integer> map = launched.get(team);
+        if (map == null) return 0;
+        return map.get(SatelliteLauncher.TYPE_SIGNAL, 0) + map.get(SatelliteLauncher.TYPE_TEST, 0);
+    }
+
+    /** 某队伍指定种类在轨卫星数 */
+    public static int launchedCount(Team team, int type) {
+        ObjectIntMap<Integer> map = launched.get(team);
+        return map == null ? 0 : map.get(type, 0);
     }
 
     /** 某队伍是否有可发射的卫星 */
@@ -83,7 +92,7 @@ public class SatelliteManager {
         // 扣燃料与缓冲电力，重置该中枢使其可再生产
         launcher.consumeLaunchResources();
         list.remove(0);
-        launched.put(team, launchedCount(team) + 1);
+        launched.get(team, ObjectIntMap::new).increment(type, 1);
         // 发射爆炸特效（在发射中枢位置，全图广播）
         Call.effect(Fx.shockwave, launcher.x, launcher.y, 0f, null);
         Call.effect(Fx.explosion, launcher.x, launcher.y, 0f, null);
@@ -97,14 +106,16 @@ public class SatelliteManager {
         }
         // 全图播报：xx队发射了一颗xx卫星
         String teamName = Core.bundle.get("team." + team.name + ".name", team.name);
-        String typeKey = type == SatelliteConsole.TYPE_SIGNAL
-                ? "block.silicon-satellite-console.type.signal" : "block.silicon-satellite-console.type.signal";
+        String typeKey = switch (type) {
+            case SatelliteLauncher.TYPE_TEST -> "block.silicon-satellite-console.type.test";
+            default -> "block.silicon-satellite-console.type.signal";
+        };
         Call.sendMessage(Core.bundle.format("satellite.launch.message", teamName, Core.bundle.get(typeKey)));
         return LAUNCH_OK;
     }
 
-    /** 信号卫星提供的全图信号强度（每颗 +1，上限 15） */
+    /** 信号卫星提供的全图信号强度（仅信号卫星，每颗 +1，上限 15；测试卫星无效果） */
     public static int signalStrength(Team team) {
-        return Math.min(15, launchedCount(team));
+        return Math.min(15, launchedCount(team, SatelliteConsole.TYPE_SIGNAL));
     }
 }

@@ -13,6 +13,7 @@ import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.content.Items;
 import mindustry.content.Liquids;
+import mindustry.ctype.UnlockableContent;
 import mindustry.gen.Building;
 import mindustry.graphics.Pal;
 import mindustry.type.ItemStack;
@@ -249,9 +250,13 @@ public class SatelliteLauncher extends Block {
             super.display(table);
             table.row();
             table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get("block.silicon-satellite-launcher.type.signal"))).color(Pal.accent);
-            // 所需材料实时清单（每帧刷新；缺失项标红）
+            // 所需材料实时清单：每个材料一行（每帧刷新；缺失项标红）
+            for (ItemStack stack : PRODUCTION_ITEMS) {
+                table.row();
+                table.label(() -> materialLine(stack.item, stack.amount, items.get(stack.item))).left();
+            }
             table.row();
-            table.label(() -> buildMaterialLine()).left();
+            table.label(() -> materialLine(Liquids.cryofluid, COST_CRYOFLUID, (int) liquids.get(Liquids.cryofluid))).left();
             if (produced) {
                 table.row();
                 table.add(Core.bundle.get("block.silicon-satellite-launcher.ready")).color(Pal.accent);
@@ -270,21 +275,10 @@ public class SatelliteLauncher extends Block {
             table.add(Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), FUEL_OIL)).color(arc.graphics.Color.lightGray);
         }
 
-        /** 所需材料清单文本（实时刷新；库存不足项 [red] 标红），如：铜 3000/5000 [red]硅 2000/5000[] 塑钢 0/1250 ... */
-        String buildMaterialLine() {
-            StringBuilder sb = new StringBuilder();
-            for (ItemStack stack : PRODUCTION_ITEMS) {
-                boolean ok = items.get(stack.item) >= stack.amount;
-                if (!ok) sb.append("[red]");
-                sb.append(stack.item.localizedName).append(' ').append(items.get(stack.item)).append('/').append(stack.amount);
-                if (!ok) sb.append("[]");
-                sb.append("  ");
-            }
-            boolean liquidOk = liquids.get(Liquids.cryofluid) >= COST_CRYOFLUID;
-            if (!liquidOk) sb.append("[red]");
-            sb.append(Liquids.cryofluid.localizedName).append(' ').append((int) liquids.get(Liquids.cryofluid)).append('/').append(COST_CRYOFLUID);
-            if (!liquidOk) sb.append("[]");
-            return sb.toString();
+        /** 单个材料行文本（实时刷新；库存不足 [red] 标红），如：铜 5000/5000、[red]硅 2000/5000[] */
+        String materialLine(UnlockableContent content, int need, int have) {
+            boolean ok = have >= need;
+            return (ok ? "" : "[red]") + content.localizedName + " " + have + "/" + need + (ok ? "" : "[]");
         }
 
         @Override

@@ -317,7 +317,7 @@ public class SatelliteLauncher extends Block {
                     ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
-        /** 选中面板（仿原版空军工厂 UnitFactory）：左侧动态种类图标 + 右侧进度/材料/石油/缓冲 */
+        /** 选中面板（空军工厂显示方法）：左侧种类图标 + 右侧需求材料横排/进度条/石油条/电力条（各单独显示） */
         @Override
         public void display(Table table) {
             super.display(table);
@@ -326,10 +326,13 @@ public class SatelliteLauncher extends Block {
                 t.left();
                 // 左侧：当前种类大图标（随切换实时更新）
                 t.image(typeIcon).size(48f);
-                // 右侧：信息
+                // 右侧：信息（空军工厂样式）
                 t.table(info -> {
                     info.left();
-                    // 卫星制造进度（原版 Bar，带说明，完成显示「可发射」）
+                    // 需求材料（空军工厂样式：图标横排 + 数量；切换种类即时重建）
+                    info.add(materialTable).growX();
+                    info.row();
+                    // 卫星制造进度条
                     float total = produceTime(selectedType);
                     info.add(new Bar(
                             () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
@@ -338,10 +341,7 @@ public class SatelliteLauncher extends Block {
                             () -> produced ? 1f : Math.min(1f, progress / total)))
                             .height(18f).growX();
                     info.row();
-                    // 需求材料行（切换种类即时重建）
-                    info.add(materialTable).left();
-                    info.row();
-                    // 石油燃料（图标 + 数量，不足红色）
+                    // 石油条（单独显示：图标 + 数量，不足红色）
                     info.table(o -> {
                         o.left();
                         o.image(Liquids.oil.uiIcon).size(24f);
@@ -352,7 +352,7 @@ public class SatelliteLauncher extends Block {
                         }).padLeft(6f);
                     }).left();
                     info.row();
-                    // 发射缓冲（原版 Bar）
+                    // 电力条（单独显示：发射缓冲 Bar）
                     info.add(new Bar(
                             () -> (int) (battery / LAUNCH_POWER * 100f) + "%",
                             () -> Pal.power,
@@ -362,25 +362,21 @@ public class SatelliteLauncher extends Block {
             }).left();
         }
 
-        /** 重建需求材料行（按当前所选种类；每行：图标 + 数量，缺失标红） */
+        /** 重建需求材料行（空军工厂样式：图标横排 + 数量，缺失标红；切换种类即时重建） */
         void rebuildMaterialTable() {
             materialTable.clearChildren();
-            materialTable.top().left();
-            boolean first = true;
+            materialTable.left();
             for (ItemStack stack : productionItems(selectedType)) {
-                if (!first) materialTable.row();
                 materialTable.table(r -> {
                     r.left();
                     r.image(stack.item.uiIcon).size(24f);
                     r.label(() -> {
                         boolean ok = items.get(stack.item) >= stack.amount;
                         return (ok ? "" : "[red]") + items.get(stack.item) + "/" + stack.amount + (ok ? "" : "[]");
-                    }).padLeft(6f);
-                }).left();
-                first = false;
+                    }).padLeft(4f);
+                }).padRight(8f);
             }
             if (productionCryofluid(selectedType) > 0) {
-                if (!first) materialTable.row();
                 materialTable.table(r -> {
                     r.left();
                     r.image(Liquids.cryofluid.uiIcon).size(24f);
@@ -388,8 +384,8 @@ public class SatelliteLauncher extends Block {
                         int have = (int) liquids.get(Liquids.cryofluid);
                         boolean ok = have >= COST_CRYOFLUID;
                         return (ok ? "" : "[red]") + have + "/" + COST_CRYOFLUID + (ok ? "" : "[]");
-                    }).padLeft(6f);
-                }).left();
+                    }).padLeft(4f);
+                }).padRight(8f);
             }
         }
 

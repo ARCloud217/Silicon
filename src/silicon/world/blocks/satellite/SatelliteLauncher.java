@@ -3,9 +3,7 @@ package silicon.world.blocks.satellite;
 import arc.Core;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
-import arc.graphics.g2d.TextureRegion;
 import arc.math.Mathf;
-import arc.scene.style.TextureRegionDrawable;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.Image;
 import arc.scene.ui.Label;
@@ -124,22 +122,14 @@ public class SatelliteLauncher extends Block {
         public boolean produced = false;
         /** 是否已登记到待发射队列 */
         private boolean registered = false;
-        /** 选中面板左侧种类图标（动态更新，仿原版空军工厂） */
-        private final TextureRegionDrawable typeIcon = new TextureRegionDrawable();
-        /** 选中面板材料需求行（切换种类时重建） */
+        /** 选中面板需求材料行（切换种类时重建） */
         private final Table materialTable = new Table();
         /** 上次显示的种类（用于检测切换并重建材料行） */
         private int lastShownType = -1;
 
-        /** 当前种类的代表图标（信号/测试卫星均用卫星图标） */
-        TextureRegion currentTypeIcon() {
-            return Statuses.satelliteBuff.uiIcon;
-        }
-
         @Override
         public void updateTile() {
-            // 选中面板图标与材料行随种类实时更新（仿原版空军工厂：图标 drawable 每帧 setRegion）
-            typeIcon.setRegion(currentTypeIcon());
+            // 材料行随种类实时更新（切换种类即时重建）
             if (selectedType != lastShownType) {
                 lastShownType = selectedType;
                 rebuildMaterialTable();
@@ -251,18 +241,15 @@ public class SatelliteLauncher extends Block {
             unregister();
         }
 
-        /** 绘制（仿空军工厂）：方块上绘制当前种类卫星图标；生产完成时上方悬浮「可发射」提示 */
+        /** 绘制：生产完成时方块上方悬浮「可发射」提示（不绘制常驻卫星图标，按原版简洁显示） */
         @Override
         public void draw() {
             super.draw();
-            Draw.z(35f);
-            // 方块中央：当前种类卫星图标（仿 UnitFactory 在方块上绘制生产单位图标）
-            Draw.rect(currentTypeIcon(), x, y, 32f, 32f);
             if (produced) {
-                // 生产完成：方块上方悬浮卫星图标提示「可发射卫星」
+                Draw.z(35f);
                 Draw.rect(Statuses.satelliteBuff.uiIcon, x, y + 16f + Mathf.sin(Time.time / 24f, 3f), 16f, 16f);
+                Draw.reset();
             }
-            Draw.reset();
         }
 
         /** 状态显示：原版状态条（缺材料/断电自动着色）+ 原版风格制造进度条 + 石油不足图标 */
@@ -319,52 +306,35 @@ public class SatelliteLauncher extends Block {
                     ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
-        /** 选中面板（空军工厂显示方法）：左侧种类图标 + 右侧需求材料横排/进度条/石油条/电力条（各单独显示） */
+        /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标右下角）、进度条、电力条 */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.table(t -> {
-                t.left();
-                // 左侧：当前种类大图标（随切换实时更新）
-                t.image(typeIcon).size(48f);
-                // 右侧：信息（空军工厂样式）
-                t.table(info -> {
-                    info.left();
-                    // 需求材料（空军工厂样式：图标横排 + 数量；切换种类即时重建）
-                    info.add(materialTable).growX();
-                    info.row();
-                    // 卫星制造进度条
-                    float total = produceTime(selectedType);
-                    info.add(new Bar(
-                            () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
-                                    : Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (Math.min(1f, progress / total) * 100f)),
-                            () -> produced ? Pal.accent : Pal.ammo,
-                            () -> produced ? 1f : Math.min(1f, progress / total)))
-                            .height(18f).growX();
-                    info.row();
-                    // 石油条（单独显示：图标 + 数量，不足红色）
-                    info.table(o -> {
-                        o.left();
-                        o.image(Liquids.oil.uiIcon).size(24f);
-                        o.label(() -> {
-                            int have = (int) liquids.get(Liquids.oil);
-                            boolean ok = have >= FUEL_OIL;
-                            return (ok ? "" : "[red]") + have + "/" + FUEL_OIL + (ok ? "" : "[]");
-                        }).padLeft(6f);
-                    }).left();
-                    info.row();
-                    // 电力条（单独显示：发射缓冲 Bar）
-                    info.add(new Bar(
-                            () -> (int) (battery / LAUNCH_POWER * 100f) + "%",
-                            () -> Pal.power,
-                            () -> battery / LAUNCH_POWER))
-                            .height(14f).growX();
-                }).left().padLeft(8f);
+            table.table(info -> {
+                info.left();
+                // 需求材料 + 石油（图标横排，需求数量角标覆盖在右下角；切换种类即时重建）
+                info.add(materialTable).growX();
+                info.row();
+                // 卫星制造进度条
+                float total = produceTime(selectedType);
+                info.add(new Bar(
+                        () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
+                                : Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (Math.min(1f, progress / total) * 100f)),
+                        () -> produced ? Pal.accent : Pal.ammo,
+                        () -> produced ? 1f : Math.min(1f, progress / total)))
+                        .height(18f).growX();
+                info.row();
+                // 电力条（单独显示：发射缓冲 Bar）
+                info.add(new Bar(
+                        () -> (int) (battery / LAUNCH_POWER * 100f) + "%",
+                        () -> Pal.power,
+                        () -> battery / LAUNCH_POWER))
+                        .height(14f).growX();
             }).left();
         }
 
-        /** 重建需求材料行（空军工厂样式：图标 + 需求数量角标覆盖在右下角；切换种类即时重建） */
+        /** 重建需求材料行（按原版：图标 + 需求数量角标覆盖在右下角；石油同样式加入；切换种类即时重建） */
         void rebuildMaterialTable() {
             materialTable.clearChildren();
             materialTable.left();
@@ -374,10 +344,10 @@ public class SatelliteLauncher extends Block {
                     r.stack(
                             new Image(stack.item.uiIcon),
                             new Table(t -> t.add(new Label(String.valueOf(stack.amount)) {{
-                                setFontScale(0.55f);
-                            }}).bottom().right().pad(2f))
-                    ).size(40f);
-                }).padRight(6f);
+                                setFontScale(0.35f);
+                            }}).bottom().right().pad(0f))
+                    ).size(36f);
+                }).padRight(4f);
             }
             if (productionCryofluid(selectedType) > 0) {
                 materialTable.table(r -> {
@@ -385,11 +355,21 @@ public class SatelliteLauncher extends Block {
                     r.stack(
                             new Image(Liquids.cryofluid.uiIcon),
                             new Table(t -> t.add(new Label(String.valueOf(COST_CRYOFLUID)) {{
-                                setFontScale(0.55f);
-                            }}).bottom().right().pad(2f))
-                    ).size(40f);
-                }).padRight(6f);
+                                setFontScale(0.35f);
+                            }}).bottom().right().pad(0f))
+                    ).size(36f);
+                }).padRight(4f);
             }
+            // 石油（发射燃料）：同样式，需求数量 1000 角标右下角
+            materialTable.table(r -> {
+                r.left();
+                r.stack(
+                        new Image(Liquids.oil.uiIcon),
+                        new Table(t -> t.add(new Label(String.valueOf(FUEL_OIL)) {{
+                            setFontScale(0.35f);
+                        }}).bottom().right().pad(0f))
+                ).size(36f);
+            }).padRight(4f);
         }
 
         @Override

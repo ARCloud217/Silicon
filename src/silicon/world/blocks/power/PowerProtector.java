@@ -257,10 +257,11 @@ public class PowerProtector extends PowerGenerator {
         }
 
         /**
-         * Handles recovery mode logic
+         * Handles recovery mode logic.
+         * 修复：恢复期间不再频繁断开/重连电网，避免电网波动导致物品传输中枢等消费者跳变。
+         * 改为：进入恢复时一次性连接电网并保持，直到恢复完成才断开。
          */
         private void handleRecoveryMode() {
-
 
             // In recovery mode, consume spent power using equal principal method at 1% per second
             if (totalSpentPower > 0) {
@@ -268,14 +269,9 @@ public class PowerProtector extends PowerGenerator {
                 updateTick();
             }
 
-            if (interval.get(60f) && (powerStored.get(self()) <= Mathf.FLOAT_ROUNDING_ERROR ||
-                    powerChanged.get(self()) + tickRPower <= Mathf.FLOAT_ROUNDING_ERROR)) {
-                lastTickRPower = 0;
-                for (int i : power.links.items) {
-                    if (world.build(i) != null && world.build(i) instanceof PowerNode.PowerNodeBuild p && p.power.links.contains(pos())) {
-                        p.configureAny(pos());
-                    }
-                }
+            // 进入恢复时建立电网连接（仅首次或断开后重连），之后保持不中断
+            if (node == null || !power.graph.all.contains(node)) {
+                // 尝试连接电网（如果尚未连接）
                 getLink(team, other -> {
                     node = other;
                     other.power.links.addUnique(pos());
@@ -285,16 +281,17 @@ public class PowerProtector extends PowerGenerator {
                     power.graph.addGraph(other.power.graph);
                 });
             }
+
             // Exit recovery mode when time is up or all spent power is consumed
             if (totalSpentPower <= 0 || Double.isNaN(totalSpentPower)) {
                 status = 0;
                 totalSpentPower = 0f;
                 tickRPower = 0f;
+                // 恢复完成：断开临时电网连接
                 if (node != null) {
                     node.configureAny(pos());
                     node = null;
                 }
-
             }
         }
 

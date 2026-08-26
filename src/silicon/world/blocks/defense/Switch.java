@@ -1,13 +1,16 @@
 package silicon.world.blocks.defense;
 
+import arc.Core;
 import arc.graphics.Color;
 import arc.math.Mathf;
+import arc.scene.ui.layout.Table;
 import arc.util.Nullable;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
 import mindustry.gen.Unit;
 import mindustry.graphics.Drawf;
+import mindustry.ui.Styles;
 import mindustry.world.Block;
 import mindustry.world.Tile;
 import mindustry.world.meta.BlockGroup;
@@ -18,7 +21,7 @@ public class Switch extends Block {
         super(name);
         update = true;
         solid = true;
-        configurable = false;
+        configurable = true; // 可配置：支持按钮式切换
         rotate = true;
         group = BlockGroup.logic;
         config(Boolean.class, (building, enabled) -> {
@@ -58,6 +61,21 @@ public class Switch extends Block {
         public void tapped() {
             // #28 同队校验
             if (front() != null && front().team == team && !(front() instanceof SwitchBuild)) fE = !fE;
+        }
+
+        /**
+         * 切换式按钮配置界面：按一次切换 front 建筑启用状态并持续保持。
+         * 按钮尺寸 80×40（与原版开关按钮一致）。
+         */
+        @Override
+        public void buildConfiguration(Table table) {
+            table.button(Core.bundle.get("block.silicon-switch.name"), Styles.flatTogglet, () -> {
+                Building front = front();
+                if (front != null && front.team == team && !(front instanceof SwitchBuild)) {
+                    fE = !fE;
+                    configure(fE);
+                }
+            }).checked(fE).size(80f, 40f).pad(4f);
         }
 
         /**

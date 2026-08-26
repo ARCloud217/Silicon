@@ -96,13 +96,18 @@ public class ItemTransferHub extends Block {
         // 世界重载：清空注册表（建筑随加载重新加入）
         Events.on(EventType.WorldLoadEvent.class, e -> allHubs.clear());
 
-        // ── 全局连线覆盖层（Trigger.drawOver：世界渲染收尾后统一绘制）──────────
+        // ── 全局连线覆盖层（Trigger.postDraw：最终 flush 之后统一绘制）──────────
         // 电力节点家族的连线始终完全可见，同款「上层绘画」思路：不在方块自身
-        // draw() 里穿插绘制（与方块批次交织、受同层后续精灵影响），而是等全部
-        // 方块/单位更新绘制完成后，按固定层级一次性画完所有中枢连线——
-        // 严格位于一切方块几何之上、不随单个方块的绘制顺序波动。
+        // draw() 里穿插绘制，而是等一帧内所有内容画完后一次性补画所有中枢连线。
+        // 【为什么必须用 postDraw 而非 drawOver】（v159 反编译依据）：
+        //   v8 的 Renderer.draw 顺序 = … → fire(drawOver) → blocks.drawBlocks()
+        //   → … → Draw.flush/sort(false) → fire(postDraw)。v8 把方块改为延迟
+        //   渲染，drawOver 时方块尚未上屏，其缓存绘制会先 flush 队列再覆盖，
+        //   导致 drawOver 里画的连线被方块盖住（实测「常驻连线全体不可见」）。
+        //   postDraw 在最终 flush 与 sort(false) 之后触发，此刻绘制的任何内容
+        //   必然位于一帧中一切世界几何之上（画布最后一笔），且投影仍为世界坐标。
         // 同一挂点顺带绘制放置侧预览：放置可连建筑时提前显示将被哪个中枢自动接入。
-        Events.run(EventType.Trigger.drawOver, () -> {
+        Events.run(EventType.Trigger.postDraw, () -> {
             if (mindustry.Vars.state.isMenu() || allHubs.isEmpty()) return;
             boolean placingConnectable = isPlacingConnectable();
             if (!placingConnectable && Mathf.zero(Renderer.laserOpacity)) return;
@@ -119,6 +124,8 @@ public class ItemTransferHub extends Block {
                 Draw.z(Layer.overlayUI);
                 drawPlaceClaimPreview();
             }
+            // 立即落屏：防止后续阶段切换投影导致本批精灵错位/丢失
+            Draw.flush();
             Draw.z(prevZ);
             Draw.reset();
         });

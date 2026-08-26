@@ -64,7 +64,7 @@
 
 | 元素 | 规格 |
 |---|---|
-| 常驻连线绘制方式 | **全局覆盖层**：`Trigger.drawOver`（世界渲染收尾后）一次性遍历 allHubs 统一绘制，固定层级 `Layer.plans+3`——电力节点家族式「上层绘画」，不随方块自身 draw() 批次波动，严格位于一切方块几何之上；带视口裁剪 |
+| 常驻连线绘制方式 | **全局覆盖层**：`Trigger.postDraw`（一帧最终 flush 之后）一次性遍历 allHubs 统一绘制，固定层级 `Layer.plans+3` 并立即 `Draw.flush()` 落屏——画布最后一笔，位于一切世界几何之上；**不可用 drawOver**（v159 反编译：v8 方块延迟渲染，drawOver 在 blocks.drawBlocks() 之前触发，其提交会被随后的方块缓存绘制覆盖——实测常驻连线全体不可见）；带视口裁剪 |
 | 常驻连线 Hub↔Hub | **粉色 `hubLinkColor=#ff88dd`** 电力激光（laser 贴图，lineColorFor 统一） |
 | 常驻连线 Hub→建筑 | 物流色 `linkColor=Pal.items` 电力激光（同一透明度设置） |
 | 放置预览连线 | 仅画「实际会放下」的连接，颜色与放置结果一致（中枢间粉、其余物流色） |

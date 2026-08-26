@@ -142,12 +142,14 @@ public class SignalOverlay {
         Draw.reset();
     }
 
-    /** 该源/中继器在 (wx, wy) 的信号强度（信号源无信号、中继器未激活时为 0） */
+    /** 该源/中继器在 (wx, wy) 的信号强度（信号源无信号/断电、中继器未激活时为 0） */
     static float sourceStrength(Building b, float wx, float wy) {
         if (b instanceof SignalSourceBuild sb) {
-            return sb.signal == null ? 0f : SignalSource.strengthAt(b.x, b.y, wx, wy);
+            // 复用实例方法：含断电检查
+            return sb.strengthAt(wx, wy);
         }
         if (b instanceof SignalRelayBuild rb) {
+            // active 已受 enabled + 供电约束
             return rb.active ? SignalSource.strengthAt(b.x, b.y, wx, wy) : 0f;
         }
         return 0f;

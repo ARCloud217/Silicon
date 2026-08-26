@@ -42,6 +42,8 @@ public class SignalSource extends Block {
         // 必须 update=true：Groups.build（活动建筑组）只包含需要更新的建筑，否则放置后无法被查询/绘制
         update = true;
         configurable = true;
+        // 需要供电才能广播信号：150 电力/秒（Mindustry 功耗按 /60 tick 计）
+        consumePower(150f / 60f);
         // 用于客户端同步信号名（服务器通过 tileConfig 下发）
         config(String.class, (SignalSourceBuild b, String value) -> {
             if (value != null && !value.isEmpty()) {
@@ -160,19 +162,25 @@ public class SignalSource extends Block {
             markDirty();
         }
 
-        /** 本源在指定世界坐标处的信号强度（0~15；无信号时为 0） */
+        /** 供电是否充足（power.status：0=无电，1=满电） */
+        private boolean hasPower() {
+            return power != null && power.status > 0.001f;
+        }
+
+        /** 本源在指定世界坐标处的信号强度（0~15；无信号或断电时为 0） */
         public float strengthAt(float wx, float wy) {
-            if (signal == null) return 0f;
+            if (signal == null || !hasPower()) return 0f;
             return SignalSource.strengthAt(x, y, wx, wy);
         }
 
-        /** 选中时显示信号覆盖范围（填充圆 + 圆环，类似电力节点；半径为像素，15 格 = 120px） */
+        /** 选中时显示信号覆盖范围（供电=深蓝，断电=灰色；填充圆 + 圆环，类似电力节点；半径为像素，15 格 = 120px） */
         @Override
         public void drawSelect() {
             super.drawSelect();
-            Draw.color(SignalOverlay.SIGNAL_COLOR, 0.07f);
+            boolean on = hasPower();
+            Draw.color(on ? SignalOverlay.SIGNAL_COLOR : SignalOverlay.NO_SIGNAL_COLOR, on ? 0.07f : 0.04f);
             Fill.poly(x, y, 64, RADIUS * 8f);
-            Draw.color(SignalOverlay.SIGNAL_COLOR, signal == null ? 0.3f : 0.7f);
+            Draw.color(on ? SignalOverlay.SIGNAL_COLOR : SignalOverlay.NO_SIGNAL_COLOR, signal == null || !on ? 0.3f : 0.7f);
             Lines.stroke(2f);
             Lines.circle(x, y, RADIUS * 8f);
             Draw.reset();

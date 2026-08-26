@@ -1,6 +1,7 @@
 package silicon.world.blocks.distribution;
 
 import arc.Core;
+import arc.Events;
 import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
@@ -16,6 +17,7 @@ import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
+import mindustry.game.EventType;
 import mindustry.game.Team;
 import mindustry.core.Renderer;
 import mindustry.graphics.Drawf;
@@ -57,6 +59,32 @@ public class ItemTransferHub extends Block {
     static final float PROBE_DRAW = 10f;
     /** 调试日志开关（Silicon 设置页控制）。 */
     public static boolean debugFlows = false;
+
+    /** 全部存活的中枢实例：用于「建筑建成自动接入范围内中枢」的事件分发。 */
+    public static final Seq<ItemTransferHubBuild> allHubs = new Seq<>();
+
+    static {
+        // ── 电力节点同款机制（反编译依据）─────────────────────
+        // 原版 Building.placed() 会调用 PowerNode.getNodeLinks(tile, block, team, cons)：
+        // 每个新建成的建筑主动请求范围内的电力节点接入自己——因此无论节点还是
+        // 目标谁先放置，边总有一端在放置时机触发，永不漏连。
+        // 模组无法改写 Building 基类，改用建造完成事件实现等价行为：
+        // 每个建筑建成时，范围内可连的中枢立即将其接入（增量式「每放一个就连一个」）
+        Events.on(EventType.BlockBuildEndEvent.class, e -> {
+            if (e.breaking || e.tile == null || e.tile.build == null) return;
+            Building nb = e.tile.build;
+            if (nb.team == Team.derelict) return;
+            for (int i = 0; i < allHubs.size; i++) {
+                ItemTransferHubBuild hub = allHubs.get(i);
+                if (!hub.isValid() || hub.team != nb.team || hub == nb) continue;
+                if (hub.hasAnyLink(nb.pos())) continue;
+                if (!linkValid(hub, nb)) continue;
+                hub.configure(nb.pos());
+            }
+        });
+        // 世界重载：清空注册表（建筑随加载重新加入）
+        Events.on(EventType.WorldLoadEvent.class, e -> allHubs.clear());
+    }
 
     /** 物流连线颜色：与「连接数」状态栏一致（Pal.items）。 */
     public static final Color linkColor = Pal.items;
@@ -428,13 +456,12 @@ public class ItemTransferHub extends Block {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
                 + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
         }
-        // ambient 层级在 90~110 间漂移导致预览时隐时现——固定画在 effect(110) 之上、
-        // overlayUI(120) 之下，拖动全程稳定可见、不被任何幽灵或单位遮挡
-        float prevZ = Draw.z();
-        Draw.z(111f);
-        Draw.mixcol(Color.white, 0f);
-        drawCopyLinks(plan, list);
-        Draw.z(prevZ);
+        // 拖动阶段后续兄弟的精灵会盖住先前计划的连线，ambient 又在 90~110 间漂移——
+        // 嵌套分层段固定到 buildBeam(122) 之上、space(160) 之下：任何绘制顺序都无法遮挡
+        Draw.draw(126f, () -> {
+            Draw.mixcol(Color.white, 0f);
+            drawCopyLinks(plan, list);
+        });
     }
 
     /**
@@ -554,6 +581,13 @@ public class ItemTransferHub extends Block {
         public ItemTransferHubBuild() {
             super();
             data = new ItemTransferHubNetwork.HubData(new Seq<>());
+            allHubs.add(this);
+        }
+
+        @Override
+        public void remove() {
+            super.remove();
+            allHubs.remove(this);
         }
 
         @Override

@@ -267,7 +267,7 @@ public class SatelliteLauncher extends Block {
                 // 始终显示卫星制造进度（材料不足时进度 0%）
                 table.row();
                 if (progress <= 0f && !hasProductionMaterials()) {
-                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)) + "  " + Core.bundle.get("block.silicon-satellite-launcher.missing")).color(Pal.remove);
+                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)) + "\n" + Core.bundle.get("block.silicon-satellite-launcher.missing")).color(Pal.remove);
                 } else {
                     table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)));
                 }

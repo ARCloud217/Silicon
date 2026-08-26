@@ -1,68 +1,29 @@
 name: Robin
 
 on:
-  # 使用 pull_request_target：跨 fork 的 PR 也能读取本仓库 secrets
-  # （robin 仅通过 API 读取 diff 并调用 LLM 出评论，不在 CI 中执行 PR 代码）
-  pull_request_target:
+  pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
-  # PR 内评论 /review、/robin 即可按需（重新）审查——失败的审查用评论或
-  # Actions 页「Re-run failed jobs」重试（限有写权限者，防滥用）
   issue_comment:
     types: [created]
 
 permissions:
-  actions: read
+  actions: write
   contents: read
   pull-requests: write
 
-concurrency:
-  group: robin-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
+# secrets 不能直接用于 job.if，经 workflow 级 env 中转判断
+env:
+  LLM_CONFIGURED: ${{ secrets.LLM_BASE_URL != '' }}
 
 jobs:
-  # 探测 LLM secrets 是否配置（secrets 不能用于顶层 env / job.if，须经步骤输出中转）
-  config-check:
-    runs-on: ubuntu-latest
-    outputs:
-      configured: ${{ steps.check.outputs.configured }}
-    steps:
-      - id: check
-        env:
-          _BASE: ${{ secrets.LLM_BASE_URL }}
-        run: |
-          if [ -n "$_BASE" ]; then echo "configured=true" >> "$GITHUB_OUTPUT";
-          else echo "configured=false" >> "$GITHUB_OUTPUT"; fi
-
   review:
-    needs: config-check
-    # 哪个仓库配齐了 LLM secrets 就在哪里运行；未配置则显示跳过而非失败
-    if: >-
-      needs.config-check.outputs.configured == 'true' && (
-      github.event_name == 'pull_request_target' ||
-      (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request &&
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
-        (
-          startsWith(github.event.comment.body, '/review') ||
-          startsWith(github.event.comment.body, '/robin') ||
-          startsWith(github.event.comment.body, '/summary') ||
-          startsWith(github.event.comment.body, '/help')
-        )
-      ))
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Robin review
-        # 直接调用 action 并钉住版本：不经过上游 review.yml 包装——
-        # 其任务条件只认 pull_request/评论事件，会静默跳过 pull_request_target 触发，
-        # 导致 PR 不再自动审查；失败时可用 Re-run 或 PR 内评论 /review 重试
-        uses: antongulin/robin@v2.7.2
-        with:
-          github-token: ${{ github.token }}
-          llm-api-key: ${{ secrets.LLM_API_KEY }}
-          llm-base-url: ${{ secrets.LLM_BASE_URL }}
-          model: ${{ secrets.LLM_MODEL }}
-          review-on-synchronize: true
-          config-file: .github/robin.yml
-          review-instructions-file: .github/code-reviewer.md
+    # 仅在本 fork（已配置 LLM secrets）运行；
+    # 上游仓库无相关 secrets，PR 检查应显示跳过而非失败
+    if: env.LLM_CONFIGURED == 'true' && github.repository == 'Xiaobei09/Silicon'
+    uses: antongulin/robin/.github/workflows/review.yml@main
+    with:
+      review-on-synchronize: true
+    secrets:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}

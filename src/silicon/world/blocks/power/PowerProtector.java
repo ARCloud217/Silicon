@@ -191,6 +191,11 @@ public class PowerProtector extends PowerGenerator {
         @Override
         public void updateTile() {
             {
+                // #23 保护/恢复期间免疫外部关停（开关方块、逻辑控制等）：
+                // 被关停会把 status 清零进入空闲态，进而可被直接拆除
+                if (isInProtectionMode() || isInRecoveryMode()) {
+                    if (!enabled) enabled = true;
+                }
                 if (!enabled && status == 0) return;
                 if (!enabled && status != 0) { status = 0; }
                 for (Building b : team.data().buildingTypes.get(block, emptySeq)) {

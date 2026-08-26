@@ -306,6 +306,31 @@ public class DimensionAnchor extends Block{
             Draw.reset();
         }
 
+        /**
+         * #24 接收模式主动释放：把缓存中的全部物品逐件分发给相邻的同队建筑
+         * （传送带/装卸器/其它可接收建筑），直到清空或所有相邻目标均拒收。
+         */
+        void releaseItems(){
+            if(items == null || items.total() <= 0) return;
+            boolean moved = true;
+            int guard = items.total() + 1; // 防御性上限：每轮至少移出一件才会继续
+            while(items.total() > 0 && guard-- > 0 && moved){
+                moved = false;
+                for(Item item : content.items()){
+                    if(items.get(item) <= 0) continue;
+                    for(Building b : proximity){
+                        if(b == null || b.team != team || !b.acceptItem(this, item)) continue;
+                        b.handleItem(this, item);
+                        items.remove(item, 1);
+                        moved = true;
+                    }
+                }
+            }
+            if(items.total() > 0){
+                Vars.ui.showInfoToast(Core.bundle.get("block.silicon-dimension-anchor.release-partial"), 3f);
+            }
+        }
+
         @Override
         public void buildConfiguration(Table table){
             rebuild(table);
@@ -338,6 +363,14 @@ public class DimensionAnchor extends Block{
                 }).checked(!sendMode).size(110f, 44f).pad(3f);
             }).left();
             table.row();
+
+            // #24 接收模式：主动释放缓存物品到相邻同队建筑（传送带/装卸口等）
+            if(!sendMode){
+                table.button(Core.bundle.get("block.silicon-dimension-anchor.release"), Styles.flatTogglet, this::releaseItems)
+                    .size(240f, 40f).pad(3f)
+                    .disabled(t -> items == null || items.total() <= 0);
+                table.row();
+            }
 
             // signal list, always shown; shows any signal that has a signal source on the
             // same team as this anchor (no power check), so other teams' signals are hidden

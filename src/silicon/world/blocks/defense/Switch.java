@@ -22,13 +22,17 @@ public class Switch extends Block {
         rotate = true;
         group = BlockGroup.logic;
         config(Boolean.class, (building, enabled) -> {
-            if (building.front() != null) building.front().enabled = !enabled;
+            Building front = building.front();
+            // #28 只允许控制同队建筑
+            if (front == null || front.team != building.team) return;
+            front.enabled = !enabled;
         });
     }
 
     @Override
     public void placeEnded(Tile tile, @Nullable Unit builder, int rotation, @Nullable Object config) {
-        if (tile.build instanceof SwitchBuild build && build.front() != null) {
+        if (tile.build instanceof SwitchBuild build && build.front() != null
+            && build.front().team == build.team) { // #28 同队校验
             build.fE = build.front().enabled;
         }
     }
@@ -46,12 +50,14 @@ public class Switch extends Block {
         @Override
         public void updateTile() {
             super.updateTile();
-            if (front() != null && front().enabled != fE) front().enabled = fE;
+            // #28 同队校验：不控制其它队伍建筑
+            if (front() != null && front().team == team && front().enabled != fE) front().enabled = fE;
         }
 
         @Override
         public void tapped() {
-            if (front() != null && !(front() instanceof SwitchBuild)) fE = !fE;
+            // #28 同队校验
+            if (front() != null && front().team == team && !(front() instanceof SwitchBuild)) fE = !fE;
         }
 
         /**

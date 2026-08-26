@@ -71,9 +71,11 @@ public class SignalSource extends Block{
         addBar("signal", (SignalSourceBuild b) -> new Bar(
             () -> b.signal == null
                 ? Core.bundle.get("block.silicon-signal-source.nosignal")
-                : Core.bundle.format("block.silicon-signal-source.signal", b.signal),
-            () -> Pal.accent,
-            () -> b.signal == null ? 0f : 1f
+                : Core.bundle.format(b.isActive()
+                    ? "block.silicon-signal-source.signal"
+                    : "block.silicon-signal-source.signal-unpowered", b.signal),
+            () -> b.signal == null ? Pal.accent : (b.isActive() ? Pal.accent : Pal.remove),
+            () -> b.signal == null ? 0f : (b.isActive() ? 1f : 0.25f)
         ));
     }
 
@@ -133,11 +135,11 @@ public class SignalSource extends Block{
         }
 
         /**
-         * @return whether the signal is currently active: a signal is set AND the source has power.
-         * The signal is passive and only valid while the source is powered.
+         * @return whether the signal is currently active: a signal is set AND the source
+         * has power AND is enabled（#4 无电/被关停的源不再发射信号）.
          */
         public boolean isActive(){
-            return signal != null && power != null && power.status >= 0.999f;
+            return signal != null && enabled && power != null && power.status >= 0.999f;
         }
 
         /** @return how many machines on this team currently use this signal. */

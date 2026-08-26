@@ -101,7 +101,7 @@ public class PowerProtector extends PowerGenerator {
         addBar("power", (PowerProtectorBuild entity) -> new Bar(() ->
                 Core.bundle.format("bar.power1", entity.status == 1 ?
                         Strings.fixed(entity.getPowerProduction() * 60 * entity.timeScale(), 1) :
-                        Strings.fixed(entity.tickRPower * 60 * entity.timeScale() * entity.efficiency, 1)),
+                        Strings.fixed(entity.tickRPower * 60 * entity.timeScale() * entity.repayStatus(), 1)),
                 () -> Pal.powerBar,
                 () -> entity.productionEfficiency));
 
@@ -316,9 +316,9 @@ public class PowerProtector extends PowerGenerator {
                 tickRPower = 0f;
                 return;
             }
-            lastTickRPower = tickRPower * efficiency; // Store the last tick's recovery amount * efficiency
+            lastTickRPower = tickRPower * repayStatus(); // #1 按电网实际交付比例偿还（本块为纯消费，generator efficiency 恒 0 曾致恢复期不耗电）
             // Reduce the current spent power by the recovery amount
-            totalSpentPower -= lastTickRPower; // Reduce the current spent power by the recovery amount * efficiency
+            totalSpentPower -= lastTickRPower;
 
 
             // Also add interest at 1% per second of remaining spent power
@@ -340,6 +340,11 @@ public class PowerProtector extends PowerGenerator {
          */
         public boolean isInProtectionMode() {
             return status == 1;
+        }
+
+        /** #1 恢复偿还的电网交付比例（0~1）：动态消费的实际满足率，替代恒为 0 的 generator efficiency。 */
+        public float repayStatus(){
+            return power == null ? 0f : Mathf.clamp(power.status);
         }
 
 

@@ -66,6 +66,7 @@ public class DimensionAnchor extends Block{
         // send mode with a signal draws 1200/s; otherwise (receive mode or no signal configured) draws 160/s.
         consumePowerDynamic(sendPower, (Building entity) -> entity instanceof DimensionAnchorBuild b ? (b.sendMode && b.signal != null ? sendPower : receivePower) : 0f);
         configurable = true;
+        timers = 2; // #2 自动释放节流计时器
         config(String.class, (building, value) -> {
             if(building instanceof DimensionAnchorBuild b){
                 b.decode(value, true);
@@ -101,6 +102,8 @@ public class DimensionAnchor extends Block{
         public String signal;
         /** UI-only flag: whether the signal list is expanded. */
         public boolean expanded;
+        /** #2 自动释放开关（接收态）：持久化到存档；开启时每 30t 向相邻同队建筑分发缓存物品。 */
+        public boolean autoRelease = false;
         /** Status of the last send attempt (see STATUS_*). */
         public int lastSendStatus = STATUS_TRYING;
         private float sendTimer = 0f;
@@ -194,6 +197,10 @@ public class DimensionAnchor extends Block{
                         lastSendStatus = trySend() ? STATUS_SUCCESS : STATUS_FAILED;
                     }
                 }
+            }
+            // #2 接收态自动释放：30t 节流，向相邻同队建筑持续分发
+            else if(!sendMode && autoRelease && enabled && timer(0, 30)){
+                releaseItems();
             }
         }
 
@@ -364,11 +371,16 @@ public class DimensionAnchor extends Block{
             }).left();
             table.row();
 
-            // #24 接收模式：主动释放缓存物品到相邻同队建筑（传送带/装卸口等）
+            // #24 接收模式：主动释放 + #2 自动释放开关（左对齐，宽度与下方信号列表一致）
             if(!sendMode){
+                table.row();
                 table.button(Core.bundle.get("block.silicon-dimension-anchor.release"), Styles.flatTogglet, this::releaseItems)
-                    .size(240f, 40f).pad(3f)
+                    .size(240f, 40f).pad(2f).left()
                     .disabled(t -> items == null || items.total() <= 0);
+                table.row();
+                table.button(Core.bundle.get("block.silicon-dimension-anchor.auto-release"),
+                        Styles.flatTogglet, () -> autoRelease = !autoRelease)
+                    .checked(autoRelease).size(240f, 34f).pad(2f).left();
                 table.row();
             }
 
@@ -421,6 +433,7 @@ public class DimensionAnchor extends Block{
         public void write(Writes write){
             super.write(write);
             write.str(encode());
+            write.bool(autoRelease); // #2 自动释放开关持久化
         }
 
         @Override
@@ -428,6 +441,7 @@ public class DimensionAnchor extends Block{
             super.read(read, revision);
             // trust the save when restoring; uniqueness is only enforced on new configs
             decode(read.str(), false);
+            autoRelease = read.bool();
         }
     }
 }

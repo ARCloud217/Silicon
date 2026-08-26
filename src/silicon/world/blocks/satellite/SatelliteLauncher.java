@@ -2,6 +2,7 @@ package silicon.world.blocks.satellite;
 
 import arc.Core;
 import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.Fill;
 import arc.math.Mathf;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.TextButton;
@@ -237,18 +238,31 @@ public class SatelliteLauncher extends Block {
             }
         }
 
-        /** 状态条：生产进度（生产时），可发射（完成时绿色） */
+        /** 状态显示：原版状态条（缺材料/断电自动着色）+ 原版风格制造进度条 + 石油不足图标 */
         @Override
         public void drawStatus() {
+            // 原版状态条：底部灰色方块 + 状态色（缺材料=红、供电正常=绿），缺失物品由此显示
+            super.drawStatus();
             if (produced) {
-                Draw.color(Pal.accent);
-                Draw.rect(Core.atlas.find("status-bar-top"), x, y + size * 4f, 14f, 4f);
                 Draw.reset();
-            } else if (power != null && power.status > 0.001f) {
-                Draw.color(Pal.ammo);
-                Draw.rect(Core.atlas.find("status-bar-top"), x, y + size * 4f, 14f * progress / produceTime(selectedType), 4f);
-                Draw.reset();
+                return;
             }
+            // 制造进度条（原版风格：灰底 + 强调色填充，方块顶部）
+            if (power != null && power.status > 0.001f) {
+                float barW = size * 8f - 8f;
+                float barH = 2.5f;
+                float barY = y + size * 4f + 2f;
+                Draw.color(Pal.gray, 0.7f);
+                Fill.rect(x, barY, barW, barH);
+                float t = Math.min(1f, progress / produceTime(selectedType));
+                Draw.color(Pal.accent);
+                Fill.rect(x - barW / 2f + barW * t / 2f, barY, barW * t, barH);
+            }
+            // 石油不足：方块左下角显示石油小图标（原版缺液体风格）
+            if (liquids.get(Liquids.oil) < FUEL_OIL) {
+                Draw.rect(Liquids.oil.uiIcon, x - size * 4f + 6f, y - size * 4f + 6f, 8f, 8f);
+            }
+            Draw.reset();
         }
 
         /** 配置面板：选择卫星种类（生产所需种类） */

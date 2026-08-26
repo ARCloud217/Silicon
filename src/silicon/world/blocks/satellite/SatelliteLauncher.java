@@ -284,15 +284,9 @@ public class SatelliteLauncher extends Block {
             super.display(table);
             table.row();
             table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get(typeNameKey()))).color(Pal.accent);
-            // 所需材料实时清单：每个材料一行、居中显示（每帧刷新；缺失项标红）
-            for (ItemStack stack : productionItems(selectedType)) {
-                table.row();
-                table.label(() -> materialLine(stack.item, stack.amount, items.get(stack.item)));
-            }
-            if (productionCryofluid(selectedType) > 0) {
-                table.row();
-                table.label(() -> materialLine(Liquids.cryofluid, COST_CRYOFLUID, (int) liquids.get(Liquids.cryofluid)));
-            }
+            // 所需材料实时清单：每个材料一行、居中显示（每帧按当前种类重新生成，切换种类即时更新；缺失项标红）
+            table.row();
+            table.label(() -> buildMaterialLines());
             if (produced) {
                 table.row();
                 table.add(Core.bundle.get("block.silicon-satellite-launcher.ready")).color(Pal.accent);
@@ -316,6 +310,20 @@ public class SatelliteLauncher extends Block {
         String materialLine(UnlockableContent content, int need, int have) {
             boolean ok = have >= need;
             return (ok ? "" : "[red]") + content.localizedName + " " + have + "/" + need + (ok ? "" : "[]");
+        }
+
+        /** 全部材料清单文本（每行一个材料，按当前所选种类生成；每帧刷新，切换种类即时更新） */
+        String buildMaterialLines() {
+            StringBuilder sb = new StringBuilder();
+            for (ItemStack stack : productionItems(selectedType)) {
+                if (sb.length() > 0) sb.append("\n");
+                sb.append(materialLine(stack.item, stack.amount, items.get(stack.item)));
+            }
+            if (productionCryofluid(selectedType) > 0) {
+                if (sb.length() > 0) sb.append("\n");
+                sb.append(materialLine(Liquids.cryofluid, COST_CRYOFLUID, (int) liquids.get(Liquids.cryofluid)));
+            }
+            return sb.toString();
         }
 
         @Override

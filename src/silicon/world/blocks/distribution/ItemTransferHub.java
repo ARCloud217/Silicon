@@ -116,7 +116,7 @@ public class ItemTransferHub extends Block {
                 hub.drawLinksGlobal();
             }
             if (placingConnectable) {
-                Draw.z(Layer.plans + 4f);
+                Draw.z(Layer.overlayUI);
                 drawPlaceClaimPreview();
             }
             Draw.z(prevZ);
@@ -133,10 +133,14 @@ public class ItemTransferHub extends Block {
     }
 
     /**
-     * 放置侧连接预览：光标处的可连建筑尚未放下，提前显示自动接入结果——
-     * 范围内最近的中枢（与建造完成事件的「最近中枢」同口径）以实线激光连向
-     * 幽灵位置（物流色）+ 幽灵蓝框 + 该枢范围虚线圈；无中枢覆盖时不作标记
-     * （即放下后不会自动连接）。所见即放置后的连接归属。
+     * 放置侧连接预览：光标处的可连建筑尚未放下，提前显示自动接入结果。
+     * 与建造完成事件【完全同口径】，否则预览≠实际：
+     * ①该位置已被任何中枢连接 → 事件直接放弃 → 无标记；
+     * ②候选 = 范围内可连的同队中枢（含 payload 过滤），胜者 = 最近者——
+     *   事件不会因最近枢满员而跳到次近枢；
+     * ③胜者普通连接已满（≥maxConnections）→ configure 无空位入列失败 → 实际不会连 → 无标记。
+     * 有标记时：实线激光连向幽灵（物流色）+ 幽灵蓝框 + 该枢范围虚线圈；
+     * 无标记即「放下后不会自动接入」。
      */
     private static void drawPlaceClaimPreview() {
         mindustry.input.InputHandler input = mindustry.Vars.control.input;
@@ -145,18 +149,24 @@ public class ItemTransferHub extends Block {
         if (t == null) return;
         float gx = t.x * tilesize + block.offset, gy = t.y * tilesize + block.offset;
 
+        // ①位置已有归属：事件处理器遇到 hasAnyLink 直接放弃
+        for (int i = 0; i < allHubs.size; i++) {
+            if (allHubs.get(i).hasAnyLink(t.pos())) return;
+        }
+
         ItemTransferHubBuild best = null;
         float bestDist = Float.MAX_VALUE;
         for (int i = 0; i < allHubs.size; i++) {
             ItemTransferHubBuild hub = allHubs.get(i);
-            if (!hub.isValid() || hub.team != player.team()) continue;
+            if (!hub.isValid() || hub.isPayload() || hub.team != player.team()) continue;
             float range = ((ItemTransferHub) hub.block).connectionRange * tilesize;
             if (!Intersector.overlaps(Tmp.cr1.set(hub.x, hub.y, range),
                 Tmp.r1.setCentered(gx, gy, block.size * tilesize, block.size * tilesize))) continue;
             float d = Mathf.dst2(hub.x, hub.y, gx, gy);
             if (d < bestDist) { bestDist = d; best = hub; }
         }
-        if (best == null) return;
+        // ③最近枢满员：实际不会建立连接，绝不标记到满员中枢上
+        if (best == null || best.links.size >= ((ItemTransferHub) best.block).maxConnections) return;
 
         ItemTransferHub hubBlock = (ItemTransferHub) best.block;
         Lines.stroke(1f);
@@ -437,7 +447,12 @@ public class ItemTransferHub extends Block {
         // 饿死排在后面建成的挂起目标 → 「偏后放置的建筑永远连不上」
         boolean copiedPlacement = config instanceof arc.math.geom.Point2[]
             || hub.links.size > 0 || hub.hubLinks.size > 0 || !hub.pendingLinks.isEmpty();
-        if (copiedPlacement) return;
+        if (copiedPlacement) {
+            // 复制放置仍自动连接范围内的全部中枢（粉色骨架，无上限、双向对称、不占普通配额）
+            // ——普通建筑拓扑保持复制的原始模式不变（不补连、不占位）
+            hub.autoConnectNearbyHubs(this);
+            return;
+        }
         hub.autoConnectNearby(this);
     }
 
@@ -583,17 +598,18 @@ public class ItemTransferHub extends Block {
     /** 携带 Point2[] 连接配置的计划才画预览（Integer 等其它配置类型忽略）。 */
     private void drawCopyLinksIfCopied(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list, String via){
         if (!(plan.config instanceof arc.math.geom.Point2[] ps)) return;
+
+        // 复制预览必须挂在原版输入钩子里（只有此处能看到同批「计划」，
+        // 全局覆盖层拿不到拖动/悬停中的计划上下文），但层级【固定抬升】：
+        // Layer.overlayUI(120) = 原版拖线路径同款——高于一切世界几何
+        //（方块≤40 / 常驻连线88 / 子弹100 / 特效110 / 飞行单位115），
+        // 同帧任何后绘制的精灵都不可能再盖住预览激光。
+        float prevZ = Draw.z();
+        Draw.z(Layer.overlayUI);
         if (debugFlows && ++copyPreviewTick % 30 == 1) {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
-                + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
+                + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " (环境=" + prevZ + ") op=" + linkOpacity());
         }
-        // 与电力节点同款钩子，但层级显式抬升：预览激光必须严格高于本输入绘制层上
-        // 【后绘制】的同层计划幽灵/方块精灵——同层绘制按插入序覆盖，先画的中枢连线
-        // 会被后画的兄弟计划幽灵盖住（表现为「拖动时连线被其它建筑遮挡」）。
-        // +1f 保证在任意环境层级（悬停 85 / 拖动 120 等）下都压过同层幽灵；
-        // 常驻连线层为 Layer.plans+3，预览略高于它不产生视觉差异
-        float prevZ = Draw.z();
-        Draw.z(Math.max(prevZ + 1f, Layer.plans + 4f));
         try {
             // mixcol 复位防止调用方套的白色脉冲冲淡激光颜色
             Draw.mixcol(Color.white, 0f);
@@ -772,6 +788,17 @@ public class ItemTransferHub extends Block {
             // 自动补连移至 placeEnded（configured 之后执行）：先应用复制的原始
             // 连接模式，再用剩余容量像电力节点一样补连周围建筑
             super.placed();
+        }
+
+        /** 仅连接范围内的全部中枢（粉色骨架，无上限、双向对称、不占普通连接配额）。距离就近依次接入。 */
+        private void autoConnectNearbyHubs(ItemTransferHub hubBlock) {
+            Seq<Building> cands = new Seq<>();
+            hubBlock.getPotentialLinks(tile, team, cands::add);
+            cands.sort((a, b) -> Float.compare(Mathf.dst2(a.x - x, a.y - y), Mathf.dst2(b.x - x, b.y - y)));
+            for (Building other : cands) {
+                if (!(other instanceof ItemTransferHubBuild) || hasAnyLink(other.pos())) continue;
+                configure(other.pos());
+            }
         }
 
         /**

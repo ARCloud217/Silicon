@@ -63,6 +63,12 @@ public class ItemTransferHub extends Block {
     /** 全部存活的中枢实例：用于「建筑建成自动接入范围内中枢」的事件分发。 */
     public static final Seq<ItemTransferHubBuild> allHubs = new Seq<>();
 
+    /**
+     * 本帧输入钩子解析出的复制预览线段，延迟到 Trigger.postDraw 统一渲染后清空。
+     * 元素 = {x1, y1, x2, y2, colorFlag}（colorFlag &gt; 0 为中枢间粉色）。
+     */
+    static final Seq<float[]> pendingCopyLinks = new Seq<>();
+
     static {
         // ── 电力节点同款机制（反编译依据）─────────────────────
         // 原版 Building.placed() 会调用 PowerNode.getNodeLinks(tile, block, team, cons)：
@@ -75,9 +81,12 @@ public class ItemTransferHub extends Block {
             Building nb = e.tile.build;
             if (nb.team == Team.derelict) return;
 
-            // 找最近的范围内可连中枢（只连一个，避免多中枢竞争同一目标）
+            // 找最近的范围内可连中枢（只连一个，避免多中枢竞争同一目标）。
+            // 【满员回退】最近的普通目标配额已满时，继续向更远的范围内枢寻找空位，
+            // 而不是直接放弃连接；中枢间目标无上限不受此限。
             ItemTransferHubBuild best = null;
             float bestDist = Float.MAX_VALUE;
+            boolean targetIsHub = nb instanceof ItemTransferHubBuild;
             for (int i = 0; i < allHubs.size; i++) {
                 ItemTransferHubBuild hub = allHubs.get(i);
                 if (!hub.isValid() || hub.team != nb.team || hub == nb) continue;
@@ -86,6 +95,8 @@ public class ItemTransferHub extends Block {
                 if (hub.pendingLinks.contains(new arc.math.geom.Point2(
                         nb.tile.x - hub.tile.x, nb.tile.y - hub.tile.y))) return;
                 if (!linkValid(hub, nb)) continue;
+                // 容量闸门：满员枢不参与候选（挂起补连会兜底等空位，此处直接换下一枢）
+                if (!targetIsHub && hub.links.size >= ((ItemTransferHub) hub.block).maxConnections) continue;
                 float d = Mathf.dst2(hub.x, hub.y, nb.x, nb.y);
                 if (d < bestDist) { bestDist = d; best = hub; }
             }
@@ -93,8 +104,11 @@ public class ItemTransferHub extends Block {
                 best.configure(nb.pos());
             }
         });
-        // 世界重载：清空注册表（建筑随加载重新加入）
-        Events.on(EventType.WorldLoadEvent.class, e -> allHubs.clear());
+        // 世界重载：清空注册表（建筑随加载重新加入）与未渲染的预览线段
+        Events.on(EventType.WorldLoadEvent.class, e -> {
+            allHubs.clear();
+            pendingCopyLinks.clear();
+        });
 
         // ── 全局连线覆盖层（Trigger.postDraw：最终 flush 之后统一绘制）──────────
         // 电力节点家族的连线始终完全可见，同款「上层绘画」思路：不在方块自身
@@ -110,22 +124,39 @@ public class ItemTransferHub extends Block {
         Events.run(EventType.Trigger.postDraw, () -> {
             if (mindustry.Vars.state.isMenu() || allHubs.isEmpty()) return;
             boolean placingConnectable = isPlacingConnectable();
-            if (!placingConnectable && Mathf.zero(Renderer.laserOpacity)) return;
+            boolean drawLinks = !Mathf.zero(Renderer.laserOpacity);
+            if (!placingConnectable && !drawLinks && pendingCopyLinks.isEmpty()) return;
 
             float prevZ = Draw.z();
             Lines.stroke(2f);
-            Draw.z(Layer.plans + 3f);
-            for (int i = 0; i < allHubs.size; i++) {
-                ItemTransferHubBuild hub = allHubs.get(i);
-                if (!hub.isValid() || hub.team == Team.derelict || hub.isPayload()) continue;
-                hub.drawLinksGlobal();
+            // ① 常驻连线：固定层级 Layer.plans+3
+            if (drawLinks) {
+                Draw.z(Layer.plans + 3f);
+                for (int i = 0; i < allHubs.size; i++) {
+                    ItemTransferHubBuild hub = allHubs.get(i);
+                    if (!hub.isValid() || hub.team == Team.derelict || hub.isPayload()) continue;
+                    hub.drawLinksGlobal();
+                }
             }
+            // ② 复制/原理图预览线段（本帧输入钩子解析所得）：最高层
+            ItemTransferHub hubBlock = (ItemTransferHub) allHubs.first().block;
+            Draw.z(Layer.overlayUI);
+            if (!pendingCopyLinks.isEmpty()) {
+                Lines.stroke(2f);
+                for (int i = 0; i < pendingCopyLinks.size; i++) {
+                    float[] s = pendingCopyLinks.get(i);
+                    Draw.color(s[4] > 0 ? ItemTransferHub.hubLinkColor : ItemTransferHub.linkColor, linkOpacity());
+                    Drawf.laser(hubBlock.laserRegion, hubBlock.laserEndRegion, hubBlock.laserEndRegion,
+                        s[0], s[1], s[2], s[3], 0.25f);
+                }
+            }
+            // ③ 放置侧连接预览：同样最高层
             if (placingConnectable) {
-                Draw.z(Layer.overlayUI);
                 drawPlaceClaimPreview();
             }
             // 立即落屏：防止后续阶段切换投影导致本批精灵错位/丢失
             Draw.flush();
+            pendingCopyLinks.clear();
             Draw.z(prevZ);
             Draw.reset();
         });
@@ -152,7 +183,12 @@ public class ItemTransferHub extends Block {
     private static void drawPlaceClaimPreview() {
         mindustry.input.InputHandler input = mindustry.Vars.control.input;
         Block block = input.block;
-        Tile t = world.tileWorld(Core.input.mouseWorldX(), Core.input.mouseWorldY());
+        // 偶数方块锚点修正（原版 InputHandler.tileX/tileY 同款）：
+        // 鼠标世界坐标先减去 block.offset 再取整——否则偶数方块（offset=4）的
+        // 预览位置会偏离可见幽灵整整一格
+        Tile t = world.tileWorld(
+            Core.input.mouseWorldX() - block.offset,
+            Core.input.mouseWorldY() - block.offset);
         if (t == null) return;
         float gx = t.x * tilesize + block.offset, gy = t.y * tilesize + block.offset;
 
@@ -161,6 +197,8 @@ public class ItemTransferHub extends Block {
             if (allHubs.get(i).hasAnyLink(t.pos())) return;
         }
 
+        // ②候选 = 范围内可连的同队非满员中枢；胜者 = 最近者。
+        //   【满员回退】与建造完成事件同口径：最近枢满员时继续找更远的有空位枢
         ItemTransferHubBuild best = null;
         float bestDist = Float.MAX_VALUE;
         for (int i = 0; i < allHubs.size; i++) {
@@ -169,11 +207,12 @@ public class ItemTransferHub extends Block {
             float range = ((ItemTransferHub) hub.block).connectionRange * tilesize;
             if (!Intersector.overlaps(Tmp.cr1.set(hub.x, hub.y, range),
                 Tmp.r1.setCentered(gx, gy, block.size * tilesize, block.size * tilesize))) continue;
+            if (hub.links.size >= ((ItemTransferHub) hub.block).maxConnections) continue;
             float d = Mathf.dst2(hub.x, hub.y, gx, gy);
             if (d < bestDist) { bestDist = d; best = hub; }
         }
-        // ③最近枢满员：实际不会建立连接，绝不标记到满员中枢上
-        if (best == null || best.links.size >= ((ItemTransferHub) best.block).maxConnections) return;
+        // 全部满员/无覆盖：实际不会建立连接，不标记
+        if (best == null) return;
 
         ItemTransferHub hubBlock = (ItemTransferHub) best.block;
         Lines.stroke(1f);
@@ -602,46 +641,19 @@ public class ItemTransferHub extends Block {
     /** 复制预览触发频率诊断计数（仅 debugFlows 开启时输出）。 */
     static int copyPreviewTick;
 
-    /** 携带 Point2[] 连接配置的计划才画预览（Integer 等其它配置类型忽略）。 */
+    /** 携带 Point2[] 连接配置的计划才产生预览（Integer 等其它配置类型忽略）。 */
     private void drawCopyLinksIfCopied(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list, String via){
         if (!(plan.config instanceof arc.math.geom.Point2[] ps)) return;
-
-        // 复制预览必须挂在原版输入钩子里（只有此处能看到同批「计划」，
-        // 全局覆盖层拿不到拖动/悬停中的计划上下文），但层级【固定抬升】：
-        // Layer.overlayUI(120) = 原版拖线路径同款——高于一切世界几何
-        //（方块≤40 / 常驻连线88 / 子弹100 / 特效110 / 飞行单位115），
-        // 同帧任何后绘制的精灵都不可能再盖住预览激光。
-        float prevZ = Draw.z();
-        Draw.z(Layer.overlayUI);
         if (debugFlows && ++copyPreviewTick % 30 == 1) {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
-                + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " (环境=" + prevZ + ") op=" + linkOpacity());
+                + " @" + plan.x + "," + plan.y + " -> 延迟至 postDraw(z=120) op=" + linkOpacity());
         }
-        try {
-            // mixcol 复位防止调用方套的白色脉冲冲淡激光颜色
-            Draw.mixcol(Color.white, 0f);
-            drawCopyLinks(plan, list);
-        } finally {
-            Draw.z(prevZ);
-        }
-    }
-
-    /**
-     * 复制/原理图连接预览（电力节点式——只画【计划↔计划】，绝不画向实际建筑）：
-     * 对配置里的每个相对偏移，在同批计划中找落点方块：
-     * - 兄弟中枢 → 粉色激光
-     * - 其它可连方块计划（矿机/仓库/炮台等）→ 物流色激光
-     * 样式与常驻连线完全一致（电力节点激光贴图、边缘内缩投影），所见即所得；
-     * 均需通过距离校验（新位置范围内真正可连），范围外不画——杜绝莫名虚线。
-     * 放置后由 configured(Point2[]) 精确重建这些链接。
-     */
-    private void drawCopyLinks(mindustry.entities.units.BuildPlan plan, arc.util.Eachable<mindustry.entities.units.BuildPlan> list) {
-        arc.math.geom.Point2[] ps = (arc.math.geom.Point2[]) plan.config;
-        mindustry.world.Block self = this;
-        int cx = plan.x, cy = plan.y;
-
+        // 只在钩子期【解析】线段——只有此处能看到同批「计划」的上下文；
+        // 渲染统一延迟到 Trigger.postDraw。原因：输入阶段提交的精灵会被其后的
+        // 方块缓存绘制覆盖（v8 延迟渲染，反编译顺序 …→drawOver→drawBlocks→…），
+        // 而 postDraw 位于最终 flush 之后，是一帧画布最后一笔，任何内容都无法再遮挡。
         for (arc.math.geom.Point2 p : ps) {
-            final int fx = cx + p.x, fy = cy + p.y;
+            final int fx = plan.x + p.x, fy = plan.y + p.y;
             mindustry.entities.units.BuildPlan otherReq = findPlan(list, fx, fy, other ->
                 other != plan && other.block != null && other.block.size > 0);
             if (otherReq == null || otherReq.block == null) continue;
@@ -652,18 +664,15 @@ public class ItemTransferHub extends Block {
                     otherReq.block.size * tilesize, otherReq.block.size * tilesize));
             if (!inRange) continue;
 
-            // 实线激光：与常驻连线同款贴图/端点公式，预览＝最终效果
-            Color lc = otherReq.block == self ? hubLinkColor : linkColor;
             float angle = Angles.angle(plan.drawx(), plan.drawy(), otherReq.drawx(), otherReq.drawy());
             float ca = Mathf.cosDeg(angle), sa = Mathf.sinDeg(angle);
             float len1 = size * tilesize / 2f - 1.5f;
             float len2 = otherReq.block.size * tilesize / 2f - 1.5f;
-            Draw.color(lc, linkOpacity());
-            Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
+            pendingCopyLinks.add(new float[]{
                 plan.drawx() + ca * len1, plan.drawy() + sa * len1,
-                otherReq.drawx() - ca * len2, otherReq.drawy() - sa * len2, 0.25f);
+                otherReq.drawx() - ca * len2, otherReq.drawy() - sa * len2,
+                otherReq.block == this ? 1f : 0f});
         }
-        Draw.reset();
     }
 
     @Override

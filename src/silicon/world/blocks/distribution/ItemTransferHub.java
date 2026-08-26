@@ -184,6 +184,7 @@ public class ItemTransferHub extends Block {
             entity.links.clear();
             entity.hubLinks.clear();
             entity.pendingLinks.clear();
+            entity.pendingAt.clear();
             for (arc.math.geom.Point2 link : dragLinks) {
                 Building other = world.build(entity.tile.x + link.x, entity.tile.y + link.y);
                 // 未放置 / 是自身 / 仍在建造中（ConstructBuild 脚手架）→ 挂起等待，
@@ -202,9 +203,23 @@ public class ItemTransferHub extends Block {
                         otherHub.hubLinks.addUnique(entity.pos());
                     }
                 } else {
+                    // 从其它中枢抢回属于自己模式的连接（复制粘贴时原网络可能抢先接入）
+                    for (int hi = 0; hi < allHubs.size; hi++) {
+                        ItemTransferHubBuild oh = allHubs.get(hi);
+                        if (oh == entity) continue;
+                        if (oh.links.removeValue(other.pos())) rebuildData(oh);
+                        if (oh.hubLinks.removeValue(other.pos())) rebuildData(oh);
+                        // 清除其它中枢挂起队列中的同位条目
+                        for (int pi = oh.pendingLinks.size - 1; pi >= 0; pi--) {
+                            arc.math.geom.Point2 pp = oh.pendingLinks.get(pi);
+                            if (pp.x == other.tile.x - oh.tile.x && pp.y == other.tile.y - oh.tile.y) {
+                                oh.pendingLinks.remove(pi);
+                                oh.pendingAt.removeIndex(pi);
+                            }
+                        }
+                    }
                     // 普通连接受上限约束；满员转入挂起队列等空位，不静默丢弃
                     if (entity.links.size >= maxConnections) {
-                        // 满员：转入挂起队列等空位（其它链接断开时自动补上）
                         entity.addPending(link);
                         continue;
                     }

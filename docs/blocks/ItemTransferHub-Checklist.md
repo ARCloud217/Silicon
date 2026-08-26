@@ -68,7 +68,9 @@
 | 预览/单击三色标记 | **已/将直连=蓝** Pal.place；**网络内未直连=紫** Pal.reactorPurple（预览时=即将连入的网络）；**可新建（网络外）=绿** Pal.heal——预览与单击同口径 |
 | 复制配置预览 | **电力节点同款：只画【计划↔计划】**——悬停幽灵走 drawPlanConfig，入队/原理图粘贴/拖线走 drawPlanConfigTop；对配置偏移在同批计划中找落点：兄弟中枢粉色、其它可连方块物流色；**实线激光与常驻连线完全同款**（贴图/端点公式/透明度）；距离校验（范围内才画）防莫名连线；**绝不画向实际建筑**；固定层级 z=96（拖动全程不被遮挡） |
 | 配置持久化 | `saveConfig=false`（电力节点同款）：放置计划不携带历史配置——杜绝旧 Point2[] 粘到后续放置产生莫名虚线；复制一律走原理图序列化或 F 键拾取；placeEnded 清空 lastConfig（一次性消费） |
-| 后建建筑补连 | 配置应用时目标未建成 → 偏移进 pendingLinks，updateTile 每 60t 重试补连（建成即接上/被占用即放弃）；会话内有效不入存档 |
+| 后建建筑补连 | 配置应用时目标未建成（含建造中脚手架 ConstructBuild）→ 偏移进 pendingLinks，updateTile 每 60t 重试补连（建成即接上/被占用即放弃/普通满员保留等空位）；会话内有效不入存档 |
+| 中枢间连接独立计数 | **hubLinks 独立列表：无上限、双向对称、粉色状态条**（bar.silicon-hub-links）；不占用普通连接 20 上限；存档格式 v2（revision≥2 才读 hubLinks 段，v1 存档兼容按空处理） |
+| 放置连接顺序 | 复制模式先应用原始配置（configured），placeEnded 再用剩余容量像电力节点一样补连周围（hasAnyLink 跳过已连、普通满员自动让位、中枢无上限照连）；建造中目标经 pendingLinks 建成后补连 |
 | 范围圈 | drawPlace: Pal.placing 圆；drawSelect: Pal.accent 虚线圈 |
 | 透明度 | 「中枢连线透明度」设置（规划虚线走 Renderer.laserOpacity） |
 

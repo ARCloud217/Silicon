@@ -110,23 +110,28 @@ public class ItemTransferHub extends Block {
             if (other == null || !other.isValid() || other == entity) return;
             if (!linkValid(entity, other)) return;
 
-            if (entity.links.contains(pos)) {
-                entity.links.removeValue(pos);
-                if (other instanceof ItemTransferHubBuild otherHub) {
-                    otherHub.links.removeValue(entity.pos());
-                    rebuildData(otherHub);
+            // 中枢间连接独立存储（hubLinks，无上限、粉色条）；普通连接走 links（≤maxConnections）
+            boolean hubTarget = other instanceof ItemTransferHubBuild;
+            IntSeq mine = hubTarget ? entity.hubLinks : entity.links;
+
+            if (mine.contains(pos)) {
+                mine.removeValue(pos);
+                if (hubTarget) {
+                    ItemTransferHubBuild oh = (ItemTransferHubBuild) other;
+                    oh.hubLinks.removeValue(entity.pos());
+                    rebuildData(oh);
                 }
                 rebuildData(entity);
             } else {
-                if (entity.links.size >= maxConnections) return;
-                if (!linkValid(entity, other)) return;
-                entity.links.addUnique(pos);
-                if (other instanceof ItemTransferHubBuild otherHub) {
-                    // 中枢间连接只占发起方的连接数，被动方不检查上限
-                    if (!otherHub.links.contains(entity.pos())) {
-                        otherHub.links.addUnique(entity.pos());
+                if (!hubTarget && entity.links.size >= maxConnections) return;
+                mine.addUnique(pos);
+                if (hubTarget) {
+                    ItemTransferHubBuild oh = (ItemTransferHubBuild) other;
+                    // 中枢间连接双向对称、无上限
+                    if (!oh.hubLinks.contains(entity.pos())) {
+                        oh.hubLinks.addUnique(entity.pos());
                     }
-                    rebuildData(otherHub);
+                    rebuildData(oh);
                 }
                 rebuildData(entity);
             }
@@ -138,6 +143,7 @@ public class ItemTransferHub extends Block {
         // 中枢的边只存于本端，必须自行补连才能保证「后建的建筑也能接上」
         config(arc.math.geom.Point2[].class, (ItemTransferHubBuild entity, arc.math.geom.Point2[] dragLinks) -> {
             entity.links.clear();
+            entity.hubLinks.clear();
             entity.pendingLinks.clear();
             for (arc.math.geom.Point2 link : dragLinks) {
                 Building other = world.build(entity.tile.x + link.x, entity.tile.y + link.y);
@@ -150,17 +156,19 @@ public class ItemTransferHub extends Block {
                     continue;
                 }
                 if (!other.isValid() || !linkValid(entity, other)) continue;
-                if (entity.links.size >= maxConnections) {
-                    // 连接数已满：挂起等待空位（其它链接断开时自动补上）——
-                    // 静默丢弃就是漏连（旧蓝图配置可达 21/22 点 > max 20）
-                    entity.pendingLinks.addUnique(link);
-                    continue;
-                }
-                entity.links.addUnique(other.pos());
-                if (other instanceof ItemTransferHubBuild otherHub
-                    && !otherHub.links.contains(entity.pos())) {
-                    // 中枢间连接只占发起方连接数，被动方不检查上限
-                    otherHub.links.addUnique(entity.pos());
+                if (other instanceof ItemTransferHubBuild otherHub) {
+                    // 中枢间连接：独立计数、无上限、双向对称（粉色条）
+                    entity.hubLinks.addUnique(other.pos());
+                    if (!otherHub.hubLinks.contains(entity.pos())) {
+                        otherHub.hubLinks.addUnique(entity.pos());
+                    }
+                } else {
+                    // 普通连接受上限约束；满员转入挂起队列等空位，不静默丢弃
+                    if (entity.links.size >= maxConnections) {
+                        entity.pendingLinks.addUnique(link);
+                        continue;
+                    }
+                    entity.links.addUnique(other.pos());
                 }
             }
             rebuildData(entity);
@@ -177,6 +185,14 @@ public class ItemTransferHub extends Block {
 
     private static void rebuildData(ItemTransferHubBuild hub) {
         hub.data.clear();
+        // 中枢间连接（独立列表）→ 网络邻居
+        hub.hubLinks.each(pos -> {
+            Building b = world.build(pos);
+            if (b instanceof ItemTransferHubBuild otherHub) {
+                if (!hub.data.hubs.contains(otherHub)) hub.data.add(otherHub);
+            }
+        });
+        // 普通连接（兼容旧存档里可能存在的中枢项）→ 网络/直连建筑
         hub.links.each(pos -> {
             Building b = world.build(pos);
             if (b == null || !b.isValid() || b == hub) return;
@@ -209,6 +225,12 @@ public class ItemTransferHub extends Block {
                 () -> Core.bundle.format("bar.silicon-hub-connections", b.links.size, maxConnections),
                 () -> Pal.items,
                 () -> (float) b.links.size / maxConnections
+        ));
+        // 中枢间连接：独立计数、无上限——粉色条（hubLinkColor 同色系）
+        addBar("silicon-hub-hublinks", (ItemTransferHubBuild b) -> new Bar(
+                () -> Core.bundle.format("bar.silicon-hub-links", b.hubLinks.size),
+                () -> hubLinkColor,
+                () -> b.hubLinks.size == 0 ? 0f : 1f
         ));
         addBar("silicon-hub-transfer-rate", (ItemTransferHubBuild b) -> new Bar(
                 () -> Core.bundle.format("bar.silicon-hub-transfer-rate", Strings.fixed(b.transferRate, 1)),
@@ -251,8 +273,12 @@ public class ItemTransferHub extends Block {
     @Override
     public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
         // 链接应用与未建成目标的挂起均由 Point2[] 配置处理器完成（configured 先于本钩子触发）；
-        // 此处只做一次性消费：清空 lastConfig，防止旧连接模式继续喂给悬停预览
+        // 此处：①一次性消费 lastConfig，防止旧连接模式继续喂给悬停预览；
+        // ②用剩余容量像电力节点一样补连周围建筑（已连目标自动跳过、满员自动让位）
         lastConfig = null;
+        if (tile.build instanceof ItemTransferHubBuild hub && !mindustry.Vars.net.client()) {
+            hub.autoConnectNearby(this);
+        }
     }
 
     /**
@@ -467,7 +493,10 @@ public class ItemTransferHub extends Block {
     public class ItemTransferHubBuild extends Building {
         public ItemTransferHubNetwork network = new ItemTransferHubNetwork();
         public ItemTransferHubNetwork.HubData data;
+        /** 普通连接（矿机/仓库/炮台等），受 maxConnections 上限约束。 */
         public IntSeq links = new IntSeq();
+        /** 中枢间连接：独立计数、无上限、状态栏粉色条显示。 */
+        public IntSeq hubLinks = new IntSeq();
         /** 复制/粘贴时目标尚未建成的挂起偏移：建造完成后由 updateTile 周期补连（会话内有效，不入存档）。 */
         public Seq<arc.math.geom.Point2> pendingLinks = new Seq<>();
         public float powerConsumed = 0f;
@@ -528,10 +557,16 @@ public class ItemTransferHub extends Block {
          */
         @Override
         public Object config() {
-            arc.math.geom.Point2[] arr = new arc.math.geom.Point2[links.size];
+            // 复制时同时携带普通连接与中枢间连接（相对坐标合并导出）
+            arc.math.geom.Point2[] arr = new arc.math.geom.Point2[links.size + hubLinks.size];
+            int n = 0;
             for (int i = 0; i < links.size; i++) {
                 int pos = links.get(i);
-                arr[i] = new arc.math.geom.Point2(arc.math.geom.Point2.x(pos) - tile.x, arc.math.geom.Point2.y(pos) - tile.y);
+                arr[n++] = new arc.math.geom.Point2(arc.math.geom.Point2.x(pos) - tile.x, arc.math.geom.Point2.y(pos) - tile.y);
+            }
+            for (int i = 0; i < hubLinks.size; i++) {
+                int pos = hubLinks.get(i);
+                arr[n++] = new arc.math.geom.Point2(arc.math.geom.Point2.x(pos) - tile.x, arc.math.geom.Point2.y(pos) - tile.y);
             }
             return arr;
         }
@@ -550,20 +585,16 @@ public class ItemTransferHub extends Block {
 
         @Override
         public void placed() {
-            if (mindustry.Vars.net.client() || links.size > 0) {
-                super.placed();
-                return;
-            }
-            // PowerNode-style: scan via buildingTree + overlap test, then configure via network
-            autoConnectNearby((ItemTransferHub) block);
+            // 自动补连移至 placeEnded（configured 之后执行）：先应用复制的原始
+            // 连接模式，再用剩余容量像电力节点一样补连周围建筑
             super.placed();
         }
 
         /**
-         * 自动连接（放置 / 双击共用），两阶段均按【距离就近】排序：
-         * ① 优先连接范围内的全部中枢；
-         * ② 其次连接「已选中枢所在网络之外」的非中枢建筑——
-         *    已在任何同队中枢网络内（含刚连入中枢的整网）的建筑一律不直连。
+         * 自动连接（放置 / 双击 / 复制后补连共用），两阶段均按【距离就近】排序：
+         * ① 范围内的全部中枢（hubLinks 独立计数、无上限）；
+         * ② 其次连接「已选中枢所在网络之外」的非中枢建筑——占用 links 上限，
+         *    由 Integer 处理器统一裁决（已连/满员自动跳过）。
          * 预览 drawPlace 以同一口径模拟，所见即所得。
          */
         private void autoConnectNearby(ItemTransferHub hubBlock) {
@@ -574,20 +605,47 @@ public class ItemTransferHub extends Block {
             // ① 范围内的中枢按距离依次全部连接，并记录其整网覆盖
             arc.struct.ObjectSet<Building> coveredByHubs = new arc.struct.ObjectSet<>();
             for (Building other : cands) {
-                if (links.size >= hubBlock.maxConnections) break;
-                if (!(other instanceof ItemTransferHubBuild) || links.contains(other.pos())) continue;
+                if (!(other instanceof ItemTransferHubBuild) || hasAnyLink(other.pos())) continue;
                 configure(other.pos());
                 collectNetworkBuildings((ItemTransferHubBuild) other, coveredByHubs);
             }
 
-            // ② 非中枢建筑：只连「已选中枢网络之外」的，同样就近
+            // ② 非中枢建筑：只连「已选中枢网络之外」的，同样就近；
+            //    容量裁决在 Integer 处理器内（满员静默跳过）
             for (Building other : cands) {
-                if (links.size >= hubBlock.maxConnections) break;
-                if (other instanceof ItemTransferHubBuild || links.contains(other.pos())) continue;
+                if (other instanceof ItemTransferHubBuild || hasAnyLink(other.pos())) continue;
                 if (coveredByHubs.contains(other)) continue;
                 if (!autoConnectTargetValid(this, other)) continue;
                 configure(other.pos());
             }
+        }
+
+        /** 任一连接表（普通/中枢间）中存在该目标。 */
+        private boolean hasAnyLink(int pos) {
+            return links.contains(pos) || hubLinks.contains(pos);
+        }
+
+        /** 双击清空：断开全部普通与中枢间连接（含反向）。 */
+        private void clearAllLinks() {
+            for (int i = hubLinks.size - 1; i >= 0; i--) {
+                int pos = hubLinks.get(i);
+                Building ob = world.build(pos);
+                if (ob instanceof ItemTransferHubBuild oh) {
+                    oh.hubLinks.removeValue(this.pos());
+                    rebuildData(oh);
+                }
+            }
+            hubLinks.clear();
+            for (int i = links.size - 1; i >= 0; i--) {
+                int pos = links.get(i);
+                Building ob = world.build(pos);
+                if (ob instanceof ItemTransferHubBuild oh) {
+                    oh.links.removeValue(this.pos());
+                    rebuildData(oh);
+                }
+            }
+            links.clear();
+            rebuildData(this);
         }
 
         // ── 建筑拓扑（Building Topology）──────────────────────
@@ -597,6 +655,8 @@ public class ItemTransferHub extends Block {
             // onProximityUpdate），此时不能因“目标不存在”误删已保存的链接；
             // 加载完成后由周期刷新兜底清理真正失效的链接。
             boolean loading = world.isGenerating();
+
+            // 普通连接：失效剔除（目标为普通建筑，无反向表）
             IntSeq stale = new IntSeq();
             links.each(pos -> {
                 Building b = world.build(pos);
@@ -608,15 +668,29 @@ public class ItemTransferHub extends Block {
                     stale.add(pos);
                 }
             });
-            stale.each(pos -> {
-                links.removeValue(pos);
-                // also clean reverse link
+            stale.each(pos -> links.removeValue(pos));
+
+            // 中枢间连接：失效剔除 + 双向清理（对端 hubLinks 同步移除）
+            IntSeq staleHub = new IntSeq();
+            hubLinks.each(pos -> {
+                Building b = world.build(pos);
+                if (b == null) {
+                    if (!loading) staleHub.add(pos);
+                    return;
+                }
+                if (!b.isValid() || b == this || !linkValid(this, b)) {
+                    staleHub.add(pos);
+                }
+            });
+            staleHub.each(pos -> {
+                hubLinks.removeValue(pos);
                 Building other = world.build(pos);
                 if (other instanceof ItemTransferHubBuild hub) {
-                    hub.links.removeValue(this.pos());
+                    hub.hubLinks.removeValue(this.pos());
                     rebuildData(hub);
                 }
             });
+
             data.clear();
             links.each(pos -> {
                 Building b = world.build(pos);
@@ -625,6 +699,12 @@ public class ItemTransferHub extends Block {
                     if (!data.hubs.contains(hub)) data.add(hub);
                 } else if (shouldConnect(b)) {
                     if (!data.buildings.contains(b)) data.add(b);
+                }
+            });
+            hubLinks.each(pos -> {
+                Building b = world.build(pos);
+                if (b instanceof ItemTransferHubBuild hub && !data.hubs.contains(hub)) {
+                    data.add(hub);
                 }
             });
             // 清理不再直连的消费者存量快照（防 Building 引用滞留）
@@ -652,7 +732,8 @@ public class ItemTransferHub extends Block {
             }
 
             // 挂起链接补连：复制/粘贴时目标未建成（含建造中脚手架）的偏移，
-            // 每秒重试一次（timers=4 中使用 id=3）；建成即接上，被其它方块占用则放弃
+            // 每秒重试一次（timers=4 中使用 id=3）；中枢目标无上限直接接上，
+            // 普通目标满员时保留挂起等空位；位置被其它方块占用则放弃
             if (!pendingLinks.isEmpty() && timer(3, 60)) {
                 for (int i = pendingLinks.size - 1; i >= 0; i--) {
                     arc.math.geom.Point2 p = pendingLinks.get(i);
@@ -661,9 +742,10 @@ public class ItemTransferHub extends Block {
                         || other instanceof mindustry.world.blocks.ConstructBlock.ConstructBuild) {
                         continue; // 仍在建造中：继续等待
                     }
+                    boolean hubTarget = other instanceof ItemTransferHubBuild;
+                    if (!hubTarget && links.size >= maxConnections) continue; // 满员：保留挂起
                     pendingLinks.remove(p);
                     if (other == this || !other.isValid() || !linkValid(this, other)) continue;
-                    if (links.contains(other.pos()) || links.size >= maxConnections) continue;
                     configure(other.pos());
                 }
             }
@@ -1508,6 +1590,7 @@ public class ItemTransferHub extends Block {
             Draw.z(Layer.power);
 
             Lines.stroke(2f);
+            // 普通连接（物流色）
             links.each(pos -> {
                 Building other = world.build(pos);
                 if (other == null || !other.isValid()) return;
@@ -1527,6 +1610,24 @@ public class ItemTransferHub extends Block {
                 // 连线：中枢间粉色、中枢→建筑物流色；电力节点激光样式，稳定色不闪烁
                 Draw.color(lineColorFor(other), linkOpacity());
                 // 原版大小：PowerNode 默认 laserScale=0.25
+                Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
+                    x + cos * len1, y + sin * len1,
+                    other.x - cos * len2, other.y - sin * len2, 0.25f);
+            });
+            // 中枢间连接（粉色，独立列表）
+            hubLinks.each(pos -> {
+                Building other = world.build(pos);
+                if (other == null || !other.isValid()) return;
+                if (!linkValid(this, other)) return;
+                if (other instanceof ItemTransferHubBuild && other.id >= id) return;
+
+                float angle = Angles.angle(x, y, other.x, other.y);
+                float cos = Mathf.cosDeg(angle);
+                float sin = Mathf.sinDeg(angle);
+                float len1 = block.size * tilesize / 2f - 1.5f;
+                float len2 = other.block.size * tilesize / 2f - 1.5f;
+
+                Draw.color(hubLinkColor, linkOpacity());
                 Drawf.laser(laserRegion, laserEndRegion, laserEndRegion,
                     x + cos * len1, y + sin * len1,
                     other.x - cos * len2, other.y - sin * len2, 0.25f);
@@ -1557,7 +1658,7 @@ public class ItemTransferHub extends Block {
                 for (int iy = tile.y - rangeTiles - 2; iy <= tile.y + rangeTiles + 2; iy++) {
                     Building link = world.build(ix, iy);
                     if (link == this || link == null) continue;
-                    boolean linked = links.contains(link.pos());
+                    boolean linked = hasAnyLink(link.pos());
                     // 三色标记与放置预览同口径：蓝=已直连、紫=同网络未直连、绿=可新建
                     if (linked && linkValid(this, link)) {
                         // 已直连：蓝色
@@ -1587,18 +1688,10 @@ public class ItemTransferHub extends Block {
             // double-tap self (PowerNode: linkValid branch above already handles single tap, this == other is double)
             if (this == other) {
                 ItemTransferHub hubBlock = (ItemTransferHub) block;
-                if (links.size > 0) {
-                    // 双击已连中枢：清空全部链接
-                    while (links.size > 0) {
-                        int pos = links.first();
-                        Building ob = world.build(pos);
-                    if (ob instanceof ItemTransferHubBuild oh) {
-                        oh.links.removeValue(this.pos());
-                        rebuildData(oh);
-                    }
-                    links.removeValue(pos);
-                }
-                rebuildData(this);
+                if (links.size > 0 || hubLinks.size > 0) {
+                    // 双击已连中枢：清空全部链接（普通 + 中枢间，含反向）
+                    clearAllLinks();
+                    rebuildData(this);
                 } else {
                     // 双击自动连接：与放置同一套【距离就近】逻辑
                     autoConnectNearby(hubBlock);
@@ -1610,9 +1703,9 @@ public class ItemTransferHub extends Block {
         }
 
         // ── 存档序列化（Save / Load）──────────────────────
-        // v1 格式：network.id(int) + 链接数(short) + 每个链接 pos(int)。
+        // v2 格式：network.id(int) + links(short+int...) + hubLinks(short+int...)。
         // version() 必须与格式配套：未序列化链接的旧构建写入 revision=0 且无自定义数据，
-        // 读取时按 revision<1 直接跳过，避免错位解析损坏存档流。
+        // 读取时按 revision<1 直接跳过；v1 存档无 hubLinks 段，按空处理。
 
         @Override
         public void write(Writes write) {
@@ -1621,6 +1714,10 @@ public class ItemTransferHub extends Block {
             write.s(links.size);
             for (int i = 0; i < links.size; i++) {
                 write.i(links.get(i));
+            }
+            write.s(hubLinks.size);
+            for (int i = 0; i < hubLinks.size; i++) {
+                write.i(hubLinks.get(i));
             }
         }
 
@@ -1637,6 +1734,13 @@ public class ItemTransferHub extends Block {
             for (int i = 0; i < linkCount; i++) {
                 links.add(read.i());
             }
+            hubLinks.clear();
+            if (revision >= 2) {
+                short hubCount = read.s();
+                for (int i = 0; i < hubCount; i++) {
+                    hubLinks.add(read.i());
+                }
+            }
             // 仅按已存在的建筑重建本地视图；加载中缺失的邻居由
             // onProximityUpdate / 周期 updateTopology 补齐，不在此剔除链接
             rebuildData(this);
@@ -1644,7 +1748,7 @@ public class ItemTransferHub extends Block {
 
         @Override
         public byte version() {
-            return 1;
+            return 2;
         }
     }
 }

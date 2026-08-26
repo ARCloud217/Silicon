@@ -41,12 +41,18 @@ public class HubRouting {
      * 纯物流方块（传送带、路由器、交叉器等无消耗类型）不参与连接。
      */
     public static boolean shouldConnect(Building other) {
+        // 中枢自身 hasItems=false 无物品栏，必须先于 items 守卫判定，
+        // 否则中枢之间将无法互连（a0.11.8.0 回归）。
+        // 注意：中枢是 Block 子类，须通过 other.block 判型而非直接 instanceof。
+        if (other != null && other.block instanceof ItemTransferHub) return true;
         if (other == null || other.items == null) return false;
         Block b = other.block;
         // 存储：核心 / 仓库 / 容器
         if (b instanceof CoreBlock) return true;
         if (b instanceof StorageBlock) {
-            // 核心旁已与核心合并的容器本身就是核心的一部分，不参与中枢连接
+            // 已与核心合并（linkedCore 由核心侧反向写入）→ 本身就是核心的一部分，
+            // 以此为最可靠判据；几何邻近扫描作为合并发生前的快速拦截
+            if (((StorageBlock.StorageBuild) other).linkedCore != null) return false;
             for (int x = other.tile.x - 1; x <= other.tile.x + other.block.size; x++) {
                 for (int y = other.tile.y - 1; y <= other.tile.y + other.block.size; y++) {
                     Building nb = world.build(x, y);
@@ -63,6 +69,23 @@ public class HubRouting {
         if (b instanceof mindustry.world.blocks.units.Reconstructor) return true;
         if (b instanceof ItemTransferHub) return true;
         // 泛化：注册了物品消耗的方块自动接入；传送带等纯物流方块（无消耗）在此被排除
+        return consumesItems(b);
+    }
+
+    /**
+     * 方块级可连判定（shouldConnect(Building) 的放置预览版）：
+     * 在还没有建筑的幽灵/计划上提前判断该方块是否属于中枢自动接入白名单。
+     * 判定口径与建筑版一致（存储 + 生产 + 物品消耗泛化），仅少了
+     * linkedCore 等运行时状态——那些由建造完成事件按实际情况裁决。
+     */
+    public static boolean shouldConnectBlock(Block b) {
+        if (b instanceof ItemTransferHub) return true;
+        if (b == null || !b.hasItems) return false;
+        if (b instanceof CoreBlock || b instanceof StorageBlock) return true;
+        if (b instanceof GenericCrafter || b instanceof MineConverter || b instanceof Drill) return true;
+        if (b instanceof ItemTurret) return true;
+        if (b instanceof mindustry.world.blocks.units.UnitFactory
+            || b instanceof mindustry.world.blocks.units.Reconstructor) return true;
         return consumesItems(b);
     }
 
@@ -105,6 +128,9 @@ public class HubRouting {
     }
 
     public static boolean isFactory(Building b) {
+        // 泛化：任何注册了物品消耗的建筑（含超速投影器/穹顶等【可选增幅消耗】）
+        // 都是合法供料目标——itemFilter 由 ConsumeItems.apply 在 init 时统一写入
+        if (consumesItems(b.block)) return true;
         return b instanceof GenericCrafter.GenericCrafterBuild
             || b instanceof MineConverter.MineConverterBuild
             || b instanceof Drill.DrillBuild
@@ -118,12 +144,5 @@ public class HubRouting {
         return b instanceof Drill.DrillBuild
             || b instanceof GenericCrafter.GenericCrafterBuild
             || b instanceof MineConverter.MineConverterBuild;
-    }
-
-    /** 工厂仍在接收该物品 → 属于其自身输入库存，不应被同类工厂拉走。 */
-    public static boolean isInputStockOfFactory(Building supplier, Item item) {
-        return isFactory(supplier)
-            && supplier.acceptItem(supplier, item)
-            && supplier.items.get(item) < supplier.getMaximumAccepted(item);
     }
 }

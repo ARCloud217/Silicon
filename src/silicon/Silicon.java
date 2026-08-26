@@ -109,18 +109,26 @@ public class Silicon extends Mod {
                 st.pref(new CustomSetting(t -> t.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(8f)));
                 // —— 更新设置 ——
                 st.checkPref("updatecheck.autoCheck", true);
+
+                // —— 中枢物流调试 ——
+                st.checkPref("hubDebugLog", false, v -> silicon.world.blocks.distribution.ItemTransferHub.debugFlows = v);
                 // 检查更新按钮 + 与「恢复默认设置」之间再加一条灰色细线（rebuild 时保留）
                 st.pref(new CustomSetting(t -> {
                     t.button(Core.bundle.get("setting.checkUpdate.name"), Styles.defaultt, () -> UpdateChecker.check(true)).width(200f).padTop(6f);
                     t.row();
                     t.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(8f);
                 }));
+                // —— 中枢连线设置 ——
+                st.sliderPref("hubLinkOpacity", 100, 0, 100, 5, i -> i + "%");
 
                 SiliconLog.info("Loading settings.");
             });
         });
 
         Events.on(EventType.ClientLoadEvent.class, e -> {
+            // 启动时从持久化设置恢复调试开关（checkPref 的变更回调只在用户手动切换时触发，
+            // 不初始化的话每次启动都要重新关闭再打开才生效）
+            silicon.world.blocks.distribution.ItemTransferHub.debugFlows = Core.settings.getBool("hubDebugLog", false);
             if (netServer != null) {
                 netServer.addPacketHandler("pause", (p, time) -> {
                     if (p.admin || p.name.equals(state.map.author())) {

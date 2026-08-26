@@ -177,8 +177,8 @@ public class SignalOverlay {
         // 保存字体原始颜色与比例，绘制后恢复（try-finally 保证异常时也恢复）
         Color oldFontColor = Fonts.def.getColor();
         float oldScale = Fonts.def.getData().scaleX;
-        // 字号 0.5（约 8px）刚好覆盖一格
-        Fonts.def.getData().setScale(0.5f);
+        // 字号 0.4（约 6.4px），略小于一格（8px），清晰且不遮挡
+        Fonts.def.getData().setScale(0.4f);
         try {
             for (int gx = x0; gx <= x1; gx++) {
                 for (int gy = y0; gy <= y1; gy++) {

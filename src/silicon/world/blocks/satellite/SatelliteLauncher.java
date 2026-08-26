@@ -321,11 +321,12 @@ public class SatelliteLauncher extends Block {
                     }).padLeft(6f);
                 });
             }
-            // 卫星制造进度（原版状态条 Bar：灰底+彩色填充，完成显示「可发射」）
+            // 卫星制造进度（原版状态条 Bar：灰底+彩色填充，带说明文字，完成显示「可发射」）
             table.row();
             float total = produceTime(selectedType);
             table.add(new Bar(
-                    () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready") : (int) (Math.min(1f, progress / total) * 100f) + "%",
+                    () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
+                            : Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (Math.min(1f, progress / total) * 100f)),
                     () -> produced ? Pal.accent : Pal.ammo,
                     () -> produced ? 1f : Math.min(1f, progress / total)))
                     .height(18f).growX();

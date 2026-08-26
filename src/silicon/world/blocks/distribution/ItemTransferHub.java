@@ -17,6 +17,7 @@ import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.gen.Building;
+import mindustry.gen.Groups;
 import mindustry.game.EventType;
 import mindustry.game.Team;
 import mindustry.core.Renderer;
@@ -104,9 +105,16 @@ public class ItemTransferHub extends Block {
                 best.configure(nb.pos());
             }
         });
-        // 世界重载：清空注册表（建筑随加载重新加入）与未渲染的预览线段
+        // 世界重载：从 Groups.build 重建注册表 + 清空未渲染的预览线段。
+        // 不能直接 clear()——WorldLoadEvent 在建筑构造（constructor→allHubs.add）之后触发，
+        // 直接 clear 会把刚加载的中枢全部清掉导致连线永不渲染。
         Events.on(EventType.WorldLoadEvent.class, e -> {
             allHubs.clear();
+            for (Building b : Groups.build) {
+                if (b instanceof ItemTransferHubBuild hub) {
+                    allHubs.add(hub);
+                }
+            }
             pendingCopyLinks.clear();
         });
 

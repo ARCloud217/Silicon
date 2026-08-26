@@ -3,6 +3,7 @@ package silicon.util;
 import arc.Core;
 import arc.struct.ObjectMap;
 import arc.struct.Seq;
+import mindustry.content.Fx;
 import mindustry.game.Team;
 import mindustry.gen.Call;
 import mindustry.gen.Groups;
@@ -83,6 +84,11 @@ public class SatelliteManager {
         launcher.consumeLaunchResources();
         list.remove(0);
         launched.put(team, launchedCount(team) + 1);
+        // 发射爆炸特效（在发射中枢位置，全图广播）
+        Call.effect(Fx.shockwave, launcher.x, launcher.y, 0f, null);
+        Call.effect(Fx.explosion, launcher.x, launcher.y, 0f, null);
+        Call.effect(Fx.smokeCloud, launcher.x, launcher.y, 0f, null);
+        Call.effect(Fx.bigShockwave, launcher.x, launcher.y, 0f, null);
         // 给发射队伍的全图玩家应用卫星 buff（显示用，无属性；其他队伍的玩家不显示）
         for (Player p : Groups.player) {
             if (p.team() == team && p.unit() != null) {

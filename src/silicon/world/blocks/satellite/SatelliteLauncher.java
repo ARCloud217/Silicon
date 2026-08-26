@@ -3,25 +3,32 @@ package silicon.world.blocks.satellite;
 import arc.Core;
 import arc.graphics.g2d.Draw;
 import arc.math.Mathf;
+import arc.scene.ui.ButtonGroup;
+import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+import mindustry.content.Items;
 import mindustry.content.Liquids;
 import mindustry.gen.Building;
 import mindustry.graphics.Pal;
+import mindustry.type.ItemStack;
+import mindustry.ui.Styles;
 import mindustry.world.Block;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.StatUnit;
 import silicon.content.Statuses;
 import silicon.util.SatelliteManager;
 
+import static mindustry.type.ItemStack.with;
+
 /**
- * 卫星发射中枢（3×3）：通电后自动生产卫星，并负责发射所需的燃料与电力储备。
- * - 生产阶段消耗 5000 电力/秒（从电网）；每中枢同时只能生产 1 颗，完成后停止耗电并显示「可发射卫星」提示
- * - 内置电力缓冲 10000（consumePowerBuffered，从电网充电），发射时扣除
- * - 燃料储存：石油（容量 1000），发射时扣除
- * - 卫星由卫星控制台选择种类并发射
+ * 卫星发射中枢（3×3）：选择卫星种类并生产卫星，同时负责发射所需的燃料与电力储备。
+ * - 生产材料（选择种类后开始生产时一次性消耗）：铜 5000、硅 5000、塑钢 1250、脆钢 1250、冷冻液 1000
+ * - 生产阶段消耗 5000 电力/秒（电网）；每中枢同时只能生产 1 颗，完成后停止耗电并显示「可发射卫星」提示
+ * - 内置 10000 发射缓冲（电网供电充电）；发射燃料石油（1000）亦储存在本中枢
+ * - 卫星由卫星控制台点击发射
  */
 public class SatelliteLauncher extends Block {
     /** 生产一颗卫星耗时（tick），60 秒 */
@@ -34,6 +41,18 @@ public class SatelliteLauncher extends Block {
     public static final float CHARGE_RATE = 2000f / 60f;
     /** 发射所需石油燃料 */
     public static final int FUEL_OIL = 1000;
+    /** 生产所需冷冻液 */
+    public static final int COST_CRYOFLUID = 1000;
+    /** 生产所需物品材料 */
+    public static final ItemStack[] PRODUCTION_ITEMS = with(
+            Items.copper, 5000,
+            Items.silicon, 5000,
+            Items.plastanium, 1250,
+            Items.surgeAlloy, 1250
+    );
+
+    /** 卫星种类：信号卫星 */
+    public static final int TYPE_SIGNAL = 0;
 
     public SatelliteLauncher(String name) {
         super(name);
@@ -42,11 +61,14 @@ public class SatelliteLauncher extends Block {
         solid = true;
         destructible = true;
         update = true;
+        configurable = true;
         // 生产阶段耗电（电网直耗）；发射用 10000 缓冲由本方块充电积累
         consumePower(POWER_CONSUMPTION);
-        // 燃料储存（石油液体）
+        // 材料储存（物品 + 液体：石油/冷冻液）
+        hasItems = true;
+        itemCapacity = 5000 + 5000 + 1250 + 1250;
         hasLiquids = true;
-        liquidCapacity = FUEL_OIL;
+        liquidCapacity = FUEL_OIL + COST_CRYOFLUID;
     }
 
     @Override
@@ -54,9 +76,14 @@ public class SatelliteLauncher extends Block {
         super.setStats();
         stats.add(Stat.powerCapacity, LAUNCH_POWER, StatUnit.powerSecond);
         stats.add(Stat.productionTime, PRODUCE_TIME / 60f, StatUnit.seconds);
+        for (ItemStack stack : PRODUCTION_ITEMS) {
+            stats.add(Stat.input, stack);
+        }
     }
 
     public class SatelliteLauncherBuild extends Building {
+        /** 当前选择的卫星种类（0=信号卫星） */
+        public int selectedType = TYPE_SIGNAL;
         /** 生产进度（tick） */
         public float progress = 0f;
         /** 发射缓冲电量（0~10000，电网供电时充电积累，发射时一次性消耗） */
@@ -79,12 +106,33 @@ public class SatelliteLauncher extends Block {
             }
             // 断电不生产（进度保留）
             if (power == null || power.status <= 0.001f) return;
+            // 生产开始：检查并一次性扣除材料（进度 > 0 表示已扣）
+            if (progress <= 0f) {
+                if (!hasProductionMaterials()) return;
+                consumeProductionMaterials();
+            }
             progress += delta();
             if (progress >= PRODUCE_TIME) {
                 progress = PRODUCE_TIME;
                 produced = true;
                 register();
             }
+        }
+
+        /** 生产材料是否充足（物品 + 冷冻液） */
+        public boolean hasProductionMaterials() {
+            for (ItemStack stack : PRODUCTION_ITEMS) {
+                if (items.get(stack.item) < stack.amount) return false;
+            }
+            return liquids.get(Liquids.cryofluid) >= COST_CRYOFLUID;
+        }
+
+        /** 扣除生产材料（一次性） */
+        public void consumeProductionMaterials() {
+            for (ItemStack stack : PRODUCTION_ITEMS) {
+                items.remove(stack.item, stack.amount);
+            }
+            liquids.remove(Liquids.cryofluid, COST_CRYOFLUID);
         }
 
         void register() {
@@ -160,16 +208,37 @@ public class SatelliteLauncher extends Block {
             }
         }
 
-        /** 选中时显示生产状态、缓冲电力与燃料 */
+        /** 配置面板：选择卫星种类（生产所需种类） */
+        @Override
+        public void buildConfiguration(Table table) {
+            table.clearChildren();
+            table.top();
+            table.add(Core.bundle.get("block.silicon-satellite-launcher.type")).pad(4f);
+            table.row();
+            ButtonGroup<TextButton> group = new ButtonGroup<>();
+            TextButton signalBtn = new TextButton(Core.bundle.get("block.silicon-satellite-launcher.type.signal"), Styles.flatTogglet);
+            signalBtn.setChecked(selectedType == TYPE_SIGNAL);
+            signalBtn.clicked(() -> selectedType = TYPE_SIGNAL);
+            group.add(signalBtn);
+            table.add(signalBtn).size(180f, 44f).pad(3f);
+        }
+
+        /** 选中时显示种类、材料、生产状态、缓冲电力与燃料 */
         @Override
         public void display(Table table) {
             super.display(table);
+            table.row();
+            table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get("block.silicon-satellite-launcher.type.signal"))).color(Pal.accent);
             if (produced) {
                 table.row();
                 table.add(Core.bundle.get("block.silicon-satellite-launcher.ready")).color(Pal.accent);
             } else if (power != null && power.status > 0.001f) {
                 table.row();
-                table.add(Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)));
+                if (progress <= 0f && !hasProductionMaterials()) {
+                    table.add(Core.bundle.get("block.silicon-satellite-launcher.missing")).color(Pal.remove);
+                } else {
+                    table.add(Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)));
+                }
             }
             table.row();
             int powerPct = (int) (battery / LAUNCH_POWER * 100f);
@@ -181,6 +250,7 @@ public class SatelliteLauncher extends Block {
         @Override
         public void write(Writes write) {
             super.write(write);
+            write.i(selectedType);
             write.f(progress);
             write.bool(produced);
             write.f(battery);
@@ -189,6 +259,7 @@ public class SatelliteLauncher extends Block {
         @Override
         public void read(Reads read, byte revision) {
             super.read(read, revision);
+            selectedType = read.i();
             progress = read.f();
             produced = read.bool();
             battery = read.f();

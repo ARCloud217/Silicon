@@ -67,17 +67,18 @@ public class SatelliteManager {
     }
 
     /**
-     * 发射一颗卫星：取出第一颗待发射卫星，由其中枢扣除燃料（1000 石油）与缓冲电力（10000），
-     * 在轨 +1，给发射队伍的全图玩家应用「卫星在轨」buff，并向全图播报。
-     * @param type 卫星种类（SatelliteConsole.TYPE_*）
+     * 发射一颗卫星：取出第一颗待发射卫星（种类以该中枢选择的为准），
+     * 由其中枢扣除燃料（1000 石油）与缓冲电力（10000），在轨 +1，
+     * 给发射队伍的全图玩家应用「卫星在轨」buff，并向全图播报。
      * @return 发射结果（LAUNCH_*）
      */
-    public static int launch(Team team, int type) {
+    public static int launch(Team team) {
         Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
         if (list == null || list.isEmpty()) return LAUNCH_NO_READY;
         SatelliteLauncher.SatelliteLauncherBuild launcher = list.get(0);
         int reason = launcher.checkLaunchResources();
         if (reason != LAUNCH_OK) return reason;
+        int type = launcher.selectedType;
         // 扣燃料与缓冲电力，重置该中枢使其可再生产
         launcher.consumeLaunchResources();
         list.remove(0);

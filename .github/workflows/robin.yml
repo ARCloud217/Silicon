@@ -54,12 +54,16 @@ jobs:
           else echo "configured=false" >> "$GITHUB_OUTPUT"; fi
 
   # ③ 真实审查：允许维护者手动命令与 github-actions[bot] 自动命令；
+  #    命令别名：/review 与 /robin 均可触发（/summary、/help 由 robin 内部处理不在此列）；
   #    robin 只通过 API 读 diff 并调用 LLM 出评论，不在 CI 中执行 PR 代码
   review:
     needs: config-check
     if: >-
       needs.config-check.outputs.configured == 'true' &&
-      startsWith(github.event.comment.body, '/review') &&
+      (
+        startsWith(github.event.comment.body, '/review') ||
+        startsWith(github.event.comment.body, '/robin')
+      ) &&
       (
         github.event.comment.user.login == 'github-actions[bot]' ||
         contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)

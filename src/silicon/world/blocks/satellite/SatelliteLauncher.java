@@ -3,7 +3,9 @@ package silicon.world.blocks.satellite;
 import arc.Core;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
+import arc.graphics.g2d.TextureRegion;
 import arc.math.Mathf;
+import arc.scene.style.TextureRegionDrawable;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
@@ -120,9 +122,26 @@ public class SatelliteLauncher extends Block {
         public boolean produced = false;
         /** 是否已登记到待发射队列 */
         private boolean registered = false;
+        /** 选中面板左侧种类图标（动态更新，仿原版空军工厂） */
+        private final TextureRegionDrawable typeIcon = new TextureRegionDrawable();
+        /** 选中面板材料需求行（切换种类时重建） */
+        private final Table materialTable = new Table();
+        /** 上次显示的种类（用于检测切换并重建材料行） */
+        private int lastShownType = -1;
+
+        /** 当前种类的代表图标（信号/测试卫星均用卫星图标） */
+        TextureRegion currentTypeIcon() {
+            return Statuses.satelliteBuff.uiIcon;
+        }
 
         @Override
         public void updateTile() {
+            // 选中面板图标与材料行随种类实时更新（仿原版空军工厂：图标 drawable 每帧 setRegion）
+            typeIcon.setRegion(currentTypeIcon());
+            if (selectedType != lastShownType) {
+                lastShownType = selectedType;
+                rebuildMaterialTable();
+            }
             // 电网有电时向发射缓冲充电（发射储备）
             if (power != null && power.status > 0.001f && battery < LAUNCH_POWER) {
                 battery = Math.min(LAUNCH_POWER, battery + CHARGE_RATE * delta());
@@ -293,60 +312,80 @@ public class SatelliteLauncher extends Block {
                     ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
-        /** 选中时显示：种类、材料（图标+数量）、制造进度（原版 Bar）、石油、发射缓冲（Bar） */
+        /** 选中面板（仿原版空军工厂 UnitFactory）：左侧动态种类图标 + 右侧进度/材料/石油/缓冲 */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get(typeNameKey()))).color(Pal.accent);
-            // 所需材料（原版风格：图标 + 数量，缺失红色；每帧刷新，切换种类即时更新）
+            table.table(t -> {
+                t.left();
+                // 左侧：当前种类大图标（随切换实时更新）
+                t.image(typeIcon).size(48f);
+                // 右侧：信息
+                t.table(info -> {
+                    info.left();
+                    // 卫星制造进度（原版 Bar，带说明，完成显示「可发射」）
+                    float total = produceTime(selectedType);
+                    info.add(new Bar(
+                            () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
+                                    : Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (Math.min(1f, progress / total) * 100f)),
+                            () -> produced ? Pal.accent : Pal.ammo,
+                            () -> produced ? 1f : Math.min(1f, progress / total)))
+                            .height(18f).growX();
+                    info.row();
+                    // 需求材料行（切换种类即时重建）
+                    info.add(materialTable).left();
+                    info.row();
+                    // 石油燃料（图标 + 数量，不足红色）
+                    info.table(o -> {
+                        o.left();
+                        o.image(Liquids.oil.uiIcon).size(24f);
+                        o.label(() -> {
+                            int have = (int) liquids.get(Liquids.oil);
+                            boolean ok = have >= FUEL_OIL;
+                            return (ok ? "" : "[red]") + have + "/" + FUEL_OIL + (ok ? "" : "[]");
+                        }).padLeft(6f);
+                    }).left();
+                    info.row();
+                    // 发射缓冲（原版 Bar）
+                    info.add(new Bar(
+                            () -> (int) (battery / LAUNCH_POWER * 100f) + "%",
+                            () -> Pal.power,
+                            () -> battery / LAUNCH_POWER))
+                            .height(14f).growX();
+                }).left().padLeft(8f);
+            }).left();
+        }
+
+        /** 重建需求材料行（按当前所选种类；每行：图标 + 数量，缺失标红） */
+        void rebuildMaterialTable() {
+            materialTable.clearChildren();
+            materialTable.top().left();
+            boolean first = true;
             for (ItemStack stack : productionItems(selectedType)) {
-                table.row();
-                table.table(t -> {
-                    t.image(stack.item.uiIcon).size(28f);
-                    t.label(() -> {
+                if (!first) materialTable.row();
+                materialTable.table(r -> {
+                    r.left();
+                    r.image(stack.item.uiIcon).size(24f);
+                    r.label(() -> {
                         boolean ok = items.get(stack.item) >= stack.amount;
                         return (ok ? "" : "[red]") + items.get(stack.item) + "/" + stack.amount + (ok ? "" : "[]");
                     }).padLeft(6f);
-                });
+                }).left();
+                first = false;
             }
             if (productionCryofluid(selectedType) > 0) {
-                table.row();
-                table.table(t -> {
-                    t.image(Liquids.cryofluid.uiIcon).size(28f);
-                    t.label(() -> {
+                if (!first) materialTable.row();
+                materialTable.table(r -> {
+                    r.left();
+                    r.image(Liquids.cryofluid.uiIcon).size(24f);
+                    r.label(() -> {
                         int have = (int) liquids.get(Liquids.cryofluid);
                         boolean ok = have >= COST_CRYOFLUID;
                         return (ok ? "" : "[red]") + have + "/" + COST_CRYOFLUID + (ok ? "" : "[]");
                     }).padLeft(6f);
-                });
+                }).left();
             }
-            // 卫星制造进度（原版状态条 Bar：灰底+彩色填充，带说明文字，完成显示「可发射」）
-            table.row();
-            float total = produceTime(selectedType);
-            table.add(new Bar(
-                    () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
-                            : Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (Math.min(1f, progress / total) * 100f)),
-                    () -> produced ? Pal.accent : Pal.ammo,
-                    () -> produced ? 1f : Math.min(1f, progress / total)))
-                    .height(18f).growX();
-            // 石油燃料（原版风格：图标 + 数量，不足红色）
-            table.row();
-            table.table(t -> {
-                t.image(Liquids.oil.uiIcon).size(28f);
-                t.label(() -> {
-                    int have = (int) liquids.get(Liquids.oil);
-                    boolean ok = have >= FUEL_OIL;
-                    return (ok ? "" : "[red]") + have + "/" + FUEL_OIL + (ok ? "" : "[]");
-                }).padLeft(6f);
-            });
-            // 发射缓冲（原版状态条 Bar）
-            table.row();
-            table.add(new Bar(
-                    () -> (int) (battery / LAUNCH_POWER * 100f) + "%",
-                    () -> Pal.power,
-                    () -> battery / LAUNCH_POWER))
-                    .height(14f).growX();
         }
 
         @Override

@@ -2,12 +2,10 @@ package silicon.world.blocks.satellite;
 
 import arc.Core;
 import arc.graphics.g2d.Draw;
-import arc.graphics.g2d.TextureRegion;
 import arc.math.Mathf;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
-import arc.struct.Seq;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
@@ -208,32 +206,12 @@ public class SatelliteLauncher extends Block {
             unregister();
         }
 
-        /** 生产完成：方块上方悬浮卫星图标提示「可发射卫星」；生产中缺材料时实时显示缺失材料图标 */
+        /** 生产完成：方块上方悬浮卫星图标提示「可发射卫星」 */
         @Override
         public void draw() {
             super.draw();
             if (produced) {
                 Draw.rect(Statuses.satelliteBuff.uiIcon, x, y + 16f + Mathf.sin(Time.time / 24f, 3f));
-            } else if (progress <= 0f && !hasProductionMaterials()) {
-                drawMissingMaterials();
-            }
-        }
-
-        /** 缺失的生产材料图标居中显示在方块中央（物品 + 冷冻液） */
-        void drawMissingMaterials() {
-            // 收集缺失材料
-            Seq<TextureRegion> missing = new Seq<>();
-            for (ItemStack stack : PRODUCTION_ITEMS) {
-                if (items.get(stack.item) < stack.amount) missing.add(stack.item.uiIcon);
-            }
-            if (liquids.get(Liquids.cryofluid) < COST_CRYOFLUID) missing.add(Liquids.cryofluid.uiIcon);
-            if (missing.isEmpty()) return;
-            // 图标行整体居中于方块中心
-            float totalWidth = missing.size * 12f - 2f;
-            float startX = x - totalWidth / 2f;
-            float iconY = y;
-            for (int i = 0; i < missing.size; i++) {
-                Draw.rect(missing.get(i), startX + i * 12f, iconY, 10f, 10f);
             }
         }
 
@@ -272,13 +250,13 @@ public class SatelliteLauncher extends Block {
             super.display(table);
             table.row();
             table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get("block.silicon-satellite-launcher.type.signal"))).color(Pal.accent);
-            // 所需材料实时清单：每个材料一行（每帧刷新；缺失项标红）
+            // 所需材料实时清单：每个材料一行、居中显示（每帧刷新；缺失项标红）
             for (ItemStack stack : PRODUCTION_ITEMS) {
                 table.row();
-                table.label(() -> materialLine(stack.item, stack.amount, items.get(stack.item))).left();
+                table.label(() -> materialLine(stack.item, stack.amount, items.get(stack.item)));
             }
             table.row();
-            table.label(() -> materialLine(Liquids.cryofluid, COST_CRYOFLUID, (int) liquids.get(Liquids.cryofluid))).left();
+            table.label(() -> materialLine(Liquids.cryofluid, COST_CRYOFLUID, (int) liquids.get(Liquids.cryofluid)));
             if (produced) {
                 table.row();
                 table.add(Core.bundle.get("block.silicon-satellite-launcher.ready")).color(Pal.accent);

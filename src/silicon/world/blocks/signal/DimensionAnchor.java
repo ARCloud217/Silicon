@@ -40,6 +40,8 @@ import static mindustry.Vars.content;
 public class DimensionAnchor extends Block{
     /** Interval between send attempts, in ticks (10 seconds). */
     public static final float sendInterval = 10f * 60f;
+    /** 接收态自动弹出周期（tick）：类似质量驱动器的装填-发射节奏。 */
+    public float ejectReload = 60f;
     /** Power consumed (per second, /60 convention) by a sending anchor. */
     public static final float sendPower = 1200f / 60f;
     /** Power consumed (per second, /60 convention) by a receiving anchor. */
@@ -102,8 +104,6 @@ public class DimensionAnchor extends Block{
         public String signal;
         /** UI-only flag: whether the signal list is expanded. */
         public boolean expanded;
-        /** #2 自动释放开关（接收态）：持久化到存档；开启时每 30t 向相邻同队建筑分发缓存物品。 */
-        public boolean autoRelease = false;
         /** Status of the last send attempt (see STATUS_*). */
         public int lastSendStatus = STATUS_TRYING;
         private float sendTimer = 0f;
@@ -198,9 +198,9 @@ public class DimensionAnchor extends Block{
                     }
                 }
             }
-            // #2 接收态自动释放：30t 节流，向相邻同队建筑持续分发
-            else if(!sendMode && autoRelease && enabled && timer(0, 30)){
-                releaseItems();
+            // 质量驱动器式自动弹出：接收态固有行为，周期性向相邻同队建筑突发分发
+            else if(!sendMode && enabled && timer(0, (int)ejectReload)){
+                ejectBurst();
             }
         }
 
@@ -314,6 +314,25 @@ public class DimensionAnchor extends Block{
         }
 
         /**
+         * 质量驱动器式突发弹出：单次至多向相邻同队可接收建筑分发 15 件，
+         * 放不下则留待下一周期（不阻塞、不报错）。
+         */
+        void ejectBurst(){
+            if(items == null || items.total() <= 0) return;
+            int moved = 0;
+            for(Item item : content.items()){
+                if(items.get(item) <= 0) continue;
+                for(Building b : proximity){
+                    if(moved >= 15) return;
+                    if(b == null || b.team != team || !b.acceptItem(this, item)) continue;
+                    b.handleItem(this, item);
+                    items.remove(item, 1);
+                    moved++;
+                }
+            }
+        }
+
+        /**
          * #24 接收模式主动释放：把缓存中的全部物品逐件分发给相邻的同队建筑
          * （传送带/装卸器/其它可接收建筑），直到清空或所有相邻目标均拒收。
          */
@@ -371,16 +390,12 @@ public class DimensionAnchor extends Block{
             }).left();
             table.row();
 
-            // #24 接收模式：主动释放 + #2 自动释放开关（左对齐，宽度与下方信号列表一致）
+            // #24 接收模式：手动一键释放（自动弹出为固有行为，无需开关）
             if(!sendMode){
                 table.row();
                 table.button(Core.bundle.get("block.silicon-dimension-anchor.release"), Styles.flatTogglet, this::releaseItems)
                     .size(240f, 40f).pad(2f).left()
                     .disabled(t -> items == null || items.total() <= 0);
-                table.row();
-                table.button(Core.bundle.get("block.silicon-dimension-anchor.auto-release"),
-                        Styles.flatTogglet, () -> autoRelease = !autoRelease)
-                    .checked(autoRelease).size(240f, 34f).pad(2f).left();
                 table.row();
             }
 
@@ -433,7 +448,6 @@ public class DimensionAnchor extends Block{
         public void write(Writes write){
             super.write(write);
             write.str(encode());
-            write.bool(autoRelease); // #2 自动释放开关持久化
         }
 
         @Override
@@ -441,7 +455,6 @@ public class DimensionAnchor extends Block{
             super.read(read, revision);
             // trust the save when restoring; uniqueness is only enforced on new configs
             decode(read.str(), false);
-            autoRelease = read.bool();
         }
     }
 }

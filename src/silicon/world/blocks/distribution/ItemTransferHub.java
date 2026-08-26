@@ -141,8 +141,11 @@ public class ItemTransferHub extends Block {
             entity.pendingLinks.clear();
             for (arc.math.geom.Point2 link : dragLinks) {
                 Building other = world.build(entity.tile.x + link.x, entity.tile.y + link.y);
-                if (other == null || other == entity) {
-                    // 目标未建成：挂起等待（建造完成后由周期任务自动接上）
+                // 未放置 / 是自身 / 仍在建造中（ConstructBuild 脚手架）→ 挂起等待，
+                // 建成后由 updateTile 周期任务自动补连——漏连根因：建造中的目标
+                // 此前被静默跳过且永不重试
+                if (other == null || other == entity
+                    || other instanceof mindustry.world.blocks.ConstructBlock.ConstructBuild) {
                     entity.pendingLinks.addUnique(link);
                     continue;
                 }
@@ -393,14 +396,13 @@ public class ItemTransferHub extends Block {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
                 + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
         }
-        // 固定层级 96：实测调用方 ambient 在 90~110 间漂移（拖动阶段会被同批幽灵/单位层
-        // 遮挡）——固定到 flyingUnitLow 之上、bullet(100)/effect(110) 之下，
-        // 保证预览在拖动全程稳定可见、不被任何方块或幽灵遮挡
-        float prevZ = Draw.z();
-        Draw.z(96f);
-        Draw.mixcol(Color.white, 0f);
-        drawCopyLinks(plan, list);
-        Draw.z(prevZ);
+        // 拖动阶段每个计划「精灵→连线」交替绘制，后续兄弟的精灵会盖住先前计划的连线；
+        // 用嵌套分层段（arc 标准手段，Renderer 各层同款）把预览强制排到
+        // effect(110) 之上、overlayUI(120) 之下——任何绘制顺序都无法遮挡它
+        Draw.draw(115f, () -> {
+            Draw.mixcol(Color.white, 0f);
+            drawCopyLinks(plan, list);
+        });
     }
 
     /**
@@ -644,13 +646,16 @@ public class ItemTransferHub extends Block {
                 updateTopology();
             }
 
-            // 挂起链接补连：复制/粘贴时目标未建成的偏移，每秒重试一次
-            // （timers=4 中使用 id=3）；目标建成即接上，被其它方块占用则放弃
+            // 挂起链接补连：复制/粘贴时目标未建成（含建造中脚手架）的偏移，
+            // 每秒重试一次（timers=4 中使用 id=3）；建成即接上，被其它方块占用则放弃
             if (!pendingLinks.isEmpty() && timer(3, 60)) {
                 for (int i = pendingLinks.size - 1; i >= 0; i--) {
                     arc.math.geom.Point2 p = pendingLinks.get(i);
                     Building other = world.build(tile.x + p.x, tile.y + p.y);
-                    if (other == null) continue; // 仍在建造中：继续等待
+                    if (other == null
+                        || other instanceof mindustry.world.blocks.ConstructBlock.ConstructBuild) {
+                        continue; // 仍在建造中：继续等待
+                    }
                     pendingLinks.remove(p);
                     if (other == this || !other.isValid() || !linkValid(this, other)) continue;
                     if (links.contains(other.pos()) || links.size >= maxConnections) continue;

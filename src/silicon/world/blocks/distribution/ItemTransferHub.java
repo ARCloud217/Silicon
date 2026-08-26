@@ -456,12 +456,10 @@ public class ItemTransferHub extends Block {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
                 + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
         }
-        // 拖动阶段后续兄弟的精灵会盖住先前计划的连线，ambient 又在 90~110 间漂移——
-        // 嵌套分层段固定到 buildBeam(122) 之上、space(160) 之下：任何绘制顺序都无法遮挡
-        Draw.draw(126f, () -> {
-            Draw.mixcol(Color.white, 0f);
-            drawCopyLinks(plan, list);
-        });
+        // 与电力节点 drawPlanConfigTop 同款：不改层级直接绘制，
+        // mixcol 复位防止调用方套的白色脉冲冲淡激光颜色
+        Draw.mixcol(Color.white, 0f);
+        drawCopyLinks(plan, list);
     }
 
     /**
@@ -797,6 +795,12 @@ public class ItemTransferHub extends Block {
                     }
                     boolean hubTarget = other instanceof ItemTransferHubBuild;
                     if (!hubTarget && links.size >= maxConnections) continue; // 满员：保留挂起等空位
+                    // 已连接（含事件处理器先行接入）→ 直接消费挂起项，不重复 configure
+                    if (hasAnyLink(other.pos())) {
+                        pendingLinks.remove(i);
+                        pendingAt.removeIndex(i);
+                        continue;
+                    }
                     pendingLinks.remove(i);
                     pendingAt.removeIndex(i);
                     if (other == this || !other.isValid() || !linkValid(this, other)) continue;

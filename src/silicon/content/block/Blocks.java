@@ -6,7 +6,9 @@ import mindustry.type.Category;
 import mindustry.type.ItemStack;
 import mindustry.world.Block;
 import mindustry.world.meta.BuildVisibility;
+import silicon.world.blocks.container.DualPurposeStorager;
 import silicon.world.blocks.defense.Switch;
+import silicon.world.blocks.distribution.UniversalJunction;
 import silicon.world.blocks.signal.DimensionAnchor;
 import silicon.world.blocks.signal.SignalSource;
 import silicon.world.blocks.distribution.ItemTransferHub;
@@ -21,7 +23,7 @@ import silicon.world.blocks.sandbox.PowerSource;
 import static mindustry.type.ItemStack.with;
 
 public class Blocks {
-    public static Block powerGeneratorPump, dualPurposeJunction,
+    public static Block powerGeneratorPump, dualPurposeJunction, dualPurposeStorager,
             rollGenerator, powerProtector, powerSource, mineConverter, theSwitch, itemTransferHub, dimensionAnchor,
             signalSource, universalJunction;
 
@@ -46,6 +48,13 @@ public class Blocks {
             requirements(Category.liquid, BuildVisibility.shown,
                     ItemStack.with(Items.graphite, 2, Items.metaglass, 4, Items.copper, 1));
             alwaysUnlocked = true;
+        }};
+        dualPurposeStorager = new DualPurposeStorager("dual-purpose-storager") {{
+            requirements(Category.effect, BuildVisibility.shown,
+                    ItemStack.with(Items.thorium, 100, Items.metaglass, 30, Items.titanium, 45, Items.plastanium, 10));
+            alwaysUnlocked = true;
+            size = 3;
+            health = 600;
         }};
 
         // Compound interest generator - generates power based on 1% of existing stored power

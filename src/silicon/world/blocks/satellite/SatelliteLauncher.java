@@ -249,13 +249,18 @@ public class SatelliteLauncher extends Block {
             unregister();
         }
 
-        /** 生产完成：方块上方悬浮卫星图标提示「可发射卫星」 */
+        /** 绘制（仿空军工厂）：方块上绘制当前种类卫星图标；生产完成时上方悬浮「可发射」提示 */
         @Override
         public void draw() {
             super.draw();
+            Draw.z(35f);
+            // 方块中央：当前种类卫星图标（仿 UnitFactory 在方块上绘制生产单位图标）
+            Draw.rect(currentTypeIcon(), x, y, 32f, 32f);
             if (produced) {
-                Draw.rect(Statuses.satelliteBuff.uiIcon, x, y + 16f + Mathf.sin(Time.time / 24f, 3f));
+                // 生产完成：方块上方悬浮卫星图标提示「可发射卫星」
+                Draw.rect(Statuses.satelliteBuff.uiIcon, x, y + 16f + Mathf.sin(Time.time / 24f, 3f), 16f, 16f);
             }
+            Draw.reset();
         }
 
         /** 状态显示：原版状态条（缺材料/断电自动着色）+ 原版风格制造进度条 + 石油不足图标 */

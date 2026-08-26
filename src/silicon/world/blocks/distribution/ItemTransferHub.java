@@ -150,7 +150,12 @@ public class ItemTransferHub extends Block {
                     continue;
                 }
                 if (!other.isValid() || !linkValid(entity, other)) continue;
-                if (entity.links.size >= maxConnections) break;
+                if (entity.links.size >= maxConnections) {
+                    // 连接数已满：挂起等待空位（其它链接断开时自动补上）——
+                    // 静默丢弃就是漏连（旧蓝图配置可达 21/22 点 > max 20）
+                    entity.pendingLinks.addUnique(link);
+                    continue;
+                }
                 entity.links.addUnique(other.pos());
                 if (other instanceof ItemTransferHubBuild otherHub
                     && !otherHub.links.contains(entity.pos())) {

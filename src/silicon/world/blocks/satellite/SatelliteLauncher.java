@@ -7,6 +7,8 @@ import arc.graphics.g2d.TextureRegion;
 import arc.math.Mathf;
 import arc.scene.style.TextureRegionDrawable;
 import arc.scene.ui.ButtonGroup;
+import arc.scene.ui.Image;
+import arc.scene.ui.Label;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
 import arc.util.Time;
@@ -362,30 +364,31 @@ public class SatelliteLauncher extends Block {
             }).left();
         }
 
-        /** 重建需求材料行（空军工厂样式：图标横排 + 数量，缺失标红；切换种类即时重建） */
+        /** 重建需求材料行（空军工厂样式：图标 + 需求数量角标覆盖在右下角；切换种类即时重建） */
         void rebuildMaterialTable() {
             materialTable.clearChildren();
             materialTable.left();
             for (ItemStack stack : productionItems(selectedType)) {
                 materialTable.table(r -> {
                     r.left();
-                    r.image(stack.item.uiIcon).size(24f);
-                    r.label(() -> {
-                        boolean ok = items.get(stack.item) >= stack.amount;
-                        return (ok ? "" : "[red]") + items.get(stack.item) + "/" + stack.amount + (ok ? "" : "[]");
-                    }).padLeft(4f);
-                }).padRight(8f);
+                    r.stack(
+                            new Image(stack.item.uiIcon),
+                            new Table(t -> t.add(new Label(String.valueOf(stack.amount)) {{
+                                setFontScale(0.55f);
+                            }}).bottom().right().pad(2f))
+                    ).size(40f);
+                }).padRight(6f);
             }
             if (productionCryofluid(selectedType) > 0) {
                 materialTable.table(r -> {
                     r.left();
-                    r.image(Liquids.cryofluid.uiIcon).size(24f);
-                    r.label(() -> {
-                        int have = (int) liquids.get(Liquids.cryofluid);
-                        boolean ok = have >= COST_CRYOFLUID;
-                        return (ok ? "" : "[red]") + have + "/" + COST_CRYOFLUID + (ok ? "" : "[]");
-                    }).padLeft(4f);
-                }).padRight(8f);
+                    r.stack(
+                            new Image(Liquids.cryofluid.uiIcon),
+                            new Table(t -> t.add(new Label(String.valueOf(COST_CRYOFLUID)) {{
+                                setFontScale(0.55f);
+                            }}).bottom().right().pad(2f))
+                    ).size(40f);
+                }).padRight(6f);
             }
         }
 

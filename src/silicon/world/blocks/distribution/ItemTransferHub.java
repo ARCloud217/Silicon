@@ -1638,10 +1638,10 @@ public class ItemTransferHub extends Block {
 
             if (Mathf.zero(Renderer.laserOpacity) || isPayload() || team == Team.derelict) return;
 
-            // 连线绘制在电力层；【必须恢复原层级】——否则后续实体全部继承电力层，
-            // 造成其它方块/特效随机出现渲染顺序异常（表现为“别处凭空出现视觉问题”）
+            // 连线绘制在计划层之上（Layer.plans=85 → +3=88）：
+            // 拖动放置时计划幽灵(85+)不会遮挡已有连线；【必须恢复原层级】
             float prevZ = Draw.z();
-            Draw.z(Layer.power);
+            Draw.z(Layer.plans + 3f);
 
             Lines.stroke(2f);
             // 普通连接（物流色）

@@ -2,10 +2,12 @@ package silicon.world.blocks.satellite;
 
 import arc.Core;
 import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.TextureRegion;
 import arc.math.Mathf;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
+import arc.struct.Seq;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
@@ -185,12 +187,30 @@ public class SatelliteLauncher extends Block {
             unregister();
         }
 
-        /** 生产完成：方块上方悬浮卫星图标提示「可发射卫星」 */
+        /** 生产完成：方块上方悬浮卫星图标提示「可发射卫星」；生产中缺材料时实时显示缺失材料图标 */
         @Override
         public void draw() {
             super.draw();
             if (produced) {
                 Draw.rect(Statuses.satelliteBuff.uiIcon, x, y + 16f + Mathf.sin(Time.time / 24f, 3f));
+            } else if (progress <= 0f && !hasProductionMaterials()) {
+                drawMissingMaterials();
+            }
+        }
+
+        /** 方块上方实时显示缺失的生产材料图标（物品 + 冷冻液） */
+        void drawMissingMaterials() {
+            // 收集缺失材料
+            Seq<TextureRegion> missing = new Seq<>();
+            for (ItemStack stack : PRODUCTION_ITEMS) {
+                if (items.get(stack.item) < stack.amount) missing.add(stack.item.uiIcon);
+            }
+            if (liquids.get(Liquids.cryofluid) < COST_CRYOFLUID) missing.add(Liquids.cryofluid.uiIcon);
+            if (missing.isEmpty()) return;
+            float startX = x - (missing.size - 1) * 6f;
+            float iconY = y + size * 4f + 8f;
+            for (int i = 0; i < missing.size; i++) {
+                Draw.rect(missing.get(i), startX + i * 12f, iconY, 10f, 10f);
             }
         }
 
@@ -223,12 +243,15 @@ public class SatelliteLauncher extends Block {
             table.add(signalBtn).size(180f, 44f).pad(3f);
         }
 
-        /** 选中时显示种类、材料、生产状态、缓冲电力与燃料 */
+        /** 选中时显示种类、材料（实时刷新）、生产状态、缓冲电力与燃料 */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
             table.add(Core.bundle.format("block.silicon-satellite-launcher.type.current", Core.bundle.get("block.silicon-satellite-launcher.type.signal"))).color(Pal.accent);
+            // 所需材料实时清单（每帧刷新；缺失项标红）
+            table.row();
+            table.label(() -> buildMaterialLine()).left();
             if (produced) {
                 table.row();
                 table.add(Core.bundle.get("block.silicon-satellite-launcher.ready")).color(Pal.accent);
@@ -245,6 +268,23 @@ public class SatelliteLauncher extends Block {
             table.add(Core.bundle.format("block.silicon-satellite-launcher.power", powerPct)).color(arc.graphics.Color.lightGray);
             table.row();
             table.add(Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), FUEL_OIL)).color(arc.graphics.Color.lightGray);
+        }
+
+        /** 所需材料清单文本（实时刷新；库存不足项 [red] 标红），如：铜 3000/5000 [red]硅 2000/5000[] 塑钢 0/1250 ... */
+        String buildMaterialLine() {
+            StringBuilder sb = new StringBuilder();
+            for (ItemStack stack : PRODUCTION_ITEMS) {
+                boolean ok = items.get(stack.item) >= stack.amount;
+                if (!ok) sb.append("[red]");
+                sb.append(stack.item.localizedName).append(' ').append(items.get(stack.item)).append('/').append(stack.amount);
+                if (!ok) sb.append("[]");
+                sb.append("  ");
+            }
+            boolean liquidOk = liquids.get(Liquids.cryofluid) >= COST_CRYOFLUID;
+            if (!liquidOk) sb.append("[red]");
+            sb.append(Liquids.cryofluid.localizedName).append(' ').append((int) liquids.get(Liquids.cryofluid)).append('/').append(COST_CRYOFLUID);
+            if (!liquidOk) sb.append("[]");
+            return sb.toString();
         }
 
         @Override

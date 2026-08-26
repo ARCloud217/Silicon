@@ -162,6 +162,9 @@ public class ItemTransferHub extends Block {
                 }
                 rebuildData(entity);
             } else {
+                // 单一归属裁决：普通目标若已被其它中枢占有/挂起，先整体抢回再入列——
+                // 否则复制粘贴/挂起补连/双击自动连会产生两枢同拉一目标的重复竞争连接
+                if (!hubTarget) stealFromOtherHubs(entity, other);
                 if (!hubTarget && entity.links.size >= maxConnections) return;
                 mine.addUnique(pos);
                 if (hubTarget) {
@@ -204,20 +207,7 @@ public class ItemTransferHub extends Block {
                     }
                 } else {
                     // 从其它中枢抢回属于自己模式的连接（复制粘贴时原网络可能抢先接入）
-                    for (int hi = 0; hi < allHubs.size; hi++) {
-                        ItemTransferHubBuild oh = allHubs.get(hi);
-                        if (oh == entity) continue;
-                        if (oh.links.removeValue(other.pos())) rebuildData(oh);
-                        if (oh.hubLinks.removeValue(other.pos())) rebuildData(oh);
-                        // 清除其它中枢挂起队列中的同位条目
-                        for (int pi = oh.pendingLinks.size - 1; pi >= 0; pi--) {
-                            arc.math.geom.Point2 pp = oh.pendingLinks.get(pi);
-                            if (pp.x == other.tile.x - oh.tile.x && pp.y == other.tile.y - oh.tile.y) {
-                                oh.pendingLinks.remove(pi);
-                                oh.pendingAt.removeIndex(pi);
-                            }
-                        }
-                    }
+                    stealFromOtherHubs(entity, other);
                     // 普通连接受上限约束；满员转入挂起队列等空位，不静默丢弃
                     if (entity.links.size >= maxConnections) {
                         entity.addPending(link);
@@ -236,6 +226,31 @@ public class ItemTransferHub extends Block {
 
     public static boolean linkValid(Building tile, Building link) {
         return HubRouting.linkValid(tile, link);
+    }
+
+    /**
+     * 连接单一归属裁决：把 target 从其它全部中枢的 links/hubLinks/pendingLinks 中整体移除。
+     * 背景：建造完成事件按「最近中枢」分配新建筑，复制粘贴时原网络可能抢先接入；
+     * 若认领方不清除旧归属，就会形成两枢同时拉取同一目标的重复/竞争连接。
+     * 认领路径（Point2[] 复制配置 / Integer 单击·自动连·挂起补连）统一走本裁决，
+     * 保证任意时刻一个普通建筑只被一个中枢服务；中枢间粉色连接不受此约束（有意多对多）。
+     */
+    private static void stealFromOtherHubs(ItemTransferHubBuild self, Building target) {
+        int pos = target.pos();
+        for (int hi = 0; hi < allHubs.size; hi++) {
+            ItemTransferHubBuild oh = allHubs.get(hi);
+            if (oh == self || !oh.isValid()) continue;
+            if (oh.links.removeValue(pos)) rebuildData(oh);
+            if (oh.hubLinks.removeValue(pos)) rebuildData(oh);
+            // 清除其它中枢挂起队列中的同位条目
+            for (int pi = oh.pendingLinks.size - 1; pi >= 0; pi--) {
+                arc.math.geom.Point2 pp = oh.pendingLinks.get(pi);
+                if (pp.x == target.tile.x - oh.tile.x && pp.y == target.tile.y - oh.tile.y) {
+                    oh.pendingLinks.remove(pi);
+                    oh.pendingAt.removeIndex(pi);
+                }
+            }
+        }
     }
 
     private static void rebuildData(ItemTransferHubBuild hub) {
@@ -329,11 +344,19 @@ public class ItemTransferHub extends Block {
     public void placeEnded(Tile tile, mindustry.gen.Unit builder, int rotation, Object config) {
         // 链接应用与未建成目标的挂起均由 Point2[] 配置处理器完成（configured 先于本钩子触发）；
         // 此处：①一次性消费 lastConfig，防止旧连接模式继续喂给悬停预览；
-        // ②用剩余容量像电力节点一样补连周围建筑（已连目标自动跳过、满员自动让位）
+        // ②无复制配置的新枢用剩余容量像电力节点一样补连周围建筑
         lastConfig = null;
-        if (tile.build instanceof ItemTransferHubBuild hub && !mindustry.Vars.net.client()) {
-            hub.autoConnectNearby(this);
-        }
+        if (!(tile.build instanceof ItemTransferHubBuild hub) || mindustry.Vars.net.client()) return;
+
+        // 复制放置（原理图粘贴 / F 键拾取）不再自由补连：拓扑完全由复制的配置 + 挂起队列决定。
+        // 判据 = 显式 Point2[] 配置，或 configured 已写入任意连接/挂起（copyConfig 链路下
+        // configured 同样先于本钩子执行）。此前补连会接入周边原网络的中枢与建筑：
+        // ①偏离复制预览（所见非所得、出现预期外连接）；②占用 maxConnections 配额，
+        // 饿死排在后面建成的挂起目标 → 「偏后放置的建筑永远连不上」
+        boolean copiedPlacement = config instanceof arc.math.geom.Point2[]
+            || hub.links.size > 0 || hub.hubLinks.size > 0 || !hub.pendingLinks.isEmpty();
+        if (copiedPlacement) return;
+        hub.autoConnectNearby(this);
     }
 
     /**
@@ -482,10 +505,20 @@ public class ItemTransferHub extends Block {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
                 + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
         }
-        // 与电力节点 drawPlanConfigTop 同款：不改层级直接绘制，
-        // mixcol 复位防止调用方套的白色脉冲冲淡激光颜色
-        Draw.mixcol(Color.white, 0f);
-        drawCopyLinks(plan, list);
+        // 与电力节点同款钩子，但层级显式抬升：预览激光必须严格高于本输入绘制层上
+        // 【后绘制】的同层计划幽灵/方块精灵——同层绘制按插入序覆盖，先画的中枢连线
+        // 会被后画的兄弟计划幽灵盖住（表现为「拖动时连线被其它建筑遮挡」）。
+        // +1f 保证在任意环境层级（悬停 85 / 拖动 120 等）下都压过同层幽灵；
+        // 常驻连线层为 Layer.plans+3，预览略高于它不产生视觉差异
+        float prevZ = Draw.z();
+        Draw.z(Math.max(prevZ + 1f, Layer.plans + 4f));
+        try {
+            // mixcol 复位防止调用方套的白色脉冲冲淡激光颜色
+            Draw.mixcol(Color.white, 0f);
+            drawCopyLinks(plan, list);
+        } finally {
+            Draw.z(prevZ);
+        }
     }
 
     /**
@@ -551,7 +584,7 @@ public class ItemTransferHub extends Block {
         public IntSeq hubLinks = new IntSeq();
         /** 复制/粘贴时目标尚未建成的挂起偏移：建造完成后由 updateTile 周期补连（会话内有效，不入存档）。 */
         public Seq<arc.math.geom.Point2> pendingLinks = new Seq<>();
-        /** 挂起时间戳（Time.time）：用于超时清理无法放置的目标（默认 180 秒过期）。 */
+        /** 挂起时间戳（Time.time）：用于超时清理无法放置的目标（默认 600 秒过期）。 */
         public FloatSeq pendingAt = new FloatSeq();
 
         /** 记录一条挂起链接（带时间戳，去重）。 */
@@ -803,12 +836,13 @@ public class ItemTransferHub extends Block {
             // 挂起链接补连：复制/粘贴时目标未建成（含建造中脚手架）的偏移，
             // 每 10 tick 重试一次（timers=4 中 id=3）——「每建完一个就连一个」；
             // 中枢目标无上限直接接上；普通目标满员保留挂起等空位；
-            // 超过 180 秒仍未出现的目标（无法放置/已取消）过期清理
+            // 超过 600 秒仍未出现的目标（无法放置/已取消）过期清理
+            // （大蓝图/慢速建造可能远超 3 分钟，过期太短会静默漏连）
             if (!pendingLinks.isEmpty() && timer(3, 10)) {
                 float now = Time.time;
                 for (int i = pendingLinks.size - 1; i >= 0; i--) {
                     // 过期清理：蓝图无法放置/被取消的目标不再无限等待
-                    if (now - pendingAt.get(i) > 180f) {
+                    if (now - pendingAt.get(i) > 600f) {
                         pendingLinks.remove(i);
                         pendingAt.removeIndex(i);
                         continue;

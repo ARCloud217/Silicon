@@ -122,64 +122,86 @@ public class SignalOverlay {
             lastRangeMode = rangeMode;
             displayAlpha = 0f;
         }
-        // 卫星全图信号层：信号卫星每颗提供全图信号强度 +1（可叠加，上限 15），先绘制基础层
-        int satStrength = SatelliteManager.signalStrength(team);
-        if (satStrength > 0) {
-            drawSatelliteSignal(satStrength, alpha, rangeMode);
-        }
         // 收集所有信号源与已激活中继器（同队；静态列表复用，不产生分配）
         sources.clear();
         sources.addAll(SignalSource.allSources(team));
         for (SignalRelayBuild rb : SignalRelay.allRelays(team)) {
             if (rb.active) sources.add(rb);
         }
-        if (sources.isEmpty()) {
-            Draw.reset();
-            return;
-        }
-        // 视野裁剪：屏幕外（含信号半径外扩）的来源跳过，避免大量来源时每帧绘制全部
-        Rect view = Core.camera.bounds(Tmp.r1).grow(SignalSource.RADIUS * 8f + 8f);
-        // 每个源独立绘制其覆盖（O(n × r²)，避免每格再遍历全部源）
-        for (Building b : sources) {
-            if (!view.contains(b.x, b.y)) continue;
-            if (rangeMode) {
-                drawRange(b, alpha);
-            } else {
-                drawNumbers(b, alpha);
+        // 卫星全图信号强度（信号卫星每颗 +1，上限 15）
+        int satStrength = SatelliteManager.signalStrength(team);
+        if (rangeMode) {
+            // 范围模式：先画卫星全图基础层，再画各源覆盖（半透明色块，叠加无碍）
+            if (satStrength > 0) {
+                drawSatelliteRange(satStrength, alpha);
             }
+            if (sources.isEmpty()) {
+                Draw.reset();
+                return;
+            }
+            // 视野裁剪：屏幕外（含信号半径外扩）的来源跳过
+            Rect view = Core.camera.bounds(Tmp.r1).grow(SignalSource.RADIUS * 8f + 8f);
+            for (Building b : sources) {
+                if (!view.contains(b.x, b.y)) continue;
+                drawRange(b, alpha);
+            }
+        } else {
+            // 数字模式：逐格取 max（卫星基础强度 + 各源强度），每格只绘制一次，避免重复/叠加
+            drawNumbersOverlay(team, satStrength, alpha);
         }
         Draw.reset();
     }
 
-    /** 卫星全图信号层：可见区域内每格按卫星信号强度绘制（范围模式=色块，数字模式=强度数字） */
-    static void drawSatelliteSignal(int satStrength, float alpha, boolean rangeMode) {
+    /** 卫星全图信号层（范围模式）：可见区域内每格按卫星信号强度填充色块 */
+    static void drawSatelliteRange(int satStrength, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
         float t = satStrength / SignalSource.MAX_STRENGTH;
-        if (rangeMode) {
-            float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-            Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
-            Draw.color(Tmp.c1, (0.1f + 0.25f * t) * rangeAlpha * alpha);
+        float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
+        Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+        Draw.color(Tmp.c1, (0.1f + 0.25f * t) * rangeAlpha * alpha);
+        for (int gx = x0; gx <= x1; gx++) {
+            for (int gy = y0; gy <= y1; gy++) {
+                Fill.rect(gx * 8f, gy * 8f, 8f, 8f);
+            }
+        }
+    }
+
+    /** 数字模式：可见区域内逐格计算强度 = max(卫星基础强度, 各源强度)，每格只绘制一次（字号覆盖一格 8px） */
+    static void drawNumbersOverlay(Team team, int satStrength, float alpha) {
+        Rect view = Core.camera.bounds(Tmp.r1);
+        int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
+        int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
+        float digitAlpha = Core.settings.getInt("signal.digitAlpha", 80) / 100f;
+        // 保存字体原始颜色与比例，绘制后恢复（try-finally 保证异常时也恢复）
+        Color oldFontColor = Fonts.def.getColor();
+        float oldScale = Fonts.def.getData().scaleX;
+        // 字号 0.5（约 8px）刚好覆盖一格
+        Fonts.def.getData().setScale(0.5f);
+        try {
             for (int gx = x0; gx <= x1; gx++) {
                 for (int gy = y0; gy <= y1; gy++) {
-                    Fill.rect(gx * 8f, gy * 8f, 8f, 8f);
+                    float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
+                    float s = satStrength; // 卫星全图基础强度
+                    for (Building b : sources) {
+                        float bs = sourceStrength(b, wx, wy);
+                        if (bs > s) s = bs;
+                    }
+                    if (s <= 0f) continue;
+                    int val = Mathf.round(s);
+                    float t = s / SignalSource.MAX_STRENGTH;
+                    // 浅蓝 → 深蓝渐变（强度越高越深）
+                    Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+                    Tmp.c1.a((0.6f + 0.4f * t) * digitAlpha * alpha);
+                    // 复用预计算字符串避免分配；字号 0.5 时单字符约占满 8px 格
+                    Fonts.def.setColor(Tmp.c1);
+                    Fonts.def.draw(NUMBER_STRINGS[val < 0 ? 0 : (val > 15 ? 15 : val)], wx - 2f, wy - 4f);
                 }
             }
-        } else {
-            float digitAlpha = Core.settings.getInt("signal.digitAlpha", 80) / 100f;
-            Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
-            Tmp.c1.a((0.6f + 0.4f * t) * digitAlpha * alpha);
-            float oldScale = Fonts.def.getData().scaleX;
-            Fonts.def.getData().setScale(0.2f);
-            Fonts.def.setColor(Tmp.c1);
-            String s = NUMBER_STRINGS[satStrength];
-            for (int gx = x0; gx <= x1; gx++) {
-                for (int gy = y0; gy <= y1; gy++) {
-                    Fonts.def.draw(s, gx * 8f - 1.2f, gy * 8f - 0.8f);
-                }
-            }
-            Fonts.def.setColor(Color.white);
+        } finally {
+            // 恢复默认颜色与字号，避免影响其他字体渲染
+            Fonts.def.setColor(oldFontColor);
             Fonts.def.getData().setScale(oldScale);
         }
     }
@@ -193,42 +215,6 @@ public class SignalOverlay {
             return rb.active ? SignalSource.strengthAt(b.x, b.y, wx, wy) : 0f;
         }
         return 0f;
-    }
-
-    /** 数字模式：在信号覆盖圆内每格绘制强度数字（强度高=深蓝，低=浅蓝渐变；透明度由设置调节） */
-    static void drawNumbers(Building b, float alpha) {
-        int r = (int) SignalSource.RADIUS;
-        float radiusPx = SignalSource.RADIUS * 8f;
-        // 数字模式透明度（0~100，设置项）
-        float digitAlpha = Core.settings.getInt("signal.digitAlpha", 80) / 100f;
-        // 保存字体原始颜色与比例，绘制后恢复（try-finally 保证异常时也恢复，避免污染全局字体状态）
-        Color oldFontColor = Fonts.def.getColor();
-        float oldScale = Fonts.def.getData().scaleX;
-        Fonts.def.getData().setScale(0.2f);
-        float radiusSq = radiusPx * radiusPx;
-        try {
-            for (int dx = -r; dx <= r; dx++) {
-                for (int dy = -r; dy <= r; dy++) {
-                    float wx = b.x + dx * 8f, wy = b.y + dy * 8f; // 格子中心（像素）
-                    float ddx = wx - b.x, ddy = wy - b.y;
-                    if (ddx * ddx + ddy * ddy > radiusSq) continue; // 平方距离比较，避免 sqrt
-                    float s = sourceStrength(b, wx, wy);
-                    if (s <= 0) continue;
-                    int val = Mathf.round(s);
-                    float t = s / SignalSource.MAX_STRENGTH;
-                    // 浅蓝 → 深蓝渐变（强度越高越深）
-                    Color c = Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
-                    c.a((0.6f + 0.4f * t) * digitAlpha * alpha);
-                    // 复用预计算字符串避免分配
-                    Fonts.def.setColor(c);
-                    Fonts.def.draw(NUMBER_STRINGS[val < 0 ? 0 : (val > 15 ? 15 : val)], wx - 1.2f, wy - 0.8f);
-                }
-            }
-        } finally {
-            // 恢复默认颜色与字号，避免影响其他字体渲染
-            Fonts.def.setColor(oldFontColor);
-            Fonts.def.getData().setScale(oldScale);
-        }
     }
 
     /** 范围模式：半透明蓝色渐变填充信号覆盖圆（每格 8px，不挡方块），强度高=深蓝、低=浅蓝 */

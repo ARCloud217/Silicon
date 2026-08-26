@@ -1,221 +1,194 @@
 package silicon.world.blocks.signal;
 
 import arc.Core;
-import arc.graphics.Color;
+import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.Fill;
+import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
-import arc.scene.ui.layout.Table;
-import arc.struct.ObjectSet;
-import arc.util.Nullable;
+import arc.struct.ObjectMap;
+import arc.struct.Seq;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
+import mindustry.game.Team;
 import mindustry.gen.Building;
 import mindustry.gen.Call;
 import mindustry.gen.Groups;
-import mindustry.gen.Unit;
 import mindustry.graphics.Drawf;
-import mindustry.graphics.Pal;
-import mindustry.ui.Bar;
 import mindustry.world.Block;
-import mindustry.world.Tile;
-import mindustry.world.meta.StatUnit;
-import silicon.util.Signals;
-import silicon.util.SignalUser;
-import silicon.world.meta.Stat;
+import silicon.util.SignalOverlay;
+import silicon.world.meta.Signal;
 
 /**
- * SignalSource - 信号源
- * Generates a unique random 4-character signal (uppercase A-Z and digits 0-9) when placed.
- * The signal is generated once on the server (placeEnded only runs on the server), synced to
- * all clients via the config mechanism, and persisted to saves.
- * The signal is removed again when the block is removed.
- * The signal is shown inside the vanilla HUD bar (e.g. "信号：A1G4").
+ * 信号源：放置后注册一个信号（名称 4 个字母或数字，绑定放置队伍）。
+ * 在半径 15 格的圆内广播信号，强度随距离线性衰减（最大 15，最小 0）。
+ * 按 H 键可查看信号覆盖（缩放视角较小时逐格显示强度数字，较大时显示绿色范围）。
  */
-public class SignalSource extends Block{
-    /** Allowed characters: uppercase letters and digits only, to avoid encoding issues. */
-    public static final String SIGNAL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    /** Length of a signal. */
-    public static final int SIGNAL_LENGTH = 4;
-    /** Max attempts before giving up on finding an unused signal. */
-    private static final int MAX_ATTEMPTS = 1000;
+public class SignalSource extends Block {
+    /** 信号覆盖半径（格） */
+    public static final float RADIUS = 15f;
+    /** 信号最大强度 */
+    public static final int MAX_STRENGTH = 15;
+    /** 信号名称长度 */
+    public static final int NAME_LENGTH = 4;
 
-    /** Dark blue color used for the dashed logistics lines to all blocks using this signal. */
-    public static final Color linkColor = Color.valueOf("5a63d8");
-
-    /** All signals currently in use, so every placed block gets a unique one. */
-    public static final ObjectSet<String> usedSignals = new ObjectSet<>();
-
-    public SignalSource(String name){
+    public SignalSource(String name) {
         super(name);
-        update = true; // needed so power consumption runs and the signal can actually be active
+        // 手动指定建筑类（Mindustry 的反射自动检测对非静态内部类不可靠）
+        buildType = SignalSourceBuild::new;
+        size = 1;
         solid = true;
         destructible = true;
-        breakable = true;
-        // A signal source needs power to emit its signal.
-        hasPower = true;
-        consumePower(60f / 60f);
-        // clicking the block opens a small info UI, like a vanilla bridge's configure dialog
+        // 必须 update=true：Groups.build（活动建筑组）只包含需要更新的建筑，否则放置后无法被查询/绘制
+        update = true;
         configurable = true;
-        config(String.class, (building, value) -> {
-            if(building instanceof SignalSourceBuild b){
-                b.signal = value;
-                if(value != null) usedSignals.add(value);
+        // 用于客户端同步信号名（服务器通过 tileConfig 下发）
+        config(String.class, (SignalSourceBuild b, String value) -> {
+            if (value != null && !value.isEmpty()) {
+                b.signal = new Signal(value);
             }
         });
     }
 
-    /** Adds the vanilla health/power bars plus a signal bar that shows "信号：A1G4". */
-    @Override
-    public void setBars(){
-        super.setBars();
-        addBar("signal", (SignalSourceBuild b) -> new Bar(
-            () -> b.signal == null
-                ? Core.bundle.get("block.silicon-signal-source.nosignal")
-                : Core.bundle.format("block.silicon-signal-source.signal", b.signal),
-            () -> Pal.accent,
-            () -> b.signal == null ? 0f : 1f
-        ));
-    }
-
-    /** Adds database/info page statistics. */
-    @Override
-    public void setStats(){
-        super.setStats();
-        stats.add(Stat.signalLength, String.valueOf(SIGNAL_LENGTH), StatUnit.none);
-    }
-
-    @Override
-    public void placeEnded(Tile tile, @Nullable Unit builder, int rotation, @Nullable Object config){
-        super.placeEnded(tile, builder, rotation, config);
-        if(tile.build instanceof SignalSourceBuild b){
-            // placeEnded only runs on the server, so generate here and sync to all clients.
-            b.configureAny(generateUniqueSignal());
-        }
-    }
-
-    /** @return a random 4-character signal (A-Z, 0-9) that is not already in use. */
-    public static String generateUniqueSignal(){
-        StringBuilder sb = new StringBuilder(SIGNAL_LENGTH);
-        String candidate;
-        int attempts = 0;
-        do{
-            sb.setLength(0);
-            for(int i = 0; i < SIGNAL_LENGTH; i++){
-                sb.append(SIGNAL_CHARS.charAt(Mathf.random(SIGNAL_CHARS.length() - 1)));
-            }
-            candidate = sb.toString();
-        }while(usedSignals.contains(candidate) && ++attempts < MAX_ATTEMPTS);
-
-        usedSignals.add(candidate);
-        return candidate;
+    /**
+     * 以 (cx, cy) 为信号源中心、指定世界坐标 (wx, wy) 处的信号强度（世界坐标为像素，1 格 = 8px）。
+     * 覆盖半径外（无信号区域）强度为 0；覆盖内按正态分布（高斯）衰减：
+     * 中心最强（15），随距离按 exp(-d²/2σ²) 衰减，边缘趋近 0。
+     * 通用方法：信号源与信号中继器共用。
+     */
+    public static float strengthAt(float cx, float cy, float wx, float wy) {
+        float dist = Mathf.dst(wx, wy, cx, cy) / 8f; // 像素 → 格
+        if (dist > RADIUS) return 0f; // 无信号区域强度为 0
+        // 正态分布衰减：σ = 6 格（过渡平缓），半径 15 格处强度趋近 0
+        float sigma = 6f;
+        float gaussian = (float) Math.exp(-(dist * dist) / (2f * sigma * sigma));
+        return MAX_STRENGTH * gaussian;
     }
 
     /**
-     * Rebuilds the in-use signal set from all signal sources currently in the world.
-     * Called on world load (after buildings have been read), because clearing it too early
-     * would wipe the signals restored from the save.
+     * 每队信号源缓存（建筑放置/拆除/加载时标记失效重建，避免每帧遍历 Groups.build）。
      */
-    public static void rebuildUsedSignals(){
-        usedSignals.clear();
-        for(Building b : Groups.build){
-            if(b instanceof SignalSourceBuild sb && sb.signal != null){
-                usedSignals.add(sb.signal);
+    private static final ObjectMap<Team, Seq<SignalSourceBuild>> sourceCache = new ObjectMap<>();
+    private static boolean dirty = true;
+
+    /** 标记缓存失效（建筑增删时调用） */
+    public static void markDirty() {
+        dirty = true;
+    }
+
+    static void rebuildCache() {
+        if (!dirty) return;
+        dirty = false;
+        sourceCache.clear();
+        for (Building b : Groups.build) {
+            if (b instanceof SignalSourceBuild sb) {
+                sourceCache.get(sb.team, Seq::new).add(sb);
             }
         }
     }
 
-    public class SignalSourceBuild extends Building{
-        public String signal;
+    /** 收集某队伍的所有信号源（走缓存） */
+    public static Seq<SignalSourceBuild> allSources(Team team) {
+        rebuildCache();
+        return sourceCache.get(team, new Seq<>());
+    }
+
+    /** 生成一个未被使用的 4 字符信号名（大写字母 A-Z + 数字 0-9） */
+    public static String generateUniqueName() {
+        final String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        for (int attempt = 0; attempt < 200; attempt++) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < NAME_LENGTH; i++) {
+                sb.append(chars.charAt(Mathf.random(chars.length() - 1)));
+            }
+            String candidate = sb.toString();
+            if (!isNameUsed(candidate)) return candidate;
+        }
+        return "ZZZZ";
+    }
+
+    static boolean isNameUsed(String name) {
+        for (Building b : Groups.build) {
+            if (b instanceof SignalSourceBuild sb && sb.signal != null && name.equals(sb.signal.name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 放置预览（拖拽放置时）显示信号覆盖范围，同原版电力节点（x/y 为格坐标，转像素） */
+    @Override
+    public void drawPlace(int x, int y, int rotation, boolean valid) {
+        super.drawPlace(x, y, rotation, valid);
+        Draw.color(SignalOverlay.SIGNAL_COLOR, 0.5f);
+        Drawf.circles(x * 8 + 4f, y * 8 + 4f, RADIUS * 8f);
+        Draw.reset();
+    }
+
+    public class SignalSourceBuild extends Building {
+        /** 本源注册的信号（null 表示未生成/未同步） */
+        public Signal signal;
 
         @Override
-        public Object config(){
-            return signal;
-        }
-
-        /**
-         * @return whether the signal is currently active: a signal is set AND the source has power.
-         * The signal is passive and only valid while the source is powered.
-         */
-        public boolean isActive(){
-            return signal != null && power != null && power.status >= 0.999f;
-        }
-
-        /** @return how many machines on this team currently use this signal. */
-        int countUsers(){
-            return Signals.countUsers(signal, team);
-        }
-
-        /**
-         * Small info dialog (like a vanilla bridge's configure dialog): shows the signal
-         * and how many machines currently use it. Both texts are computed once when the
-         * dialog opens, they do not refresh every frame.
-         */
-        @Override
-        public void buildConfiguration(Table table){
-            String signalText = signal == null
-                ? Core.bundle.get("block.silicon-signal-source.nosignal")
-                : Core.bundle.format("block.silicon-signal-source.signal", signal);
-            // the user count is read exactly once, when the dialog is opened
-            String countText = Core.bundle.format("block.silicon-signal-source.users", countUsers());
-
-            table.top();
-            table.table(main -> {
-                main.defaults().pad(4f);
-                main.label(() -> signalText).padTop(6f);
-                main.row();
-                main.label(() -> countText).color(Color.lightGray).padBottom(6f);
-            });
-        }
-
-        /**
-         * While the config dialog is open (i.e. only when clicked, never on hover), draws
-         * dark blue dashed lines (vanilla bridge style) from this source to every block
-         * that uses its signal.
-         */
-        @Override
-        public void drawConfigure(){
-            super.drawConfigure();
-            if(signal == null) return;
-            for(SignalUser user : Signals.users(signal, team)){
-                if(user instanceof Building b){
-                    Drawf.dashLine(linkColor, x, y, b.x, b.y);
-                }
+        public void placed() {
+            super.placed();
+            // 部分放置路径不会自动调用 add()（建筑不在活动组），手动补偿加入
+            if (!added) {
+                add();
+            }
+            // 服务器端生成唯一信号；客户端等待 tileConfig 同步
+            if (Vars.net.client()) return;
+            signal = new Signal(generateUniqueName());
+            if (Vars.net.server()) {
+                Call.tileConfig(null, this, signal.name);
             }
         }
 
-        /**
-         * Re-syncs the signal to clients when this block enters the world (e.g. after loading a save).
-         * Custom fields like {@link #signal} are not synced by the entity system, so clients would
-         * otherwise never see it after a load and could not list the signal.
-         */
         @Override
-        public void onProximityAdded(){
+        public void onProximityAdded() {
             super.onProximityAdded();
-            if(signal != null && Vars.net.server()){
-                Call.tileConfig(null, this, signal);
+            markDirty();
+            // 加载存档后向客户端重新同步（自定义字段不随实体系统同步）
+            if (signal != null && Vars.net.server()) {
+                Call.tileConfig(null, this, signal.name);
             }
         }
 
-        /** Releases the signal when this block is removed, so it can be reused later. */
         @Override
-        public void onRemoved(){
+        public void onRemoved() {
             super.onRemoved();
-            if(signal != null){
-                usedSignals.remove(signal);
-            }
+            markDirty();
+        }
+
+        /** 本源在指定世界坐标处的信号强度（0~15；无信号时为 0） */
+        public float strengthAt(float wx, float wy) {
+            if (signal == null) return 0f;
+            return SignalSource.strengthAt(x, y, wx, wy);
+        }
+
+        /** 选中时显示信号覆盖范围（填充圆 + 圆环，类似电力节点；半径为像素，15 格 = 120px） */
+        @Override
+        public void drawSelect() {
+            super.drawSelect();
+            Draw.color(SignalOverlay.SIGNAL_COLOR, 0.07f);
+            Fill.poly(x, y, 64, RADIUS * 8f);
+            Draw.color(SignalOverlay.SIGNAL_COLOR, signal == null ? 0.3f : 0.7f);
+            Lines.stroke(2f);
+            Lines.circle(x, y, RADIUS * 8f);
+            Draw.reset();
         }
 
         @Override
-        public void write(Writes write){
+        public void write(Writes write) {
             super.write(write);
-            write.str(signal);
+            write.str(signal == null ? "" : signal.name);
         }
 
         @Override
-        public void read(Reads read, byte revision){
-            super.read(read, revision);
-            signal = read.str();
-            if(signal != null) usedSignals.add(signal);
+        public void read(Reads read, byte revision) {
+            super.read(read, read.b());
+            String name = read.str();
+            signal = name.isEmpty() ? null : new Signal(name);
         }
     }
 }

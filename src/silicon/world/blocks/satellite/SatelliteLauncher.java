@@ -28,7 +28,7 @@ import static mindustry.type.ItemStack.with;
 
 /**
  * 卫星发射中枢（3×3）：选择卫星种类并生产卫星，同时负责发射所需的燃料与电力储备。
- * - 生产材料（选择种类后开始生产时一次性消耗）：铜 5000、硅 5000、塑钢 1250、脆钢 1250、冷冻液 1000
+ * - 生产材料（选择种类后开始生产时一次性消耗）：铜 5000、硅 5000、塑钢 1250、巨浪合金 1250、冷冻液 1000
  * - 生产阶段消耗 5000 电力/秒（电网）；每中枢同时只能生产 1 颗，完成后停止耗电并显示「可发射卫星」提示
  * - 内置 10000 发射缓冲（电网供电充电）；发射燃料石油（1000）亦储存在本中枢
  * - 卫星由卫星控制台点击发射
@@ -175,7 +175,7 @@ public class SatelliteLauncher extends Block {
             }
         }
 
-        /** 物品输入：仅接受生产所需材料（铜/硅/塑钢/脆钢），且未满库存（override 默认的 consumesItem 检查） */
+        /** 物品输入：仅接受生产所需材料（铜/硅/塑钢/巨浪合金），且未满库存（override 默认的 consumesItem 检查） */
         @Override
         public boolean acceptItem(Building source, Item item) {
             if (items.get(item) >= itemCapacity) return false;

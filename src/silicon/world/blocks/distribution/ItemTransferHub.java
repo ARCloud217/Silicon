@@ -152,7 +152,7 @@ public class ItemTransferHub extends Block {
                 // 此前被静默跳过且永不重试
                 if (other == null || other == entity
                     || other instanceof mindustry.world.blocks.ConstructBlock.ConstructBuild) {
-                    entity.pendingLinks.addUnique(link);
+                    entity.addPending(link);
                     continue;
                 }
                 if (!other.isValid() || !linkValid(entity, other)) continue;
@@ -165,7 +165,8 @@ public class ItemTransferHub extends Block {
                 } else {
                     // 普通连接受上限约束；满员转入挂起队列等空位，不静默丢弃
                     if (entity.links.size >= maxConnections) {
-                        entity.pendingLinks.addUnique(link);
+                        // 满员：转入挂起队列等空位（其它链接断开时自动补上）
+                        entity.addPending(link);
                         continue;
                     }
                     entity.links.addUnique(other.pos());
@@ -427,13 +428,13 @@ public class ItemTransferHub extends Block {
             SiliconLog.info("[中枢复制预览:" + via + "] points=" + ps.length
                 + " @" + plan.x + "," + plan.y + " z=" + Draw.z() + " op=" + linkOpacity());
         }
-        // 拖动阶段每个计划「精灵→连线」交替绘制，后续兄弟的精灵会盖住先前计划的连线；
-        // 用嵌套分层段（arc 标准手段，Renderer 各层同款）把预览强制排到
-        // effect(110) 之上、overlayUI(120) 之下——任何绘制顺序都无法遮挡它
-        Draw.draw(115f, () -> {
-            Draw.mixcol(Color.white, 0f);
-            drawCopyLinks(plan, list);
-        });
+        // ambient 层级在 90~110 间漂移导致预览时隐时现——固定画在 effect(110) 之上、
+        // overlayUI(120) 之下，拖动全程稳定可见、不被任何幽灵或单位遮挡
+        float prevZ = Draw.z();
+        Draw.z(111f);
+        Draw.mixcol(Color.white, 0f);
+        drawCopyLinks(plan, list);
+        Draw.z(prevZ);
     }
 
     /**
@@ -499,6 +500,16 @@ public class ItemTransferHub extends Block {
         public IntSeq hubLinks = new IntSeq();
         /** 复制/粘贴时目标尚未建成的挂起偏移：建造完成后由 updateTile 周期补连（会话内有效，不入存档）。 */
         public Seq<arc.math.geom.Point2> pendingLinks = new Seq<>();
+        /** 挂起时间戳（Time.time）：用于超时清理无法放置的目标（默认 180 秒过期）。 */
+        public FloatSeq pendingAt = new FloatSeq();
+
+        /** 记录一条挂起链接（带时间戳，去重）。 */
+        private void addPending(arc.math.geom.Point2 link) {
+            if (!pendingLinks.contains(link)) {
+                pendingLinks.add(link);
+                pendingAt.add(Time.time);
+            }
+        }
         public float powerConsumed = 0f;
         // 延迟计费：跨枢 charge 分摊到下一帧，避免同帧执行顺序导致的清零覆盖
         public float powerConsumedNext = 0f;
@@ -732,10 +743,18 @@ public class ItemTransferHub extends Block {
             }
 
             // 挂起链接补连：复制/粘贴时目标未建成（含建造中脚手架）的偏移，
-            // 每秒重试一次（timers=4 中使用 id=3）；中枢目标无上限直接接上，
-            // 普通目标满员时保留挂起等空位；位置被其它方块占用则放弃
-            if (!pendingLinks.isEmpty() && timer(3, 60)) {
+            // 每 10 tick 重试一次（timers=4 中 id=3）——「每建完一个就连一个」；
+            // 中枢目标无上限直接接上；普通目标满员保留挂起等空位；
+            // 超过 180 秒仍未出现的目标（无法放置/已取消）过期清理
+            if (!pendingLinks.isEmpty() && timer(3, 10)) {
+                float now = Time.time;
                 for (int i = pendingLinks.size - 1; i >= 0; i--) {
+                    // 过期清理：蓝图无法放置/被取消的目标不再无限等待
+                    if (now - pendingAt.get(i) > 180f) {
+                        pendingLinks.remove(i);
+                        pendingAt.removeIndex(i);
+                        continue;
+                    }
                     arc.math.geom.Point2 p = pendingLinks.get(i);
                     Building other = world.build(tile.x + p.x, tile.y + p.y);
                     if (other == null
@@ -743,8 +762,9 @@ public class ItemTransferHub extends Block {
                         continue; // 仍在建造中：继续等待
                     }
                     boolean hubTarget = other instanceof ItemTransferHubBuild;
-                    if (!hubTarget && links.size >= maxConnections) continue; // 满员：保留挂起
-                    pendingLinks.remove(p);
+                    if (!hubTarget && links.size >= maxConnections) continue; // 满员：保留挂起等空位
+                    pendingLinks.remove(i);
+                    pendingAt.removeIndex(i);
                     if (other == this || !other.isValid() || !linkValid(this, other)) continue;
                     configure(other.pos());
                 }

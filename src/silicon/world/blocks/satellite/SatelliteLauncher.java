@@ -16,7 +16,9 @@ import mindustry.content.Liquids;
 import mindustry.ctype.UnlockableContent;
 import mindustry.gen.Building;
 import mindustry.graphics.Pal;
+import mindustry.type.Item;
 import mindustry.type.ItemStack;
+import mindustry.type.Liquid;
 import mindustry.ui.Styles;
 import mindustry.world.Block;
 import mindustry.world.meta.Stat;
@@ -151,6 +153,23 @@ public class SatelliteLauncher extends Block {
                 SatelliteManager.removeReady(this);
                 registered = false;
             }
+        }
+
+        /** 物品输入：仅接受生产所需材料（铜/硅/塑钢/脆钢），且未满库存（override 默认的 consumesItem 检查） */
+        @Override
+        public boolean acceptItem(Building source, Item item) {
+            if (items.get(item) >= itemCapacity) return false;
+            for (ItemStack stack : PRODUCTION_ITEMS) {
+                if (stack.item == item) return true;
+            }
+            return false;
+        }
+
+        /** 液体输入：仅接受石油（燃料）与冷冻液（生产材料） */
+        @Override
+        public boolean acceptLiquid(Building source, Liquid liquid) {
+            if (liquids.get(liquid) >= liquidCapacity) return false;
+            return liquid == Liquids.oil || liquid == Liquids.cryofluid;
         }
 
         /** 发射前资源检查：返回 LAUNCH_OK 或缺失原因 */

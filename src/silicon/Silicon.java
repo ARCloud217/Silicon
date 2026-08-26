@@ -20,8 +20,10 @@ import mindustry.mod.Mods;
 import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
 import mindustry.ui.dialogs.SettingsMenuDialog;
+import silicon.content.Statuses;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
+import silicon.util.SatelliteManager;
 import silicon.util.SiliconLog;
 import silicon.util.SignalOverlay;
 import silicon.util.UpdateChecker;
@@ -68,6 +70,7 @@ public class Silicon extends Mod {
     public void loadContent() {
         Items.load();
         Blocks.load();
+        Statuses.load();
         SiliconLog.info("Loading contents.");
     }
 
@@ -75,10 +78,18 @@ public class Silicon extends Mod {
     public void init() {
         // Reset hub network ID counter on world load to avoid ID collisions with saved hubs.
         // 信号源/中继器按队缓存也在世界加载时失效重建（读档后建筑重新加入 Groups.build）。
+        // 卫星状态为运行时内存态，世界加载时重置。
         Events.on(EventType.WorldLoadEvent.class, e -> {
             ItemTransferHubNetwork.resetIdCounter();
             SignalSource.markDirty();
             SignalRelay.markDirty();
+            SatelliteManager.reset();
+        });
+        // 玩家中途加入时同步「卫星在轨」buff 显示（按队伍）
+        Events.on(EventType.PlayerJoin.class, e -> {
+            if (SatelliteManager.launchedCount(e.player.team()) > 0 && e.player.unit() != null) {
+                e.player.unit().apply(Statuses.satelliteBuff, 999999f);
+            }
         });
 
         BlockSearch.init();

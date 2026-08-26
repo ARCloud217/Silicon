@@ -22,6 +22,7 @@ import silicon.world.blocks.signal.SignalRelay;
 import silicon.world.blocks.signal.SignalRelay.SignalRelayBuild;
 import silicon.world.blocks.signal.SignalSource;
 import silicon.world.blocks.signal.SignalSource.SignalSourceBuild;
+import silicon.util.SatelliteManager;
 
 /**
  * 信号覆盖显示：H 键查看信号源覆盖。
@@ -121,13 +122,21 @@ public class SignalOverlay {
             lastRangeMode = rangeMode;
             displayAlpha = 0f;
         }
+        // 卫星全图信号层：信号卫星每颗提供全图信号强度 +1（可叠加，上限 15），先绘制基础层
+        int satStrength = SatelliteManager.signalStrength(team);
+        if (satStrength > 0) {
+            drawSatelliteSignal(satStrength, alpha, rangeMode);
+        }
         // 收集所有信号源与已激活中继器（同队；静态列表复用，不产生分配）
         sources.clear();
         sources.addAll(SignalSource.allSources(team));
         for (SignalRelayBuild rb : SignalRelay.allRelays(team)) {
             if (rb.active) sources.add(rb);
         }
-        if (sources.isEmpty()) return;
+        if (sources.isEmpty()) {
+            Draw.reset();
+            return;
+        }
         // 视野裁剪：屏幕外（含信号半径外扩）的来源跳过，避免大量来源时每帧绘制全部
         Rect view = Core.camera.bounds(Tmp.r1).grow(SignalSource.RADIUS * 8f + 8f);
         // 每个源独立绘制其覆盖（O(n × r²)，避免每格再遍历全部源）
@@ -140,6 +149,39 @@ public class SignalOverlay {
             }
         }
         Draw.reset();
+    }
+
+    /** 卫星全图信号层：可见区域内每格按卫星信号强度绘制（范围模式=色块，数字模式=强度数字） */
+    static void drawSatelliteSignal(int satStrength, float alpha, boolean rangeMode) {
+        Rect view = Core.camera.bounds(Tmp.r1);
+        int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
+        int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
+        float t = satStrength / SignalSource.MAX_STRENGTH;
+        if (rangeMode) {
+            float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
+            Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+            Draw.color(Tmp.c1, (0.1f + 0.25f * t) * rangeAlpha * alpha);
+            for (int gx = x0; gx <= x1; gx++) {
+                for (int gy = y0; gy <= y1; gy++) {
+                    Fill.rect(gx * 8f, gy * 8f, 8f, 8f);
+                }
+            }
+        } else {
+            float digitAlpha = Core.settings.getInt("signal.digitAlpha", 80) / 100f;
+            Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+            Tmp.c1.a((0.6f + 0.4f * t) * digitAlpha * alpha);
+            float oldScale = Fonts.def.getData().scaleX;
+            Fonts.def.getData().setScale(0.2f);
+            Fonts.def.setColor(Tmp.c1);
+            String s = NUMBER_STRINGS[satStrength];
+            for (int gx = x0; gx <= x1; gx++) {
+                for (int gy = y0; gy <= y1; gy++) {
+                    Fonts.def.draw(s, gx * 8f - 1.2f, gy * 8f - 0.8f);
+                }
+            }
+            Fonts.def.setColor(Color.white);
+            Fonts.def.getData().setScale(oldScale);
+        }
     }
 
     /** 该源/中继器在 (wx, wy) 的信号强度（信号源无信号、中继器未激活时为 0） */

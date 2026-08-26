@@ -177,8 +177,8 @@ public class SignalOverlay {
         // 保存字体原始颜色与比例，绘制后恢复（try-finally 保证异常时也恢复）
         Color oldFontColor = Fonts.def.getColor();
         float oldScale = Fonts.def.getData().scaleX;
-        // 字号 0.3（约 4.8px），明显小于一格（8px）
-        Fonts.def.getData().setScale(0.3f);
+        // 字号 0.25（约 4px），远小于一格（8px）
+        Fonts.def.getData().setScale(0.25f);
         try {
             for (int gx = x0; gx <= x1; gx++) {
                 for (int gy = y0; gy <= y1; gy++) {
@@ -194,9 +194,9 @@ public class SignalOverlay {
                     // 浅蓝 → 深蓝渐变（强度越高越深）
                     Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
                     Tmp.c1.a((0.6f + 0.4f * t) * digitAlpha * alpha);
-                    // 复用预计算字符串避免分配；字号 0.3（约 4.8px）时单字符居中偏移
+                    // 复用预计算字符串避免分配；字号 0.25（约 4px）时单字符居中偏移
                     Fonts.def.setColor(Tmp.c1);
-                    Fonts.def.draw(NUMBER_STRINGS[val < 0 ? 0 : (val > 15 ? 15 : val)], wx - 1.5f, wy - 2.5f);
+                    Fonts.def.draw(NUMBER_STRINGS[val < 0 ? 0 : (val > 15 ? 15 : val)], wx - 1.2f, wy - 2f);
                 }
             }
         } finally {

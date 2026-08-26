@@ -69,6 +69,7 @@ public class SatelliteLauncher extends Block {
         consumePower(POWER_CONSUMPTION);
         // 材料储存（物品 + 液体：石油/冷冻液）
         hasItems = true;
+        acceptsItems = true;
         itemCapacity = 5000 + 5000 + 1250 + 1250;
         hasLiquids = true;
         liquidCapacity = FUEL_OIL + COST_CRYOFLUID;
@@ -199,7 +200,7 @@ public class SatelliteLauncher extends Block {
             }
         }
 
-        /** 方块上方实时显示缺失的生产材料图标（物品 + 冷冻液） */
+        /** 缺失的生产材料图标居中显示在方块中央（物品 + 冷冻液） */
         void drawMissingMaterials() {
             // 收集缺失材料
             Seq<TextureRegion> missing = new Seq<>();
@@ -208,8 +209,10 @@ public class SatelliteLauncher extends Block {
             }
             if (liquids.get(Liquids.cryofluid) < COST_CRYOFLUID) missing.add(Liquids.cryofluid.uiIcon);
             if (missing.isEmpty()) return;
-            float startX = x - (missing.size - 1) * 6f;
-            float iconY = y + size * 4f + 8f;
+            // 图标行整体居中于方块中心
+            float totalWidth = missing.size * 12f - 2f;
+            float startX = x - totalWidth / 2f;
+            float iconY = y;
             for (int i = 0; i < missing.size; i++) {
                 Draw.rect(missing.get(i), startX + i * 12f, iconY, 10f, 10f);
             }
@@ -260,12 +263,13 @@ public class SatelliteLauncher extends Block {
             if (produced) {
                 table.row();
                 table.add(Core.bundle.get("block.silicon-satellite-launcher.ready")).color(Pal.accent);
-            } else if (power != null && power.status > 0.001f) {
+            } else {
+                // 始终显示卫星制造进度（材料不足时进度 0%）
                 table.row();
                 if (progress <= 0f && !hasProductionMaterials()) {
-                    table.add(Core.bundle.get("block.silicon-satellite-launcher.missing")).color(Pal.remove);
+                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)) + "  " + Core.bundle.get("block.silicon-satellite-launcher.missing")).color(Pal.remove);
                 } else {
-                    table.add(Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)));
+                    table.label(() -> Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (progress / PRODUCE_TIME * 100f)));
                 }
             }
             table.row();

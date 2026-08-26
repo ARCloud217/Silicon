@@ -344,8 +344,8 @@ public class SatelliteLauncher extends Block {
                     r.stack(
                             new Image(stack.item.uiIcon),
                             new Table(t -> t.add(new Label(String.valueOf(stack.amount)) {{
-                                setFontScale(0.35f);
-                            }}).bottom().right().pad(0f))
+                                setFontScale(0.5f);
+                            }}).bottom().pad(0f))
                     ).size(36f);
                 }).padRight(4f);
             }
@@ -355,19 +355,19 @@ public class SatelliteLauncher extends Block {
                     r.stack(
                             new Image(Liquids.cryofluid.uiIcon),
                             new Table(t -> t.add(new Label(String.valueOf(COST_CRYOFLUID)) {{
-                                setFontScale(0.35f);
-                            }}).bottom().right().pad(0f))
+                                setFontScale(0.5f);
+                            }}).bottom().pad(0f))
                     ).size(36f);
                 }).padRight(4f);
             }
-            // 石油（发射燃料）：同样式，需求数量 1000 角标右下角
+            // 石油（发射燃料）：同样式，需求数量 1000 角标下边缘居中
             materialTable.table(r -> {
                 r.left();
                 r.stack(
                         new Image(Liquids.oil.uiIcon),
                         new Table(t -> t.add(new Label(String.valueOf(FUEL_OIL)) {{
-                            setFontScale(0.35f);
-                        }}).bottom().right().pad(0f))
+                            setFontScale(0.5f);
+                        }}).bottom().pad(0f))
                 ).size(36f);
             }).padRight(4f);
         }

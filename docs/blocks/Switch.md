@@ -76,4 +76,4 @@
 |------|------|
 | a0.8.0 | 初始创建 |
 | a0.10.1 | `group` `projectors` → `logic`，归入逻辑组，电力节点式批量操作 |
-| （待定版） | 新增按钮式切换配置界面（`configurable=true`，80×40 toggle 按钮） |
+| a0.12.1.0 | 新增按钮式切换配置界面（`configurable=true`，80×40 toggle 按钮） |

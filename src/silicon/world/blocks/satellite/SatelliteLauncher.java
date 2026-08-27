@@ -1,9 +1,11 @@
 package silicon.world.blocks.satellite;
 
 import arc.Core;
+import arc.func.Boolp;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
 import arc.math.Mathf;
+import arc.scene.Element;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.Image;
 import arc.scene.ui.Label;
@@ -12,6 +14,8 @@ import arc.scene.ui.layout.Table;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+
+import java.util.Locale;
 import mindustry.content.Items;
 import mindustry.content.Liquids;
 import mindustry.ctype.UnlockableContent;
@@ -81,6 +85,29 @@ public class SatelliteLauncher extends Block {
     /** 按种类返回生产耗时（测试卫星 1 秒，信号卫星 60 秒） */
     public static float produceTime(int type) {
         return type == TYPE_TEST ? PRODUCE_TIME_TEST : PRODUCE_TIME_SIGNAL;
+    }
+
+    /** 数量格式化（原版风格）：>=1000 显示为 x.xk（5000→5.0k、1250→1.3k、1000→1.0k），小于 1000 原样显示 */
+    static String formatCount(int amount) {
+        return amount >= 1000 ? String.format(Locale.ROOT, "%.1fk", amount / 1000f) : String.valueOf(amount);
+    }
+
+    /** 物品不足指示（原版缺失样式）：当条件成立时，在物品图标上绘制一条左上到右下的红色斜线 */
+    static class InsufficientLine extends Element {
+        /** 不足判断条件（每帧求值） */
+        final Boolp condition;
+
+        InsufficientLine(Boolp condition) {
+            this.condition = condition;
+        }
+
+        @Override
+        public void draw() {
+            if (!condition.get()) return;
+            Draw.color(Pal.remove);
+            Draw.rect(Core.atlas.find("white"), x + width / 2f, y + height / 2f, Math.max(2f, width * 0.07f), height * 1.35f, 45f);
+            Draw.color();
+        }
     }
 
     public SatelliteLauncher(String name) {
@@ -342,7 +369,7 @@ public class SatelliteLauncher extends Block {
             }).growX().left();
         }
 
-        /** 重建需求材料行（按原版：图标 + 需求数量角标覆盖在右下角；石油同样式加入；切换种类即时重建） */
+        /** 重建需求材料行（按原版：图标 + 需求数量角标（左下角，千位 k 格式），不足时红色斜线；切换种类即时重建） */
         void rebuildMaterialTable() {
             materialTable.clearChildren();
             materialTable.left();
@@ -351,10 +378,11 @@ public class SatelliteLauncher extends Block {
                     r.left();
                     r.stack(
                             new Image(stack.item.uiIcon),
-                            new Table(t -> t.add(new Label(String.valueOf(stack.amount)) {{
-                                setFontScale(0.5f);
-                            }}).expand().bottom().padBottom(2f))
-                    ).size(36f);
+                            new InsufficientLine(() -> items.get(stack.item) < stack.amount),
+                            new Table(t -> t.add(new Label(formatCount(stack.amount)) {{
+                                setFontScale(0.65f);
+                            }}).expand().bottom().left().padBottom(2f).padLeft(2f))
+                    ).size(40f);
                 }).padRight(4f);
             }
             if (productionCryofluid(selectedType) > 0) {
@@ -362,21 +390,23 @@ public class SatelliteLauncher extends Block {
                     r.left();
                     r.stack(
                             new Image(Liquids.cryofluid.uiIcon),
-                            new Table(t -> t.add(new Label(String.valueOf(COST_CRYOFLUID)) {{
-                                setFontScale(0.5f);
-                            }}).expand().bottom().padBottom(2f))
-                    ).size(36f);
+                            new InsufficientLine(() -> liquids.get(Liquids.cryofluid) < COST_CRYOFLUID),
+                            new Table(t -> t.add(new Label(formatCount(COST_CRYOFLUID)) {{
+                                setFontScale(0.65f);
+                            }}).expand().bottom().left().padBottom(2f).padLeft(2f))
+                    ).size(40f);
                 }).padRight(4f);
             }
-            // 石油（发射燃料）：同样式，需求数量 1000 角标下边缘居中
+            // 石油（发射燃料）：同样式，需求数量 1000 角标左下角，不足红斜线
             materialTable.table(r -> {
                 r.left();
                 r.stack(
                         new Image(Liquids.oil.uiIcon),
-                        new Table(t -> t.add(new Label(String.valueOf(FUEL_OIL)) {{
-                            setFontScale(0.5f);
-                        }}).expand().bottom().padBottom(2f))
-                ).size(36f);
+                        new InsufficientLine(() -> liquids.get(Liquids.oil) < FUEL_OIL),
+                        new Table(t -> t.add(new Label(formatCount(FUEL_OIL)) {{
+                            setFontScale(0.65f);
+                        }}).expand().bottom().left().padBottom(2f).padLeft(2f))
+                ).size(40f);
             }).padRight(4f);
         }
 

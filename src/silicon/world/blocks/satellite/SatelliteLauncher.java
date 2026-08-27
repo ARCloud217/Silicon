@@ -306,14 +306,14 @@ public class SatelliteLauncher extends Block {
                     ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
-        /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标右下角）、进度条、电力条 */
+        /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标下边缘居中）、进度条、石油条、电力条（长度统一） */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
             table.table(info -> {
                 info.left();
-                // 需求材料 + 石油（图标横排，需求数量角标覆盖在右下角；切换种类即时重建）
+                // 需求材料 + 石油（图标横排，需求数量角标覆盖在物品下边缘居中；切换种类即时重建）
                 info.add(materialTable).growX();
                 info.row();
                 // 卫星制造进度条
@@ -325,7 +325,14 @@ public class SatelliteLauncher extends Block {
                         () -> produced ? 1f : Math.min(1f, progress / total)))
                         .height(18f).growX();
                 info.row();
-                // 电力条（单独显示：发射缓冲 Bar）
+                // 石油条（与其他 bar 长度统一）
+                info.add(new Bar(
+                        () -> (int) (liquids.get(Liquids.oil) / FUEL_OIL * 100f) + "%",
+                        () -> Pal.ammo,
+                        () -> Math.min(1f, liquids.get(Liquids.oil) / FUEL_OIL)))
+                        .height(14f).growX();
+                info.row();
+                // 电力条（单独显示：发射缓冲 Bar，与其他 bar 长度统一）
                 info.add(new Bar(
                         () -> (int) (battery / LAUNCH_POWER * 100f) + "%",
                         () -> Pal.power,
@@ -345,7 +352,7 @@ public class SatelliteLauncher extends Block {
                             new Image(stack.item.uiIcon),
                             new Table(t -> t.add(new Label(String.valueOf(stack.amount)) {{
                                 setFontScale(0.5f);
-                            }}).bottom().pad(0f))
+                            }}).expand().bottom().padBottom(2f))
                     ).size(36f);
                 }).padRight(4f);
             }
@@ -356,7 +363,7 @@ public class SatelliteLauncher extends Block {
                             new Image(Liquids.cryofluid.uiIcon),
                             new Table(t -> t.add(new Label(String.valueOf(COST_CRYOFLUID)) {{
                                 setFontScale(0.5f);
-                            }}).bottom().pad(0f))
+                            }}).expand().bottom().padBottom(2f))
                     ).size(36f);
                 }).padRight(4f);
             }
@@ -367,7 +374,7 @@ public class SatelliteLauncher extends Block {
                         new Image(Liquids.oil.uiIcon),
                         new Table(t -> t.add(new Label(String.valueOf(FUEL_OIL)) {{
                             setFontScale(0.5f);
-                        }}).bottom().pad(0f))
+                        }}).expand().bottom().padBottom(2f))
                 ).size(36f);
             }).padRight(4f);
         }

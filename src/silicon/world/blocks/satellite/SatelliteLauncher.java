@@ -346,28 +346,28 @@ public class SatelliteLauncher extends Block {
                 // 需求材料 + 石油（图标横排，需求数量角标覆盖在物品下边缘居中；切换种类即时重建）
                 info.add(materialTable);
                 info.row();
-                // 卫星制造进度条
+                // 卫星制造进度条（上方留白与原版一致，避免与材料行/相邻 bar 挤在一起）
                 float total = produceTime(selectedType);
                 info.add(new Bar(
                         () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
                                 : Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (Math.min(1f, progress / total) * 100f)),
                         () -> produced ? Pal.accent : Pal.ammo,
                         () -> produced ? 1f : Math.min(1f, progress / total)))
-                        .height(18f).growX();
+                        .height(18f).growX().padTop(4f);
                 info.row();
                 // 石油条（与其他 bar 长度统一，带说明文字：石油燃料 x/1000；高度与原版 bar 一致避免文字溢出重叠）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), FUEL_OIL),
                         () -> Pal.ammo,
                         () -> Math.min(1f, liquids.get(Liquids.oil) / FUEL_OIL)))
-                        .height(18f).growX();
+                        .height(18f).growX().padTop(4f);
                 info.row();
                 // 电力条（单独显示：发射缓冲 Bar，与其他 bar 长度统一，带说明文字：发射缓冲 xx%）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.power", (int) (battery / LAUNCH_POWER * 100f)),
                         () -> Pal.power,
                         () -> battery / LAUNCH_POWER))
-                        .height(18f).growX();
+                        .height(18f).growX().padTop(4f);
             }).growX().left();
         }
 

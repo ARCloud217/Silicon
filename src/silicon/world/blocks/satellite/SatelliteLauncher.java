@@ -381,8 +381,8 @@ public class SatelliteLauncher extends Block {
                     r.stack(
                             new Image(stack.item.uiIcon),
                             new InsufficientLine(() -> items.get(stack.item) < stack.amount),
-                            new Table(t -> t.add(new Label(formatCount(stack.amount)) {{
-                                setFontScale(0.8f);
+                            new Table(t -> t.add(new Label(formatCount(stack.amount), Styles.outlineLabel) {{
+                                setFontScale(0.95f);
                             }}).expand().bottom().left().padBottom(2f).padLeft(2f))
                     ).size(40f);
                 }).padRight(4f);
@@ -393,8 +393,8 @@ public class SatelliteLauncher extends Block {
                     r.stack(
                             new Image(Liquids.cryofluid.uiIcon),
                             new InsufficientLine(() -> liquids.get(Liquids.cryofluid) < COST_CRYOFLUID),
-                            new Table(t -> t.add(new Label(formatCount(COST_CRYOFLUID)) {{
-                                setFontScale(0.8f);
+                            new Table(t -> t.add(new Label(formatCount(COST_CRYOFLUID), Styles.outlineLabel) {{
+                                setFontScale(0.95f);
                             }}).expand().bottom().left().padBottom(2f).padLeft(2f))
                     ).size(40f);
                 }).padRight(4f);
@@ -405,8 +405,8 @@ public class SatelliteLauncher extends Block {
                 r.stack(
                         new Image(Liquids.oil.uiIcon),
                         new InsufficientLine(() -> liquids.get(Liquids.oil) < FUEL_OIL),
-                        new Table(t -> t.add(new Label(formatCount(FUEL_OIL)) {{
-                            setFontScale(0.8f);
+                        new Table(t -> t.add(new Label(formatCount(FUEL_OIL), Styles.outlineLabel) {{
+                            setFontScale(0.95f);
                         }}).expand().bottom().left().padBottom(2f).padLeft(2f))
                 ).size(40f);
             }).padRight(4f);

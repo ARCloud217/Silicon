@@ -43,20 +43,23 @@ public class SatelliteManager {
     /** 已生产完成、待发射的中枢列表（按队伍） */
     private static final ObjectMap<Team, Seq<SatelliteLauncher.SatelliteLauncherBuild>> readyLaunchers = new ObjectMap<>();
 
-    /** 卫星发射特效：尾焰粒子向上喷射 + 上升烟柱（发射时在发射位置播放，全图广播） */
-    public static final Effect launchFx = new Effect(60f, e -> {
+    /** 卫星发射特效：巨大光柱尾焰 + 向上喷射粒子 + 烟柱（配合方块自绘动画，1.5 秒） */
+    public static final Effect launchFx = new Effect(90f, e -> {
         // 特效层（盖过方块，确保可见）
         Draw.z(Layer.effect);
-        // 尾焰：粒子向上喷射（90° 向上，轻微散射）
+        // 底部光柱（大而明显）
         Draw.color(Pal.lightOrange, Pal.ammo, e.fin());
-        for (int i = 0; i < 6; i++) {
-            float ang = 90f + Mathf.range(18f);
-            float len = e.fin() * 45f;
-            Fill.circle(e.x + Angles.trnsx(ang, len) * 0.6f, e.y + Angles.trnsy(ang, len) * 0.8f, e.fout() * 3.5f);
+        Fill.circle(e.x, e.y, 5f + e.finpow() * 12f);
+        // 向上喷射粒子（大半径）
+        for (int i = 0; i < 12; i++) {
+            float ang = 90f + Mathf.range(25f);
+            float len = e.fin() * 55f;
+            Draw.color(Pal.ammo, Pal.lightOrange, e.fin());
+            Fill.circle(e.x + Angles.trnsx(ang, len) * 0.7f, e.y + Angles.trnsy(ang, len) * 0.8f, e.fout() * 6f);
         }
         // 烟柱：向上漂散
         Draw.color(Color.gray, Color.lightGray, e.fin());
-        Fill.circle(e.x + Mathf.range(1.5f), e.y + e.fin() * 35f, e.fout() * 5f);
+        Fill.circle(e.x + Mathf.range(2f), e.y + e.fin() * 45f, e.fout() * 8f);
     });
 
     /** 世界加载时重置（卫星不跨存档） */
@@ -114,6 +117,8 @@ public class SatelliteManager {
         int reason = launcher.checkLaunchResources();
         if (reason != LAUNCH_OK) return reason;
         int type = launcher.selectedType;
+        // 启动方块自绘发射动画（绕开 Effect 渲染管线，方块可见即特效可见）
+        launcher.launchAnim = 0f;
         // 扣燃料与缓冲电力，重置该中枢使其可再生产
         launcher.consumeLaunchResources();
         list.remove(0);

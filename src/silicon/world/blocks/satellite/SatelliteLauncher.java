@@ -4,6 +4,7 @@ import arc.Core;
 import arc.func.Boolp;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
+import arc.math.Angles;
 import arc.math.Mathf;
 import arc.scene.Element;
 import arc.scene.ui.ButtonGroup;
@@ -14,6 +15,7 @@ import arc.scene.ui.layout.Table;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+import mindustry.graphics.Layer;
 
 import java.util.Locale;
 import mindustry.content.Items;
@@ -150,6 +152,8 @@ public class SatelliteLauncher extends Block {
         public float battery = 0f;
         /** 本中枢是否已生产完成一颗（待发射） */
         public boolean produced = false;
+        /** 发射动画计时（tick，-1=未在发射）：由 SatelliteManager 在发射成功时启动，方块自绘特效（绕开 Effect 渲染管线，保证可见） */
+        public float launchAnim = -1f;
         /** 是否已登记到待发射队列 */
         private boolean registered = false;
         /** 选中面板需求材料行（切换种类时重建） */
@@ -271,10 +275,34 @@ public class SatelliteLauncher extends Block {
             unregister();
         }
 
-        /** 绘制：生产完成时方块上方悬浮「可发射」提示（不绘制常驻卫星图标，按原版简洁显示） */
+        /** 绘制：生产完成时方块上方悬浮「可发射」提示；发射时自绘光柱尾焰发射特效（方块可见即特效可见） */
         @Override
         public void draw() {
             super.draw();
+            // 发射特效：方块自绘（光柱尾焰 + 向上粒子 + 烟柱），绕开引擎 Effect 渲染管线
+            if (launchAnim >= 0f) {
+                launchAnim += Time.delta;
+                if (launchAnim > 90f) {
+                    launchAnim = -1f;
+                } else {
+                    float t = Math.min(1f, launchAnim / 90f);
+                    Draw.z(Layer.effect);
+                    // 底部光柱
+                    Draw.color(Pal.lightOrange, Pal.ammo, t);
+                    Fill.circle(x, y, 5f + Mathf.pow(t, 0.5f) * 12f);
+                    // 向上喷射粒子
+                    for (int i = 0; i < 12; i++) {
+                        float ang = 90f + Mathf.range(25f);
+                        float len = t * 55f;
+                        Draw.color(Pal.ammo, Pal.lightOrange, t);
+                        Fill.circle(x + Angles.trnsx(ang, len) * 0.7f, y + Angles.trnsy(ang, len) * 0.8f, (1f - t) * 6f);
+                    }
+                    // 烟柱
+                    Draw.color(arc.graphics.Color.gray, arc.graphics.Color.lightGray, t);
+                    Fill.circle(x + Mathf.range(2f), y + t * 45f, (1f - t) * 8f);
+                    Draw.reset();
+                }
+            }
             if (produced) {
                 Draw.z(35f);
                 Draw.rect(Statuses.satelliteBuff.uiIcon, x, y + 16f + Mathf.sin(Time.time / 24f, 3f), 16f, 16f);

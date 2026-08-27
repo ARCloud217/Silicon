@@ -118,7 +118,8 @@ public class SatelliteManager {
         launcher.consumeLaunchResources();
         list.remove(0);
         launched.get(team, ObjectIntMap::new).increment(type, 1);
-        // 发射特效（在发射中枢位置，全图广播）：自定义尾焰喷射 + 冲击波 + 爆炸烟雾
+        // 发射特效（在发射中枢位置，全图广播）：原版火箭发射喷发 + 自定义尾焰 + 冲击波/烟雾
+        Call.effect(Fx.padlaunch, launcher.x, launcher.y, 0f, null);
         Call.effect(launchFx, launcher.x, launcher.y + 10f, 0f, null);
         Call.effect(Fx.shockwave, launcher.x, launcher.y, 0f, null);
         Call.effect(Fx.explosion, launcher.x, launcher.y, 0f, null);

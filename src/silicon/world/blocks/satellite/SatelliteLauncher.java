@@ -355,19 +355,19 @@ public class SatelliteLauncher extends Block {
                         () -> produced ? 1f : Math.min(1f, progress / total)))
                         .height(18f).growX();
                 info.row();
-                // 石油条（与其他 bar 长度统一，带说明文字：石油燃料 x/1000）
+                // 石油条（与其他 bar 长度统一，带说明文字：石油燃料 x/1000；高度与原版 bar 一致避免文字溢出重叠）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), FUEL_OIL),
                         () -> Pal.ammo,
                         () -> Math.min(1f, liquids.get(Liquids.oil) / FUEL_OIL)))
-                        .height(14f).growX();
+                        .height(18f).growX();
                 info.row();
                 // 电力条（单独显示：发射缓冲 Bar，与其他 bar 长度统一，带说明文字：发射缓冲 xx%）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.power", (int) (battery / LAUNCH_POWER * 100f)),
                         () -> Pal.power,
                         () -> battery / LAUNCH_POWER))
-                        .height(14f).growX();
+                        .height(18f).growX();
             }).growX().left();
         }
 

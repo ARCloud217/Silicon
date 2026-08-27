@@ -16,6 +16,7 @@ import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.gen.Player;
 import mindustry.gen.Sounds;
+import mindustry.graphics.Layer;
 import mindustry.graphics.Pal;
 import silicon.content.Statuses;
 import silicon.world.blocks.satellite.SatelliteConsole;
@@ -44,6 +45,8 @@ public class SatelliteManager {
 
     /** 卫星发射特效：尾焰粒子向上喷射 + 上升烟柱（发射时在发射位置播放，全图广播） */
     public static final Effect launchFx = new Effect(60f, e -> {
+        // 特效层（盖过方块，确保可见）
+        Draw.z(Layer.effect);
         // 尾焰：粒子向上喷射（90° 向上，轻微散射）
         Draw.color(Pal.lightOrange, Pal.ammo, e.fin());
         for (int i = 0; i < 6; i++) {

@@ -347,6 +347,13 @@ public class SatelliteLauncher extends Block {
                 // 需求材料 + 石油（图标横排，需求数量角标覆盖在物品下边缘居中；切换种类即时重建）
                 info.add(materialTable);
                 info.row();
+                // 可发射提示：位于物品显示（材料行）下方，离开一段距离；随材料行布局活动（非固定位置），生产完成时显示
+                Label readyLabel = new Label(() -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready") : "");
+                readyLabel.setStyle(Styles.outlineLabel);
+                readyLabel.setColor(Pal.accent);
+                readyLabel.setFontScale(0.8f);
+                info.add(readyLabel).padTop(8f).left().growX();
+                info.row();
                 // 卫星制造进度条（上方留白与原版一致，避免与材料行/相邻 bar 挤在一起）
                 float total = produceTime(selectedType);
                 info.add(new Bar(

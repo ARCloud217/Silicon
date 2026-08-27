@@ -1,14 +1,22 @@
 package silicon.util;
 
 import arc.Core;
+import arc.graphics.Color;
+import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.Fill;
+import arc.math.Angles;
+import arc.math.Mathf;
 import arc.struct.ObjectIntMap;
 import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import mindustry.content.Fx;
+import mindustry.entities.Effect;
 import mindustry.game.Team;
 import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.gen.Player;
+import mindustry.gen.Sounds;
+import mindustry.graphics.Pal;
 import silicon.content.Statuses;
 import silicon.world.blocks.satellite.SatelliteConsole;
 import silicon.world.blocks.satellite.SatelliteLauncher;
@@ -33,6 +41,20 @@ public class SatelliteManager {
     private static final ObjectMap<Team, ObjectIntMap<Integer>> launched = new ObjectMap<>();
     /** 已生产完成、待发射的中枢列表（按队伍） */
     private static final ObjectMap<Team, Seq<SatelliteLauncher.SatelliteLauncherBuild>> readyLaunchers = new ObjectMap<>();
+
+    /** 卫星发射特效：尾焰粒子向上喷射 + 上升烟柱（发射时在发射位置播放，全图广播） */
+    public static final Effect launchFx = new Effect(60f, e -> {
+        // 尾焰：粒子向上喷射（90° 向上，轻微散射）
+        Draw.color(Pal.lightOrange, Pal.ammo, e.fin());
+        for (int i = 0; i < 6; i++) {
+            float ang = 90f + Mathf.range(18f);
+            float len = e.fin() * 45f;
+            Fill.circle(e.x + Angles.trnsx(ang, len) * 0.6f, e.y + Angles.trnsy(ang, len) * 0.8f, e.fout() * 3.5f);
+        }
+        // 烟柱：向上漂散
+        Draw.color(Color.gray, Color.lightGray, e.fin());
+        Fill.circle(e.x + Mathf.range(1.5f), e.y + e.fin() * 35f, e.fout() * 5f);
+    });
 
     /** 世界加载时重置（卫星不跨存档） */
     public static void reset() {
@@ -93,11 +115,14 @@ public class SatelliteManager {
         launcher.consumeLaunchResources();
         list.remove(0);
         launched.get(team, ObjectIntMap::new).increment(type, 1);
-        // 发射爆炸特效（在发射中枢位置，全图广播）
+        // 发射特效（在发射中枢位置，全图广播）：自定义尾焰喷射 + 冲击波 + 爆炸烟雾
+        Call.effect(launchFx, launcher.x, launcher.y + 10f, 0f, null);
         Call.effect(Fx.shockwave, launcher.x, launcher.y, 0f, null);
         Call.effect(Fx.explosion, launcher.x, launcher.y, 0f, null);
         Call.effect(Fx.smokeCloud, launcher.x, launcher.y, 0f, null);
         Call.effect(Fx.bigShockwave, launcher.x, launcher.y, 0f, null);
+        // 发射音效（核心发射音，全图可听）
+        Call.soundAt(Sounds.coreLaunch, launcher.x, launcher.y, 1f, 1f);
         // 给发射队伍的全图玩家应用卫星 buff（显示用，无属性；其他队伍的玩家不显示）
         for (Player p : Groups.player) {
             if (p.team() == team && p.unit() != null) {

@@ -35,28 +35,28 @@ import silicon.util.SatelliteManager;
 import static mindustry.type.ItemStack.with;
 
 /**
- * 鍗槦鍙戝皠涓灑锛?脳3锛夛細閫夋嫨鍗槦绉嶇被骞剁敓浜у崼鏄燂紝鍚屾椂璐熻矗鍙戝皠鎵€闇€鐨勭噧鏂欎笌鐢靛姏鍌ㄥ銆?
- * - 鐢熶骇鏉愭枡锛堥€夋嫨绉嶇被鍚庡紑濮嬬敓浜ф椂涓€娆℃€ф秷鑰楋級锛氶摐 5000銆佺 5000銆佸閽?1250銆佸法娴悎閲?1250銆佸喎鍐绘恫 1000
- * - 鐢熶骇闃舵娑堣€?5000 鐢靛姏/绉掞紙鐢电綉锛夛紱姣忎腑鏋㈠悓鏃跺彧鑳界敓浜?1 棰楋紝瀹屾垚鍚庡仠姝㈣€楃數骞舵樉绀恒€屽彲鍙戝皠鍗槦銆嶆彁绀?
- * - 鍐呯疆 10000 鍙戝皠缂撳啿锛堢數缃戜緵鐢靛厖鐢碉級锛涘彂灏勭噧鏂欑煶娌癸紙1000锛変害鍌ㄥ瓨鍦ㄦ湰涓灑
- * - 鍗槦鐢卞崼鏄熸帶鍒跺彴鐐瑰嚮鍙戝皠
+ * 卫星发射中枢（3×3）：选择卫星种类并生产卫星，同时负责发射所需的燃料与电力储备。
+ * - 生产材料（选择种类后开始生产时一次性消耗）：铜 5000、硅 5000、塑钢 1250、巨浪合金 1250、冷冻液 1000
+ * - 生产阶段消耗 5000 电力/秒（电网）；每中枢同时只能生产 1 颗，完成后停止耗电并显示「可发射卫星」提示
+ * - 内置 10000 发射缓冲（电网供电充电）；发射燃料石油（1000）亦储存在本中枢
+ * - 卫星由卫星控制台点击发射
  */
 public class SatelliteLauncher extends Block {
-    /** 淇″彿鍗槦鐢熶骇鑰楁椂锛坱ick锛夛紝60 绉?*/
+    /** 信号卫星生产耗时（tick），60 秒 */
     public static final float PRODUCE_TIME_SIGNAL = 60f * 60f;
-    /** 娴嬭瘯鍗槦鐢熶骇鑰楁椂锛坱ick锛夛紝1 绉?*/
+    /** 测试卫星生产耗时（tick），1 秒 */
     public static final float PRODUCE_TIME_TEST = 60f;
-    /** 鐢熶骇闃舵鑰楃數锛?绉掞紝Mindustry 鎸?/60 tick 璁★級 */
+    /** 生产阶段耗电（/秒，Mindustry 按 /60 tick 计） */
     public static final float POWER_CONSUMPTION = 5000f / 60f;
-    /** 鍙戝皠鎵€闇€缂撳啿鐢靛姏 */
+    /** 发射所需缓冲电力 */
     public static final float LAUNCH_POWER = 10000f;
-    /** 缂撳啿鍏呯數閫熺巼锛?绉掞級锛氱數缃戜緵鐢垫椂鍚戠紦鍐插厖鐢?*/
+    /** 缓冲充电速率（/秒）：电网供电时向缓冲充电 */
     public static final float CHARGE_RATE = 2000f / 60f;
-    /** 鍙戝皠鎵€闇€鐭虫补鐕冩枡 */
+    /** 发射所需石油燃料 */
     public static final int FUEL_OIL = 1000;
-    /** 鐢熶骇鎵€闇€鍐峰喕娑?*/
+    /** 生产所需冷冻液 */
     public static final int COST_CRYOFLUID = 1000;
-    /** 鐢熶骇鎵€闇€鐗╁搧鏉愭枡 */
+    /** 生产所需物品材料 */
     public static final ItemStack[] PRODUCTION_ITEMS = with(
             Items.copper, 5000,
             Items.silicon, 5000,
@@ -64,39 +64,39 @@ public class SatelliteLauncher extends Block {
             Items.surgeAlloy, 1250
     );
 
-    /** 鍗槦绉嶇被锛氫俊鍙峰崼鏄?*/
+    /** 卫星种类：信号卫星 */
     public static final int TYPE_SIGNAL = 0;
-    /** 鍗槦绉嶇被锛氭祴璇曞崼鏄燂紙鏉愭枡 1 閾滐紝鏃犲疄闄呮晥鏋滐紝浠呯敤浜庢祴璇曪級 */
+    /** 卫星种类：测试卫星（材料 1 铜，无实际效果，仅用于测试） */
     public static final int TYPE_TEST = 1;
 
-    /** 娴嬭瘯鍗槦鐨勭敓浜ф潗鏂欙紙1 閾滐紝鏃犲喎鍐绘恫锛?*/
+    /** 测试卫星的生产材料（1 铜，无冷冻液） */
     public static final ItemStack[] TEST_PRODUCTION_ITEMS = with(Items.copper, 1);
 
-    /** 鎸夌绫昏繑鍥炵敓浜ф墍闇€鐗╁搧鏉愭枡 */
+    /** 按种类返回生产所需物品材料 */
     public static ItemStack[] productionItems(int type) {
         return type == TYPE_TEST ? TEST_PRODUCTION_ITEMS : PRODUCTION_ITEMS;
     }
 
-    /** 鎸夌绫昏繑鍥炵敓浜ф墍闇€鍐峰喕娑?*/
+    /** 按种类返回生产所需冷冻液 */
     public static int productionCryofluid(int type) {
         return type == TYPE_TEST ? 0 : COST_CRYOFLUID;
     }
 
-    /** 鎸夌绫昏繑鍥炵敓浜ц€楁椂锛堟祴璇曞崼鏄?1 绉掞紝淇″彿鍗槦 60 绉掞級 */
+    /** 按种类返回生产耗时（测试卫星 1 秒，信号卫星 60 秒） */
     public static float produceTime(int type) {
         return type == TYPE_TEST ? PRODUCE_TIME_TEST : PRODUCE_TIME_SIGNAL;
     }
 
-    /** 鏁伴噺鏍煎紡鍖栵紙鍘熺増椋庢牸锛夛細>=1000 鏄剧ず涓?x.xk锛?000鈫?.0k銆?250鈫?.3k銆?000鈫?.0k锛宬 鍚庣紑鐏拌壊锛夛紝灏忎簬 1000 鍘熸牱鏄剧ず */
+    /** 数量格式化（原版风格）：>=1000 显示为 x.xk（5000→5.0k、1250→1.3k、1000→1.0k，k 后缀灰色），小于 1000 原样显示 */
     static String formatCount(int amount) {
         return amount >= 1000
                 ? String.format(Locale.ROOT, "%.1f[gray]k[]", amount / 1000f)
                 : String.valueOf(amount);
     }
 
-    /** 鐗╁搧涓嶈冻鎸囩ず锛堝師鐗堢己澶辨牱寮忥級锛氬綋鏉′欢鎴愮珛鏃讹紝鍦ㄧ墿鍝佸浘鏍囦笂缁樺埗涓€鏉″乏涓婂埌鍙充笅鐨勭孩鑹叉枩绾?*/
+    /** 物品不足指示（原版缺失样式）：当条件成立时，在物品图标上绘制一条左上到右下的红色斜线 */
     static class InsufficientLine extends Element {
-        /** 涓嶈冻鍒ゆ柇鏉′欢锛堟瘡甯ф眰鍊硷級 */
+        /** 不足判断条件（每帧求值） */
         final Boolp condition;
 
         InsufficientLine(Boolp condition) {
@@ -120,9 +120,9 @@ public class SatelliteLauncher extends Block {
         destructible = true;
         update = true;
         configurable = true;
-        // 鐢熶骇闃舵鑰楃數锛堢數缃戠洿鑰楋級锛涘彂灏勭敤 10000 缂撳啿鐢辨湰鏂瑰潡鍏呯數绉疮
+        // 生产阶段耗电（电网直耗）；发射用 10000 缓冲由本方块充电积累
         consumePower(POWER_CONSUMPTION);
-        // 鏉愭枡鍌ㄥ瓨锛堢墿鍝?+ 娑蹭綋锛氱煶娌?鍐峰喕娑诧級
+        // 材料储存（物品 + 液体：石油/冷冻液）
         hasItems = true;
         acceptsItems = true;
         itemCapacity = 5000 + 5000 + 1250 + 1250;
@@ -141,40 +141,40 @@ public class SatelliteLauncher extends Block {
     }
 
     public class SatelliteLauncherBuild extends Building {
-        /** 褰撳墠閫夋嫨鐨勫崼鏄熺绫伙紙0=淇″彿鍗槦锛?*/
+        /** 当前选择的卫星种类（0=信号卫星） */
         public int selectedType = TYPE_SIGNAL;
-        /** 鐢熶骇杩涘害锛坱ick锛?*/
+        /** 生产进度（tick） */
         public float progress = 0f;
-        /** 鍙戝皠缂撳啿鐢甸噺锛?~10000锛岀數缃戜緵鐢垫椂鍏呯數绉疮锛屽彂灏勬椂涓€娆℃€ф秷鑰楋級 */
+        /** 发射缓冲电量（0~10000，电网供电时充电积累，发射时一次性消耗） */
         public float battery = 0f;
-        /** 鏈腑鏋㈡槸鍚﹀凡鐢熶骇瀹屾垚涓€棰楋紙寰呭彂灏勶級 */
+        /** 本中枢是否已生产完成一颗（待发射） */
         public boolean produced = false;
-        /** 鏄惁宸茬櫥璁板埌寰呭彂灏勯槦鍒?*/
+        /** 是否已登记到待发射队列 */
         private boolean registered = false;
-        /** 閫変腑闈㈡澘闇€姹傛潗鏂欒锛堝垏鎹㈢绫绘椂閲嶅缓锛?*/
+        /** 选中面板需求材料行（切换种类时重建） */
         private final Table materialTable = new Table();
-        /** 涓婃鏄剧ず鐨勭绫伙紙鐢ㄤ簬妫€娴嬪垏鎹㈠苟閲嶅缓鏉愭枡琛岋級 */
+        /** 上次显示的种类（用于检测切换并重建材料行） */
         private int lastShownType = -1;
 
         @Override
         public void updateTile() {
-            // 鏉愭枡琛岄殢绉嶇被瀹炴椂鏇存柊锛堝垏鎹㈢绫诲嵆鏃堕噸寤猴級
+            // 材料行随种类实时更新（切换种类即时重建）
             if (selectedType != lastShownType) {
                 lastShownType = selectedType;
                 rebuildMaterialTable();
             }
-            // 鐢电綉鏈夌數鏃跺悜鍙戝皠缂撳啿鍏呯數锛堝彂灏勫偍澶囷級
+            // 电网有电时向发射缓冲充电（发射储备）
             if (power != null && power.status > 0.001f && battery < LAUNCH_POWER) {
                 battery = Math.min(LAUNCH_POWER, battery + CHARGE_RATE * delta());
             }
             if (produced) {
-                // 淇濇寔鐧昏锛堝彂灏勫悗鐢?SatelliteManager 閲嶇疆锛?
+                // 保持登记（发射后由 SatelliteManager 重置）
                 register();
                 return;
             }
-            // 鏂數涓嶇敓浜э紙杩涘害淇濈暀锛?
+            // 断电不生产（进度保留）
             if (power == null || power.status <= 0.001f) return;
-            // 鐢熶骇寮€濮嬶細妫€鏌ュ苟涓€娆℃€ф墸闄ゆ潗鏂欙紙杩涘害 > 0 琛ㄧず宸叉墸锛?
+            // 生产开始：检查并一次性扣除材料（进度 > 0 表示已扣）
             if (progress <= 0f) {
                 if (!hasProductionMaterials()) return;
                 consumeProductionMaterials();
@@ -187,7 +187,7 @@ public class SatelliteLauncher extends Block {
             }
         }
 
-        /** 鐢熶骇鏉愭枡鏄惁鍏呰冻锛堟寜褰撳墠鎵€閫夌绫伙細鐗╁搧 + 鍐峰喕娑诧級 */
+        /** 生产材料是否充足（按当前所选种类：物品 + 冷冻液） */
         public boolean hasProductionMaterials() {
             for (ItemStack stack : productionItems(selectedType)) {
                 if (items.get(stack.item) < stack.amount) return false;
@@ -195,7 +195,7 @@ public class SatelliteLauncher extends Block {
             return liquids.get(Liquids.cryofluid) >= productionCryofluid(selectedType);
         }
 
-        /** 鎵ｉ櫎鐢熶骇鏉愭枡锛堜竴娆℃€э紝鎸夊綋鍓嶆墍閫夌绫伙級 */
+        /** 扣除生产材料（一次性，按当前所选种类） */
         public void consumeProductionMaterials() {
             for (ItemStack stack : productionItems(selectedType)) {
                 items.remove(stack.item, stack.amount);
@@ -217,7 +217,7 @@ public class SatelliteLauncher extends Block {
             }
         }
 
-        /** 鐗╁搧杈撳叆锛氫粎鎺ュ彈鐢熶骇鎵€闇€鏉愭枡锛堥摐/纭?濉戦挗/宸ㄦ氮鍚堥噾锛夛紝涓旀湭婊″簱瀛橈紙override 榛樿鐨?consumesItem 妫€鏌ワ級 */
+        /** 物品输入：仅接受生产所需材料（铜/硅/塑钢/巨浪合金），且未满库存（override 默认的 consumesItem 检查） */
         @Override
         public boolean acceptItem(Building source, Item item) {
             if (items.get(item) >= itemCapacity) return false;
@@ -227,30 +227,30 @@ public class SatelliteLauncher extends Block {
             return false;
         }
 
-        /** 娑蹭綋杈撳叆锛氫粎鎺ュ彈鐭虫补锛堢噧鏂欙級涓庡喎鍐绘恫锛堢敓浜ф潗鏂欙級 */
+        /** 液体输入：仅接受石油（燃料）与冷冻液（生产材料） */
         @Override
         public boolean acceptLiquid(Building source, Liquid liquid) {
             if (liquids.get(liquid) >= liquidCapacity) return false;
             return liquid == Liquids.oil || liquid == Liquids.cryofluid;
         }
 
-        /** 鍙戝皠鍓嶈祫婧愭鏌ワ細杩斿洖 LAUNCH_OK 鎴栫己澶卞師鍥?*/
+        /** 发射前资源检查：返回 LAUNCH_OK 或缺失原因 */
         public int checkLaunchResources() {
             if (liquids.get(Liquids.oil) < FUEL_OIL) return SatelliteManager.LAUNCH_NO_FUEL;
             if (battery < LAUNCH_POWER) return SatelliteManager.LAUNCH_NO_POWER;
             return SatelliteManager.LAUNCH_OK;
         }
 
-        /** 鍙戝皠锛氭墸闄ょ噧鏂欎笌缂撳啿鐢靛姏锛岄噸缃湰涓灑浣垮叾鍙啀鐢熶骇锛堢敱 SatelliteManager 璋冪敤锛?*/
+        /** 发射：扣除燃料与缓冲电力，重置本中枢使其可再生产（由 SatelliteManager 调用） */
         public void consumeLaunchResources() {
             liquids.remove(Liquids.oil, FUEL_OIL);
             battery = Math.max(0f, battery - LAUNCH_POWER);
-            // 鍚屾浠庣數缃戠數姹犳墸闄わ紙妯℃嫙鐪熷疄娑堣€楋紝鐢电綉鏃犵數姹犲垯浠呮竻绌烘湰缂撳啿锛?
+            // 同步从电网电池扣除（模拟真实消耗，电网无电池则仅清空本缓冲）
             if (power != null) power.graph.useBatteries(LAUNCH_POWER);
             resetForLaunch();
         }
 
-        /** 鍗槦鍙戝皠鍚庨噸缃紝浣挎湰涓灑鍙啀鐢熶骇 */
+        /** 卫星发射后重置，使本中枢可再生产 */
         public void resetForLaunch() {
             produced = false;
             progress = 0f;
@@ -260,7 +260,7 @@ public class SatelliteLauncher extends Block {
         @Override
         public void onProximityAdded() {
             super.onProximityAdded();
-            // 璇绘。鎭㈠锛氬凡鐢熶骇瀹屾垚鐨勪腑鏋㈤噸鏂扮櫥璁?
+            // 读档恢复：已生产完成的中枢重新登记
             if (produced) register();
         }
 
@@ -270,7 +270,7 @@ public class SatelliteLauncher extends Block {
             unregister();
         }
 
-        /** 缁樺埗锛氱敓浜у畬鎴愭椂鏂瑰潡涓婃柟鎮诞銆屽彲鍙戝皠銆嶆彁绀猴紙涓嶇粯鍒跺父椹诲崼鏄熷浘鏍囷紝鎸夊師鐗堢畝娲佹樉绀猴級 */
+        /** 绘制：生产完成时方块上方悬浮「可发射」提示（不绘制常驻卫星图标，按原版简洁显示） */
         @Override
         public void draw() {
             super.draw();
@@ -281,16 +281,16 @@ public class SatelliteLauncher extends Block {
             }
         }
 
-        /** 鐘舵€佹樉绀猴細鍘熺増鐘舵€佹潯锛堢己鏉愭枡/鏂數鑷姩鐫€鑹诧級+ 鍘熺増椋庢牸鍒堕€犺繘搴︽潯 + 鐭虫补涓嶈冻鍥炬爣 */
+        /** 状态显示：原版状态条（缺材料/断电自动着色）+ 原版风格制造进度条 + 石油不足图标 */
         @Override
         public void drawStatus() {
-            // 鍘熺増鐘舵€佹潯锛氬簳閮ㄧ伆鑹叉柟鍧?+ 鐘舵€佽壊锛堢己鏉愭枡=绾€佷緵鐢垫甯?缁匡級锛岀己澶辩墿鍝佺敱姝ゆ樉绀?
+            // 原版状态条：底部灰色方块 + 状态色（缺材料=红、供电正常=绿），缺失物品由此显示
             super.drawStatus();
             if (produced) {
                 Draw.reset();
                 return;
             }
-            // 鍒堕€犺繘搴︽潯锛堝師鐗堥鏍硷細鐏板簳 + 寮鸿皟鑹插～鍏咃紝鏂瑰潡椤堕儴锛?
+            // 制造进度条（原版风格：灰底 + 强调色填充，方块顶部）
             if (power != null && power.status > 0.001f) {
                 float barW = size * 8f - 8f;
                 float barH = 2.5f;
@@ -301,14 +301,14 @@ public class SatelliteLauncher extends Block {
                 Draw.color(Pal.accent);
                 Fill.rect(x - barW / 2f + barW * t / 2f, barY, barW * t, barH);
             }
-            // 鐭虫补涓嶈冻锛氭柟鍧楀乏涓嬭鏄剧ず鐭虫补灏忓浘鏍囷紙鍘熺増缂烘恫浣撻鏍硷級
+            // 石油不足：方块左下角显示石油小图标（原版缺液体风格）
             if (liquids.get(Liquids.oil) < FUEL_OIL) {
                 Draw.rect(Liquids.oil.uiIcon, x - size * 4f + 6f, y - size * 4f + 6f, 8f, 8f);
             }
             Draw.reset();
         }
 
-        /** 閰嶇疆闈㈡澘锛氶€夋嫨鍗槦绉嶇被锛堢敓浜ф墍闇€绉嶇被锛?*/
+        /** 配置面板：选择卫星种类（生产所需种类） */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
@@ -329,24 +329,24 @@ public class SatelliteLauncher extends Block {
             table.add(testBtn).size(200f, 44f).pad(3f);
         }
 
-        /** 褰撳墠绉嶇被鏄剧ず鍚嶏紙bundle 閿級 */
+        /** 当前种类显示名（bundle 键） */
         String typeNameKey() {
             return selectedType == TYPE_TEST
                     ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
-        /** 閫変腑闈㈡澘锛堟寜鍘熺増绌哄啗宸ュ巶鏍峰紡锛夛細闇€姹傛潗鏂?鐭虫补锛堝浘鏍?鏁伴噺瑙掓爣涓嬭竟缂樺眳涓級銆佽繘搴︽潯銆佺煶娌规潯銆佺數鍔涙潯锛堥暱搴︿笌鍘熺増 bar 涓€鑷达級 */
+        /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标下边缘居中）、进度条、石油条、电力条（长度与原版 bar 一致） */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            // info 琛ㄦ拺婊￠潰鏉垮搴︼紝浣垮悇 bar 闀垮害涓庡師鐗堬紙鐢熷懡鍊肩瓑锛塨ar 涓€鑷达紝鑰岄潪闅忕墿鍝佽瀹藉害鍙樺寲
+            // info 表撑满面板宽度，使各 bar 长度与原版（生命值等）bar 一致，而非随物品行宽度变化
             table.table(info -> {
                 info.left();
-                // 闇€姹傛潗鏂?+ 鐭虫补锛堝浘鏍囨í鎺掞紝闇€姹傛暟閲忚鏍囪鐩栧湪鐗╁搧涓嬭竟缂樺眳涓紱鍒囨崲绉嶇被鍗虫椂閲嶅缓锛?
+                // 需求材料 + 石油（图标横排，需求数量角标覆盖在物品下边缘居中；切换种类即时重建）
                 info.add(materialTable);
                 info.row();
-                // 鍗槦鍒堕€犺繘搴︽潯
+                // 卫星制造进度条
                 float total = produceTime(selectedType);
                 info.add(new Bar(
                         () -> produced ? Core.bundle.get("block.silicon-satellite-launcher.ready")
@@ -355,14 +355,14 @@ public class SatelliteLauncher extends Block {
                         () -> produced ? 1f : Math.min(1f, progress / total)))
                         .height(18f).growX();
                 info.row();
-                // 鐭虫补鏉★紙涓庡叾浠?bar 闀垮害缁熶竴锛屽甫璇存槑鏂囧瓧锛氱煶娌圭噧鏂?x/1000锛?
+                // 石油条（与其他 bar 长度统一，带说明文字：石油燃料 x/1000）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), FUEL_OIL),
                         () -> Pal.ammo,
                         () -> Math.min(1f, liquids.get(Liquids.oil) / FUEL_OIL)))
                         .height(14f).growX();
                 info.row();
-                // 鐢靛姏鏉★紙鍗曠嫭鏄剧ず锛氬彂灏勭紦鍐?Bar锛屼笌鍏朵粬 bar 闀垮害缁熶竴锛屽甫璇存槑鏂囧瓧锛氬彂灏勭紦鍐?xx%锛?
+                // 电力条（单独显示：发射缓冲 Bar，与其他 bar 长度统一，带说明文字：发射缓冲 xx%）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.power", (int) (battery / LAUNCH_POWER * 100f)),
                         () -> Pal.power,
@@ -371,7 +371,7 @@ public class SatelliteLauncher extends Block {
             }).growX().left();
         }
 
-        /** 閲嶅缓闇€姹傛潗鏂欒锛堟寜鍘熺増锛氬浘鏍?+ 闇€姹傛暟閲忚鏍囷紙宸︿笅瑙掞紝鍗冧綅 k 鏍煎紡锛夛紝涓嶈冻鏃剁孩鑹叉枩绾匡紱鍒囨崲绉嶇被鍗虫椂閲嶅缓锛?*/
+        /** 重建需求材料行（按原版：图标 + 需求数量角标（左下角，千位 k 格式），不足时红色斜线；切换种类即时重建） */
         void rebuildMaterialTable() {
             materialTable.clearChildren();
             materialTable.left();
@@ -399,7 +399,7 @@ public class SatelliteLauncher extends Block {
                     ).size(40f);
                 }).padRight(4f);
             }
-            // 鐭虫补锛堝彂灏勭噧鏂欙級锛氬悓鏍峰紡锛岄渶姹傛暟閲?1000 瑙掓爣宸︿笅瑙掞紝涓嶈冻绾㈡枩绾?
+            // 石油（发射燃料）：同样式，需求数量 1000 角标左下角，不足红斜线
             materialTable.table(r -> {
                 r.left();
                 r.stack(
@@ -431,4 +431,3 @@ public class SatelliteLauncher extends Block {
         }
     }
 }
-

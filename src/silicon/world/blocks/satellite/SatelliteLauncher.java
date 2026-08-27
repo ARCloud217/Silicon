@@ -306,15 +306,16 @@ public class SatelliteLauncher extends Block {
                     ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
-        /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标下边缘居中）、进度条、石油条、电力条（长度统一） */
+        /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标下边缘居中）、进度条、石油条、电力条（长度与原版 bar 一致） */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
+            // info 表撑满面板宽度，使各 bar 长度与原版（生命值等）bar 一致，而非随物品行宽度变化
             table.table(info -> {
                 info.left();
                 // 需求材料 + 石油（图标横排，需求数量角标覆盖在物品下边缘居中；切换种类即时重建）
-                info.add(materialTable).growX();
+                info.add(materialTable);
                 info.row();
                 // 卫星制造进度条
                 float total = produceTime(selectedType);
@@ -338,7 +339,7 @@ public class SatelliteLauncher extends Block {
                         () -> Pal.power,
                         () -> battery / LAUNCH_POWER))
                         .height(14f).growX();
-            }).left();
+            }).growX().left();
         }
 
         /** 重建需求材料行（按原版：图标 + 需求数量角标覆盖在右下角；石油同样式加入；切换种类即时重建） */

@@ -351,6 +351,51 @@ public class UniversalJunction extends Block {
             return true;
         }
 
+        // ---------- 组号系统（零冗余） ----------
+
+        /**
+         * 规范化组号：将 groups[4] 中的组号重新编号为连续的 0,1,2,...
+         * groups[d]: 0=最高, 1, 2, 3=最低, -1=禁用
+         */
+        void canonicalizeGroups(int in, int[] groups) {
+            int[] map = new int[5]; // 原组号 → 规范组号
+            java.util.Arrays.fill(map, -1);
+            int next = 0;
+            for (int g = 0; g <= 3; g++) {
+                boolean used = false;
+                for (int d = 0; d < 4; d++) {
+                    if (groups[d] == g) { used = true; break; }
+                }
+                if (used) map[g] = next++;
+            }
+            for (int d = 0; d < 4; d++) {
+                groups[d] = groups[d] < 0 ? -1 : map[groups[d]];
+            }
+        }
+
+        /** 组号 → weights：0→4, 1→3, 2→2, 3→1, -1→0 */
+        void groupsToWeights(int in, int[] groups) {
+            for (int d = 0; d < 4; d++) {
+                weights[in][d] = groups[d] < 0 ? 0 : 4 - groups[d];
+            }
+        }
+
+        /** weights → 组号（用于 UI 初始化） */
+        int[] weightsToTiers(int in) {
+            int[] tiers = new int[4];
+            java.util.TreeSet<Integer> vals = new java.util.TreeSet<>(java.util.Comparator.reverseOrder());
+            for (int d = 0; d < 4; d++) {
+                if (weights[in][d] > 0) vals.add(weights[in][d]);
+            }
+            java.util.Map<Integer, Integer> valToTier = new java.util.HashMap<>();
+            int tier = 0;
+            for (int v : vals) valToTier.put(v, tier++);
+            for (int d = 0; d < 4; d++) {
+                tiers[d] = weights[in][d] > 0 ? valToTier.get(weights[in][d]) : -1;
+            }
+            return tiers;
+        }
+
         // ---------- 同值折叠判定（数值相同组折叠为文字，滑块常驻占位、hover/tap 淡入淡出） ----------
 
         /** 与 d 同值的最小方向序（组代表；上=0 最小） */
@@ -676,6 +721,7 @@ public class UniversalJunction extends Block {
         }
 
         /** 新版配置面板：全局优先级 → 按方向覆盖 → 模板管理（精简版） */
+        /** 新版配置面板：预设模式（零冗余）+ 自定义（组号按钮） */
         void buildConfigurationNew(Table table) {
             table.clearChildren();
             Table bg = new Table();
@@ -684,51 +730,60 @@ public class UniversalJunction extends Block {
             table.add(bg);
 
             final int[] selDir = {0};
-            final boolean[] expanded = {false};
-            final boolean[][] tapOpen = new boolean[4][4];
-            final boolean[] hoverOpen = new boolean[4];
-            Table globalTable = new Table();
-            Table noteTable = new Table();
-            Table overrideTable = new Table();
+            Table dirTable = new Table();
             Table templateTable = new Table();
 
-            // 覆盖层折叠文字引用（全局滑块 onChanged 时增量更新）
-            final Label[][] overrideFoldRefs = new Label[4][4];
+            // 当前各方向的组号分配（0=最高, 1, 2, 3=最低, -1=禁用）
+            final int[][] allGroups = new int[4][4];
+            for (int in = 0; in < 4; in++) {
+                int[] t = weightsToTiers(in);
+                System.arraycopy(t, 0, allGroups[in], 0, 4);
+            }
 
-            final Runnable[] r = new Runnable[3]; // r0=全局 r1=覆盖 r2=全量
-
-            // 覆盖提示行
-            Runnable noteR = () -> {
-                noteTable.clearChildren();
-                StringBuilder sb = new StringBuilder();
-                for (int in = 0; in < 4; in++) {
-                    if (isOverride(in)) sb.append(dirName(in)).append("、");
-                }
-                if (sb.length() > 0) {
-                    sb.setLength(sb.length() - 1);
-                    noteTable.add(Core.bundle.format("universaljunction.overriddenDirs", sb.toString())).color(Pal.accent).padBottom(4f).row();
-                }
-                noteTable.invalidateHierarchy();
+            // 预设模式定义：名称 → 各方向的组号分配
+            final String[][] PRESET_KEYS = {
+                {"universaljunction.presetEven"},      // 全均分
+                {"universaljunction.presetRight"},     // 右优先
+                {"universaljunction.presetDown"},      // 下优先
+                {"universaljunction.presetLeft"},      // 左优先
+                {"universaljunction.presetUp"},        // 上优先
+                {"universaljunction.presetRightOnly"}, // 只往右
+                {"universaljunction.presetDownOnly"},  // 只往下
+                {"universaljunction.presetLeftOnly"},  // 只往左
+                {"universaljunction.presetUpOnly"},    // 只往上
+            };
+            final int[][] PRESET_GROUPS = {
+                {0, 0, 0, 0},  // 全均分
+                {0, 1, 1, 1},  // 右优先
+                {1, 0, 1, 1},  // 下优先
+                {1, 1, 0, 1},  // 左优先
+                {1, 1, 1, 0},  // 上优先
+                {0, -1, -1, -1}, // 只往右
+                {-1, 0, -1, -1}, // 只往下
+                {-1, -1, 0, -1}, // 只往左
+                {-1, -1, -1, 0}, // 只往上
             };
 
-            // 增量更新覆盖层折叠文字
-            Runnable updateOverrideFold = () -> {
+            // 组号标签和颜色
+            final String[] GROUP_LABELS = {"1组", "2组", "3组", "4组"};
+            final Color[] GROUP_COLORS = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray};
+
+            // 应用预设到指定输入方向
+            java.util.function.BiConsumer<Integer, int[]> applyPreset = (in, preset) -> {
+                System.arraycopy(preset, 0, allGroups[in], 0, 4);
+                canonicalizeGroups(in, allGroups[in]);
+                // 同步到 weights
+                groupsToWeights(in, allGroups[in]);
+            };
+
+            // 重建方向配置区
+            final Runnable[] rDir = new Runnable[1];
+            rDir[0] = () -> {
+                dirTable.clearChildren();
                 int in = selDir[0];
-                for (int d = 0; d < 4; d++) {
-                    Label foldL = overrideFoldRefs[in][d];
-                    if (foldL == null) continue;
-                    foldL.setText("▾ " + foldText(weights[in], d));
-                    foldL.setColor(weights[in][d] == 0 ? Color.red : Color.white);
-                }
-            };
 
-            // 重建覆盖层
-            r[1] = () -> {
-                overrideTable.clearChildren();
-                if (!expanded[0]) return;
-
-                // 方向选择按钮（始终可见）
-                overrideTable.table(inputs -> {
+                // 方向选择按钮
+                dirTable.table(inputs -> {
                     inputs.defaults().growX().height(36f).pad(3f);
                     for (int d = 0; d < 4; d++) {
                         final int dir = d;
@@ -737,84 +792,105 @@ public class UniversalJunction extends Block {
                             b.add(dirName(dir));
                         }, () -> {
                             selDir[0] = dir;
-                            r[1].run();
+                            rDir[0].run();
                         }).get();
                         btn.update(() -> btn.setChecked(selDir[0] == dir));
                     }
                 }).padBottom(6f).row();
 
                 // 当前方向说明
-                int in = selDir[0];
-                overrideTable.add(Core.bundle.format("universaljunction.from", dirName(in))).color(Pal.accent).padBottom(4f).row();
+                dirTable.add(Core.bundle.format("universaljunction.from", dirName(in))).color(Pal.accent).padBottom(6f).row();
 
-                // 4个输出方向滑块
-                for (int d = 0; d < 4; d++) {
-                    final int out = d;
-                    Table row = new Table();
-                    row.hovered(() -> hoverOpen[out] = true);
-                    row.exited(() -> hoverOpen[out] = false);
-                    renderRow(row, weights[in], out, tapOpen[in], hoverOpen, v -> {
-                        weights[in][out] = v;
-                        for (int k = 0; k < 4; k++) {
-                            if (k == out) continue;
-                            Label foldL = overrideFoldRefs[in][k];
-                            if (foldL != null) {
-                                foldL.setText("▾ " + foldText(weights[in], k));
-                                foldL.setColor(weights[in][k] == 0 ? Color.red : Color.white);
+                // 预设模式选择
+                dirTable.add(Core.bundle.get("universaljunction.presetLabel")).color(Color.lightGray).padBottom(3f).row();
+                dirTable.table(presets -> {
+                    presets.defaults().height(32f).pad(2f);
+                    for (int p = 0; p < PRESET_KEYS.length; p++) {
+                        final int presetIdx = p;
+                        presets.button(Core.bundle.get(PRESET_KEYS[p][0]), Styles.defaultt, () -> {
+                            applyPreset.accept(in, PRESET_GROUPS[presetIdx]);
+                            rDir[0].run();
+                            markConfigDirty();
+                        }).size(72f, 32f);
+                        if (p == 4) presets.row(); // 第二行从第5个开始
+                    }
+                }).padBottom(6f).row();
+
+                // 分隔线
+                dirTable.image(Tex.whiteui).growX().height(1f).color(Pal.gray).padBottom(6f).row();
+
+                // 自定义：4个输出方向的组号按钮
+                dirTable.add(Core.bundle.get("universaljunction.customLabel")).color(Color.lightGray).padBottom(3f).row();
+                dirTable.table(custom -> {
+                    for (int d = 0; d < 4; d++) {
+                        final int out = d;
+                        final int[] group = {allGroups[in][d]};
+                        Table row = new Table();
+
+                        // 方向标签
+                        row.add(dirName(out) + " →").width(50f).height(36f).padRight(4f);
+
+                        // 组号按钮（点击循环）
+                        TextButton groupBtn = new TextButton("", Styles.defaultt);
+                        groupBtn.update(() -> {
+                            if (group[0] < 0) {
+                                groupBtn.setText(Core.bundle.get("universaljunction.tierDisabled"));
+                                groupBtn.setColor(Color.red);
+                            } else {
+                                groupBtn.setText(GROUP_LABELS[group[0]]);
+                                groupBtn.setColor(group[0] < GROUP_COLORS.length ? GROUP_COLORS[group[0]] : Color.white);
                             }
-                        }
-                        noteR.run();
-                        markConfigDirty();
-                    }, overrideFoldRefs[in], null);
-                    overrideTable.add(row).growX().padBottom(2f).row();
-                }
+                        });
+                        groupBtn.clicked(() -> {
+                            // 循环：0→1→2→3→禁用→0
+                            group[0] = (group[0] + 1) % 5;
+                            if (group[0] >= 4) group[0] = -1;
+                            allGroups[in][out] = group[0];
+                            // 规范化并同步
+                            canonicalizeGroups(in, allGroups[in]);
+                            int[] normalized = weightsToTiers(in);
+                            System.arraycopy(normalized, 0, allGroups[in], 0, 4);
+                            group[0] = allGroups[in][out];
+                            groupsToWeights(in, allGroups[in]);
+                            markConfigDirty();
+                        });
+                        row.add(groupBtn).size(80f, 36f).padRight(8f);
 
-                // 快捷按钮：均分 + 清零（精简为2个）
-                overrideTable.table(quick -> {
+                        // 当前权重值
+                        Label valL = new Label("w=" + weights[in][d]);
+                        valL.setColor(Color.gray);
+                        row.add(valL).height(36f);
+
+                        dirTable.add(row).growX().padBottom(3f).row();
+                    }
+                }).padBottom(4f).row();
+
+                // 快捷按钮
+                dirTable.table(quick -> {
                     quick.button(Core.bundle.get("universaljunction.even"), () -> {
-                        setAllFor(selDir[0], 2);
-                        r[1].run();
-                        noteR.run();
-                        flushConfig();
+                        applyPreset.accept(in, PRESET_GROUPS[0]); // 全均分
+                        rDir[0].run();
+                        markConfigDirty();
                     }).size(110f, 32f).pad(3f).tooltip(Core.bundle.get("universaljunction.tipEven"));
                     quick.button(Core.bundle.get("universaljunction.clear"), () -> {
-                        setAllFor(selDir[0], 0);
-                        r[1].run();
-                        noteR.run();
-                        flushConfig();
+                        applyPreset.accept(in, PRESET_GROUPS[5]); // 只往右（实际是清零：全禁用）
+                        // 清零：全部禁用
+                        for (int d = 0; d < 4; d++) allGroups[in][d] = -1;
+                        groupsToWeights(in, allGroups[in]);
+                        rDir[0].run();
+                        markConfigDirty();
                     }).size(110f, 32f).pad(3f).tooltip(Core.bundle.get("universaljunction.tipClear"));
                 }).padTop(4f).row();
-                overrideTable.invalidateHierarchy();
-            };
 
-            // 重建全局层
-            r[0] = () -> {
-                globalTable.clearChildren();
-                final boolean[] gtap = new boolean[4];
-                final boolean[] ghover = new boolean[4];
-                for (int d = 0; d < 4; d++) {
-                    final int out = d;
-                    Table row = new Table();
-                    row.hovered(() -> ghover[out] = true);
-                    row.exited(() -> ghover[out] = false);
-                    renderRow(row, defaultRow, out, gtap, ghover, v -> {
-                        defaultRow[out] = v;
-                        for (int in = 0; in < 4; in++) weights[in][out] = v;
-                        updateOverrideFold.run();
-                        noteR.run();
-                        markConfigDirty();
-                    });
-                    globalTable.add(row).growX().padBottom(2f).row();
-                }
-                // 取消所有覆盖按钮
-                globalTable.button(Core.bundle.get("universaljunction.resetAll"), () -> {
+                // 重置全部按钮
+                dirTable.button(Core.bundle.get("universaljunction.resetAll"), () -> {
                     BaseDialog confirm = new BaseDialog(Core.bundle.get("universaljunction.resetAll"));
                     confirm.cont.add(Core.bundle.get("universaljunction.resetAllConfirm")).width(300f).wrap().pad(16f).row();
                     confirm.buttons.button(Core.bundle.get("universaljunction.confirm"), Styles.defaultt, () -> {
-                        for (int i = 0; i < 4; i++) resetToDefault(i);
-                        r[1].run();
-                        r[0].run();
-                        noteR.run();
+                        for (int i = 0; i < 4; i++) {
+                            applyPreset.accept(i, PRESET_GROUPS[0]); // 全均分
+                        }
+                        rDir[0].run();
                         table.invalidateHierarchy();
                         flushConfig();
                         confirm.hide();
@@ -825,11 +901,10 @@ public class UniversalJunction extends Block {
                 }).size(220f, 32f).padTop(6f);
             };
 
-            // 重建模板区（始终可见，无管理 toggle）
+            // 重建模板区
             final Runnable[] rTpl = new Runnable[1];
             rTpl[0] = () -> {
                 templateTable.clearChildren();
-                // 保存按钮
                 templateTable.button(Core.bundle.get("universaljunction.save"), () -> {
                     ui.showTextInput("", Core.bundle.get("universaljunction.saveTitle"), 12, "", text -> {
                         String name = text.trim();
@@ -840,7 +915,6 @@ public class UniversalJunction extends Block {
                     });
                 }).size(110f, 36f).padBottom(6f).row();
 
-                // 自定义模板列表（直接展示）
                 java.util.Map<String, int[]> custom = loadTemplates();
                 if (!custom.isEmpty()) {
                     templateTable.add(Core.bundle.get("universaljunction.customTemplates")).color(Pal.accent).padBottom(3f).row();
@@ -851,7 +925,11 @@ public class UniversalJunction extends Block {
                             t.add(clip(name, 10)).left().padRight(8f);
                             t.button(Core.bundle.get("universaljunction.use"), () -> {
                                 applyTemplate(row);
-                                r[2].run();
+                                for (int i = 0; i < 4; i++) {
+                                    int[] n = weightsToTiers(i);
+                                    System.arraycopy(n, 0, allGroups[i], 0, 4);
+                                }
+                                rDir[0].run();
                                 flushConfig();
                             }).size(56f, 28f).pad(2f);
                             t.button(Core.bundle.get("universaljunction.delete"), () -> {
@@ -862,7 +940,6 @@ public class UniversalJunction extends Block {
                     }
                 }
 
-                // 内置模板列表（直接展示）
                 templateTable.add(Core.bundle.get("universaljunction.builtinTemplates")).color(Pal.accent).padBottom(3f).padTop(4f).row();
                 for (int i = 0; i < BUILTIN_TEMPLATE_KEYS.length; i++) {
                     final String name = Core.bundle.get(BUILTIN_TEMPLATE_KEYS[i]);
@@ -871,46 +948,24 @@ public class UniversalJunction extends Block {
                         t.add(name).left().padRight(8f);
                         t.button(Core.bundle.get("universaljunction.use"), () -> {
                             applyTemplate(row);
-                            r[2].run();
+                            for (int j = 0; j < 4; j++) {
+                                int[] n = weightsToTiers(j);
+                                System.arraycopy(n, 0, allGroups[j], 0, 4);
+                            }
+                            rDir[0].run();
                             flushConfig();
                         }).size(56f, 28f).pad(2f);
                     }).padBottom(3f).row();
                 }
             };
 
-            // 全量重建
-            r[2] = () -> {
-                r[0].run();
-                noteR.run();
-                r[1].run();
-                rTpl[0].run();
-                table.invalidateHierarchy();
-            };
-
-            // ====== 布局：全局优先级 → 覆盖区 → 模板区 ======
-
-            bg.add(Core.bundle.get("universaljunction.global")).color(Pal.accent).growX().padBottom(4f).row();
-            bg.add(noteTable).padBottom(2f).row();
-            bg.add(globalTable).growX().padBottom(6f).row();
-
+            // ====== 布局 ======
+            bg.add(Core.bundle.get("universaljunction.tierHint")).color(Color.gray).padBottom(6f).row();
+            bg.add(dirTable).growX().padBottom(6f).row();
             bg.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(4f).padBottom(4f).row();
-
-            // 覆盖区折叠开关
-            TextButton fold = new TextButton("", Styles.defaultt);
-            fold.update(() -> fold.setText(Core.bundle.get(expanded[0] ? "universaljunction.collapse" : "universaljunction.expand")));
-            fold.clicked(() -> {
-                expanded[0] = !expanded[0];
-                r[1].run();
-            });
-            bg.add(fold).size(220f, 34f).padTop(2f).row();
-            bg.add(overrideTable).growX().padTop(4f);
-
-            bg.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(4f).row();
-
-            // 模板区（始终可见）
             bg.add(templateTable).padBottom(4f).row();
 
-            r[2].run(); // 初始渲染
+            rDir[0].run();
         }
 
         /** 经典配置面板：模板一键应用 + 全局输出优先级 + 按方向覆盖（折叠高级层） */

@@ -728,284 +728,72 @@ public class UniversalJunction extends Block {
             }
         }
 
-        /** 新版配置面板 v7：垂直列表 + 点击选择移动 */
+        /** 新版配置面板 v8：最简拖拽测试 */
         void showConfigDialog() {
             BaseDialog dialog = new BaseDialog(Core.bundle.get("universaljunction.title"));
             dialog.addCloseButton();
 
-            final int[] selDir = {0};
-            final int[][] allGroups = new int[4][4];
-            for (int in = 0; in < 4; in++) {
-                int[] t = weightsToTiers(in);
-                System.arraycopy(t, 0, allGroups[in], 0, 4);
-            }
-            final int[] selectedDir = {-1};
+            final String[] items = {"上", "右"};
+            final int[] order = {0, 1};
+            final int[] dragIdx = {-1};
 
-            final Table listContent = new Table();
-            listContent.background(Tex.pane2);
-            listContent.margin(8f);
+            Table content = new Table();
+            content.background(Tex.pane2);
+            content.margin(8f);
 
-            final Runnable[] rebuild = new Runnable[1];
-            final Runnable safeRebuild = () -> Core.app.post(() -> rebuild[0].run());
+            rebuildBlocks(content, items, order, dragIdx);
 
-            final String[] PRESET_KEYS = {
-                "universaljunction.presetEven", "universaljunction.presetRight",
-                "universaljunction.presetDown", "universaljunction.presetLeft",
-                "universaljunction.presetUp", "universaljunction.presetRightOnly",
-                "universaljunction.presetDownOnly", "universaljunction.presetLeftOnly",
-                "universaljunction.presetUpOnly"
-            };
-            final int[][] PRESET_GROUPS = {
-                {0, 0, 0, 0}, {0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 0, 1}, {1, 1, 1, 0},
-                {0, -1, -1, -1}, {-1, 0, -1, -1}, {-1, -1, 0, -1}, {-1, -1, -1, 0}
-            };
-            final Color[] GC = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray};
-
-            java.util.function.Consumer<int[]> applyPreset = preset -> {
-                int in = selDir[0];
-                System.arraycopy(preset, 0, allGroups[in], 0, 4);
-                canonicalizeGroups(in, allGroups[in]);
-                groupsToWeights(in, allGroups[in]);
-            };
-
-            rebuild[0] = () -> {
-                listContent.clearChildren();
-                int in = selDir[0];
-
-                // 输入方向选择
-                listContent.table(top -> {
-                    top.add(Core.bundle.get("universaljunction.inputDir")).color(Pal.accent).padRight(6f);
-                    for (int d = 0; d < 4; d++) {
-                        final int dir = d;
-                        TextButton btn = new TextButton(dirName(dir), Styles.flatBordert);
-                        btn.clicked(() -> { selDir[0] = dir; safeRebuild.run(); });
-                        btn.update(() -> btn.setChecked(selDir[0] == dir));
-                        top.add(btn).size(64f, 30f).pad(2f);
-                    }
-                }).padBottom(4f).row();
-
-                // 预设按钮
-                listContent.table(presets -> {
-                    for (int p = 0; p < PRESET_KEYS.length; p++) {
-                        final int idx = p;
-                        presets.button(Core.bundle.get(PRESET_KEYS[p]), Styles.flatBordert, () -> {
-                            applyPreset.accept(PRESET_GROUPS[idx]);
-                            safeRebuild.run();
-                            markConfigDirty();
-                        }).size(52f, 24f).pad(1f);
-                    }
-                }).padBottom(4f).row();
-
-                // 分隔线
-                listContent.image(Tex.whiteui).growX().height(1f).color(Pal.gray).padBottom(6f).row();
-
-                // 收集各组方向
-                java.util.List<java.util.List<Integer>> groups = new java.util.ArrayList<>();
-                java.util.Map<Integer, Integer> groupMap = new java.util.HashMap<>();
-                java.util.List<Integer> disabledDirs = new java.util.ArrayList<>();
-                for (int d = 0; d < 4; d++) {
-                    int g = allGroups[in][d];
-                    if (g < 0) {
-                        disabledDirs.add(d);
-                    } else {
-                        if (!groupMap.containsKey(g)) {
-                            groupMap.put(g, groups.size());
-                            groups.add(new java.util.ArrayList<>());
-                        }
-                        groups.get(groupMap.get(g)).add(d);
-                    }
-                }
-
-                // 按组显示
-                for (int gIdx = 0; gIdx < groups.size(); gIdx++) {
-                    final int groupNum = gIdx;
-                    final Color gColor = GC[gIdx % GC.length];
-                    java.util.List<Integer> dirs = groups.get(gIdx);
-
-                    listContent.add(Core.bundle.format("universaljunction.groupN", groupNum + 1)).color(gColor).padBottom(4f).row();
-
-                    Table groupBox = new Table();
-                    groupBox.background(Tex.pane);
-                    groupBox.margin(8f);
-                    groupBox.touchable = Touchable.enabled;
-
-                    for (int d : dirs) {
-                        final int out = d;
-                        Table item = new Table();
-                        item.background(Tex.paneSolid);
-                        item.setColor(gColor);
-                        item.margin(4f);
-                        item.touchable = Touchable.enabled;
-
-                        Label dirLabel = new Label(dirName(out), Styles.defaultLabel);
-                        dirLabel.setFontScale(0.8f);
-                        dirLabel.setColor(Color.white);
-                        Label groupLabel = new Label(Core.bundle.format("universaljunction.groupN", groupNum + 1), Styles.defaultLabel);
-                        groupLabel.setFontScale(0.6f);
-                        groupLabel.setColor(Color.gray);
-
-                        item.add(dirLabel).width(50f).height(24f);
-                        item.add(groupLabel).padLeft(8f);
-
-                        item.addListener(new arc.scene.event.InputListener() {
-                            @Override
-                            public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
-                                if (selectedDir[0] == out) {
-                                    selectedDir[0] = -1;
-                                } else if (selectedDir[0] >= 0) {
-                                    int targetGroup = allGroups[in][out];
-                                    allGroups[in][selectedDir[0]] = targetGroup;
-                                    canonicalizeGroups(in, allGroups[in]);
-                                    int[] norm = weightsToTiers(in);
-                                    System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                    groupsToWeights(in, allGroups[in]);
-                                    selectedDir[0] = -1;
-                                    safeRebuild.run();
-                                    markConfigDirty();
-                                } else {
-                                    selectedDir[0] = out;
-                                }
-                                return true;
-                            }
-                        });
-
-                        item.update(() -> {
-                            if (selectedDir[0] == out) {
-                                item.setColor(Color.yellow);
-                            } else {
-                                item.setColor(gColor);
-                            }
-                        });
-
-                        groupBox.add(item).growX().padBottom(4f).row();
-                    }
-
-                    groupBox.addListener(new arc.scene.event.InputListener() {
-                        @Override
-                        public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
-                            if (selectedDir[0] >= 0) {
-                                allGroups[in][selectedDir[0]] = groupNum;
-                                canonicalizeGroups(in, allGroups[in]);
-                                int[] norm = weightsToTiers(in);
-                                System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                groupsToWeights(in, allGroups[in]);
-                                selectedDir[0] = -1;
-                                safeRebuild.run();
-                                markConfigDirty();
-                                return true;
-                            }
-                            return false;
-                        }
-                    });
-
-                    listContent.add(groupBox).growX().padBottom(8f).row();
-                }
-
-                // 禁用区
-                if (!disabledDirs.isEmpty()) {
-                    listContent.add(Core.bundle.get("universaljunction.tierDisabled")).color(Color.red).padBottom(4f).row();
-                    Table disBox = new Table();
-                    disBox.background(Tex.pane);
-                    disBox.margin(8f);
-                    disBox.touchable = Touchable.enabled;
-
-                    for (int d : disabledDirs) {
-                        final int out = d;
-                        Table item = new Table();
-                        item.background(Tex.paneSolid);
-                        item.setColor(Color.red);
-                        item.margin(4f);
-                        item.touchable = Touchable.enabled;
-
-                        Label dirLabel = new Label(dirName(out), Styles.defaultLabel);
-                        dirLabel.setFontScale(0.8f);
-                        dirLabel.setColor(Color.white);
-                        Label groupLabel = new Label(Core.bundle.get("universaljunction.tierDisabled"), Styles.defaultLabel);
-                        groupLabel.setFontScale(0.6f);
-                        groupLabel.setColor(Color.gray);
-
-                        item.add(dirLabel).width(50f).height(24f);
-                        item.add(groupLabel).padLeft(8f);
-
-                        item.addListener(new arc.scene.event.InputListener() {
-                            @Override
-                            public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
-                                if (selectedDir[0] >= 0) {
-                                    allGroups[in][selectedDir[0]] = -1;
-                                    canonicalizeGroups(in, allGroups[in]);
-                                    int[] norm = weightsToTiers(in);
-                                    System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                    groupsToWeights(in, allGroups[in]);
-                                    selectedDir[0] = -1;
-                                    safeRebuild.run();
-                                    markConfigDirty();
-                                } else {
-                                    allGroups[in][out] = 0;
-                                    canonicalizeGroups(in, allGroups[in]);
-                                    int[] norm = weightsToTiers(in);
-                                    System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                    groupsToWeights(in, allGroups[in]);
-                                    safeRebuild.run();
-                                    markConfigDirty();
-                                }
-                                return true;
-                            }
-                        });
-
-                        item.update(() -> {
-                            if (selectedDir[0] == out) {
-                                item.setColor(Color.yellow);
-                            } else {
-                                item.setColor(Color.red);
-                            }
-                        });
-
-                        disBox.add(item).growX().padBottom(4f).row();
-                    }
-                    listContent.add(disBox).growX().padBottom(8f).row();
-                }
-
-                // 快捷按钮
-                listContent.table(quick -> {
-                    quick.button(Core.bundle.get("universaljunction.even"), Styles.flatBordert, () -> {
-                        applyPreset.accept(PRESET_GROUPS[0]);
-                        safeRebuild.run();
-                        markConfigDirty();
-                    }).size(80f, 28f).pad(2f);
-                    quick.button(Core.bundle.get("universaljunction.clear"), Styles.flatBordert, () -> {
-                        for (int d = 0; d < 4; d++) allGroups[in][d] = -1;
-                        groupsToWeights(in, allGroups[in]);
-                        safeRebuild.run();
-                        markConfigDirty();
-                    }).size(80f, 28f).pad(2f);
-                    quick.button(Core.bundle.get("universaljunction.resetAll"), Styles.flatBordert, () -> {
-                        for (int i = 0; i < 4; i++) {
-                            System.arraycopy(PRESET_GROUPS[0], 0, allGroups[i], 0, 4);
-                            canonicalizeGroups(i, allGroups[i]);
-                            groupsToWeights(i, allGroups[i]);
-                        }
-                        safeRebuild.run();
-                        flushConfig();
-                    }).size(80f, 28f).pad(2f);
-                    quick.button(Core.bundle.get("universaljunction.save"), Styles.flatBordert, () -> {
-                        ui.showTextInput("", Core.bundle.get("universaljunction.saveTitle"), 12, "", text -> {
-                            String name = text.trim();
-                            if (!name.isEmpty()) {
-                                saveTemplate(name, currentTemplate());
-                                safeRebuild.run();
-                            }
-                        });
-                    }).size(80f, 28f).pad(2f);
-                }).padTop(6f).row();
-            };
-
-            rebuild[0].run();
-
-            ScrollPane pane = new ScrollPane(listContent);
-            pane.setFlickScroll(false);
-
-            dialog.cont.add(pane).grow();
+            dialog.cont.add(content).grow();
             dialog.show();
+        }
+
+        void rebuildBlocks(Table content, String[] items, int[] order, int[] dragIdx) {
+            content.clearChildren();
+            for (int i = 0; i < 2; i++) {
+                final int idx = i;
+                final int itemIdx = order[i];
+                Table block = new Table();
+                block.background(Tex.paneSolid);
+                block.setColor(Pal.accent);
+                block.margin(8f);
+                block.touchable = Touchable.enabled;
+
+                Label label = new Label(items[itemIdx], Styles.defaultLabel);
+                label.setFontScale(1.2f);
+                label.setColor(Color.white);
+                block.add(label).width(80f).height(40f);
+
+                block.addListener(new arc.scene.event.InputListener() {
+                    @Override
+                    public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
+                        dragIdx[0] = itemIdx;
+                        block.setColor(Color.yellow);
+                        return true;
+                    }
+
+                    @Override
+                    public void touchUp(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
+                        if (dragIdx[0] < 0) return;
+                        int from = dragIdx[0];
+                        dragIdx[0] = -1;
+
+                        for (int j = 0; j < 2; j++) {
+                            if (order[j] == from) {
+                                order[j] = order[1 - j];
+                                order[1 - j] = from;
+                                break;
+                            }
+                        }
+                        rebuildBlocks(content, items, order, dragIdx);
+                    }
+                });
+
+                block.update(() -> {
+                    block.setColor(dragIdx[0] == itemIdx ? Color.yellow : Pal.accent);
+                });
+
+                content.add(block).size(100f, 50f).pad(10f).row();
+            }
         }
 
         /** 统计指定组的方向数量 */

@@ -767,6 +767,8 @@ public class UniversalJunction extends Block {
 
             // === 重建内容 ===
             final Runnable[] rebuild = new Runnable[1];
+            // 安全重建：延迟到当前事件处理完毕后执行，避免 NPE
+            final Runnable safeRebuild = () -> Core.app.post(() -> rebuild[0].run());
             rebuild[0] = () -> {
                 content.clearChildren();
                 int in = selDir[0];
@@ -779,7 +781,7 @@ public class UniversalJunction extends Block {
                         TextButton btn = new TextButton(dirName(dir), Styles.defaultt);
                         btn.clicked(() -> {
                             selDir[0] = dir;
-                            rebuild[0].run();
+                            safeRebuild.run();
                         });
                         btn.update(() -> {
                             boolean sel = selDir[0] == dir;
@@ -793,7 +795,7 @@ public class UniversalJunction extends Block {
                         final int idx = p;
                         top.button(Core.bundle.get(PRESET_KEYS[p]), Styles.defaultt, () -> {
                             applyPreset.accept(PRESET_GROUPS[idx]);
-                            rebuild[0].run();
+                            safeRebuild.run();
                             markConfigDirty();
                         }).size(56f, 28f).pad(1f);
                         // 第 5 个预设后换行标识（视觉分隔：普通预设 vs Only 预设）
@@ -837,7 +839,7 @@ public class UniversalJunction extends Block {
                         src.setColor(Color.yellow);
                         src.clicked(() -> {
                             dragDir[0] = -1;
-                            rebuild[0].run();
+                            safeRebuild.run();
                         });
                         dragBar.add(src).size(64f, 28f).pad(2f);
                         dragBar.add(Core.bundle.get("universaljunction.dragCancelHint")).color(Color.gray);
@@ -863,7 +865,7 @@ public class UniversalJunction extends Block {
                                 int[] norm = weightsToTiers(in);
                                 System.arraycopy(norm, 0, allGroups[in], 0, 4);
                                 groupsToWeights(in, allGroups[in]);
-                                rebuild[0].run();
+                                safeRebuild.run();
                                 markConfigDirty();
                             }).size(22f, 22f).pad(1f);
                         }).left().row();
@@ -884,11 +886,11 @@ public class UniversalJunction extends Block {
                                         System.arraycopy(norm, 0, allGroups[in], 0, 4);
                                         groupsToWeights(in, allGroups[in]);
                                         dragDir[0] = -1;
-                                        rebuild[0].run();
+                                        safeRebuild.run();
                                         markConfigDirty();
                                     } else {
                                         dragDir[0] = (dragDir[0] == out) ? -1 : out;
-                                        rebuild[0].run();
+                                        safeRebuild.run();
                                     }
                                 });
                                 btns.add(dirBtn).size(60f, 30f);
@@ -919,7 +921,7 @@ public class UniversalJunction extends Block {
                                     int[] norm = weightsToTiers(in);
                                     System.arraycopy(norm, 0, allGroups[in], 0, 4);
                                     groupsToWeights(in, allGroups[in]);
-                                    rebuild[0].run();
+                                    safeRebuild.run();
                                     markConfigDirty();
                                 });
                                 dis.add(dirBtn).size(60f, 28f).pad(2f);
@@ -932,13 +934,13 @@ public class UniversalJunction extends Block {
                 content.table(quick -> {
                     quick.button(Core.bundle.get("universaljunction.even"), () -> {
                         applyPreset.accept(PRESET_GROUPS[0]);
-                        rebuild[0].run();
+                        safeRebuild.run();
                         markConfigDirty();
                     }).size(88f, 28f).pad(2f);
                     quick.button(Core.bundle.get("universaljunction.clear"), () -> {
                         for (int d = 0; d < 4; d++) allGroups[in][d] = -1;
                         groupsToWeights(in, allGroups[in]);
-                        rebuild[0].run();
+                        safeRebuild.run();
                         markConfigDirty();
                     }).size(88f, 28f).pad(2f);
                     quick.button(Core.bundle.get("universaljunction.resetAll"), () -> {
@@ -947,7 +949,7 @@ public class UniversalJunction extends Block {
                             canonicalizeGroups(i, allGroups[i]);
                             groupsToWeights(i, allGroups[i]);
                         }
-                        rebuild[0].run();
+                        safeRebuild.run();
                         flushConfig();
                     }).size(88f, 28f).pad(2f);
                 }).padTop(6f).row();
@@ -960,7 +962,7 @@ public class UniversalJunction extends Block {
                             String name = text.trim();
                             if (!name.isEmpty()) {
                                 saveTemplate(name, currentTemplate());
-                                rebuild[0].run();
+                                safeRebuild.run();
                             }
                         });
                     }).size(80f, 30f);

@@ -20,6 +20,7 @@ import mindustry.content.Items;
 import mindustry.content.Liquids;
 import mindustry.ctype.UnlockableContent;
 import mindustry.gen.Building;
+import mindustry.gen.Tex;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
 import mindustry.type.ItemStack;
@@ -290,16 +291,16 @@ public class SatelliteLauncher extends Block {
                 Draw.reset();
                 return;
             }
-            // 制造进度条（原版风格：灰底 + 强调色填充，方块顶部）
+            // 制造进度条（原版 Bar 背景样式：Tex.bar 圆角灰底 + Tex.barTop 强调色填充，方块顶部）
             if (power != null && power.status > 0.001f) {
                 float barW = size * 8f - 8f;
-                float barH = 2.5f;
+                float barH = 3f;
                 float barY = y + size * 4f + 2f;
                 Draw.color(Pal.gray, 0.7f);
-                Fill.rect(x, barY, barW, barH);
+                Tex.bar.draw(x - barW / 2f, barY - barH / 2f, barW, barH);
                 float t = Math.min(1f, progress / produceTime(selectedType));
                 Draw.color(Pal.accent);
-                Fill.rect(x - barW / 2f + barW * t / 2f, barY, barW * t, barH);
+                Tex.barTop.draw(x - barW / 2f, barY - barH / 2f, barW * t, barH);
             }
             // 石油不足：方块左下角显示石油小图标（原版缺液体风格）
             if (liquids.get(Liquids.oil) < FUEL_OIL) {
@@ -353,21 +354,21 @@ public class SatelliteLauncher extends Block {
                                 : Core.bundle.format("block.silicon-satellite-launcher.progress", (int) (Math.min(1f, progress / total) * 100f)),
                         () -> produced ? Pal.accent : Pal.ammo,
                         () -> produced ? 1f : Math.min(1f, progress / total)))
-                        .height(18f).growX().padTop(4f);
+                        .height(18f).growX().padTop(8f);
                 info.row();
                 // 石油条（与其他 bar 长度统一，带说明文字：石油燃料 x/1000；高度与原版 bar 一致避免文字溢出重叠）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), FUEL_OIL),
                         () -> Pal.ammo,
                         () -> Math.min(1f, liquids.get(Liquids.oil) / FUEL_OIL)))
-                        .height(18f).growX().padTop(4f);
+                        .height(18f).growX().padTop(8f);
                 info.row();
                 // 电力条（单独显示：发射缓冲 Bar，与其他 bar 长度统一，带说明文字：发射缓冲 xx%）
                 info.add(new Bar(
                         () -> Core.bundle.format("block.silicon-satellite-launcher.power", (int) (battery / LAUNCH_POWER * 100f)),
                         () -> Pal.power,
                         () -> battery / LAUNCH_POWER))
-                        .height(18f).growX().padTop(4f);
+                        .height(18f).growX().padTop(8f);
             }).growX().left();
         }
 

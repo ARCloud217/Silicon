@@ -101,7 +101,7 @@ public class PowerProtector extends PowerGenerator {
         addBar("power", (PowerProtectorBuild entity) -> new Bar(() ->
                 Core.bundle.format("bar.power1", entity.status == 1 ?
                         Strings.fixed(entity.getPowerProduction() * 60 * entity.timeScale(), 1) :
-                        Strings.fixed(entity.tickRPower * 60 * entity.timeScale() * entity.efficiency, 1)),
+                        Strings.fixed(entity.tickRPower * 60 * entity.timeScale() * entity.repayStatus(), 1)),
                 () -> Pal.powerBar,
                 () -> entity.productionEfficiency));
 
@@ -191,6 +191,11 @@ public class PowerProtector extends PowerGenerator {
         @Override
         public void updateTile() {
             {
+                // #23 保护/恢复期间免疫外部关停（开关方块、逻辑控制等）：
+                // 被关停会把 status 清零进入空闲态，进而可被直接拆除
+                if (isInProtectionMode() || isInRecoveryMode()) {
+                    if (!enabled) enabled = true;
+                }
                 if (!enabled && status == 0) return;
                 if (!enabled && status != 0) { status = 0; }
                 for (Building b : team.data().buildingTypes.get(block, emptySeq)) {
@@ -252,10 +257,11 @@ public class PowerProtector extends PowerGenerator {
         }
 
         /**
-         * Handles recovery mode logic
+         * Handles recovery mode logic.
+         * 修复：恢复期间不再频繁断开/重连电网，避免电网波动导致物品传输中枢等消费者跳变。
+         * 改为：进入恢复时一次性连接电网并保持，直到恢复完成才断开。
          */
         private void handleRecoveryMode() {
-
 
             // In recovery mode, consume spent power using equal principal method at 1% per second
             if (totalSpentPower > 0) {
@@ -263,14 +269,9 @@ public class PowerProtector extends PowerGenerator {
                 updateTick();
             }
 
-            if (interval.get(60f) && (powerStored.get(self()) <= Mathf.FLOAT_ROUNDING_ERROR ||
-                    powerChanged.get(self()) + tickRPower <= Mathf.FLOAT_ROUNDING_ERROR)) {
-                lastTickRPower = 0;
-                for (int i : power.links.items) {
-                    if (world.build(i) != null && world.build(i) instanceof PowerNode.PowerNodeBuild p && p.power.links.contains(pos())) {
-                        p.configureAny(pos());
-                    }
-                }
+            // 进入恢复时建立电网连接（仅首次或断开后重连），之后保持不中断
+            if (node == null || !power.graph.all.contains(node)) {
+                // 尝试连接电网（如果尚未连接）
                 getLink(team, other -> {
                     node = other;
                     other.power.links.addUnique(pos());
@@ -280,16 +281,17 @@ public class PowerProtector extends PowerGenerator {
                     power.graph.addGraph(other.power.graph);
                 });
             }
+
             // Exit recovery mode when time is up or all spent power is consumed
             if (totalSpentPower <= 0 || Double.isNaN(totalSpentPower)) {
                 status = 0;
                 totalSpentPower = 0f;
                 tickRPower = 0f;
+                // 恢复完成：断开临时电网连接
                 if (node != null) {
                     node.configureAny(pos());
                     node = null;
                 }
-
             }
         }
 
@@ -311,9 +313,9 @@ public class PowerProtector extends PowerGenerator {
                 tickRPower = 0f;
                 return;
             }
-            lastTickRPower = tickRPower * efficiency; // Store the last tick's recovery amount * efficiency
+            lastTickRPower = tickRPower * repayStatus(); // #1 按电网实际交付比例偿还（本块为纯消费，generator efficiency 恒 0 曾致恢复期不耗电）
             // Reduce the current spent power by the recovery amount
-            totalSpentPower -= lastTickRPower; // Reduce the current spent power by the recovery amount * efficiency
+            totalSpentPower -= lastTickRPower;
 
 
             // Also add interest at 1% per second of remaining spent power
@@ -335,6 +337,11 @@ public class PowerProtector extends PowerGenerator {
          */
         public boolean isInProtectionMode() {
             return status == 1;
+        }
+
+        /** #1 恢复偿还的电网交付比例（0~1）：动态消费的实际满足率，替代恒为 0 的 generator efficiency。 */
+        public float repayStatus(){
+            return power == null ? 0f : Mathf.clamp(power.status);
         }
 
 

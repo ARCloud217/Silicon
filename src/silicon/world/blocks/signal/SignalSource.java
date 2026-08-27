@@ -186,7 +186,7 @@ public class SignalSource extends Block {
 
         @Override
         public void read(Reads read, byte revision) {
-            super.read(read, read.b());
+            super.read(read, revision);
             String name = read.str();
             signal = name.isEmpty() ? null : new Signal(name);
         }

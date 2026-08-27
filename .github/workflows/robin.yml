@@ -1,12 +1,11 @@
 name: Robin
 
 on:
-  # robin action 本体明确拒绝 pull_request_target（防 secrets 暴露给不可信 PR 代码，
-  # 见其日志：pull_request_target is intentionally not supported），
-  # 因此这里只用它「代发 /review 评论」；真正的审查走下方 issue_comment 链路（携带 secrets）
+  # ── 自动触发链路 ──
+  # pull_request_target → bootstrap 发 /review 评论（需 PAT 才能触发 issue_comment）
+  # issue_comment → review 执行真实审查（携带 secrets）
   pull_request_target:
     types: [opened, reopened]
-  # PR 内评论 /review、/robin 可按需（重新）审查；失败用评论或 Actions 重跑重试
   issue_comment:
     types: [created]
 
@@ -19,27 +18,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ① 引导：PR 建立/重开时，以机器人身份在 PR 下代发 /review，
-  #    触发 ② 的 issue_comment 链路完成真实审查（跨 fork 亦可）
+  # ① 引导：PR 建立/重开时，用 PAT 在 PR 下代发 /review 评论，触发 ② 的 issue_comment 链路。
+  #    ⚠️ 必须用 PAT（GH_PAT secret）而非 github.token——GITHUB_TOKEN 发出的评论不会触发
+  #    issue_comment 事件（GitHub 安全机制），导致 review job 永远不跑。
   bootstrap:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
       - name: Ask robin to review
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::GH_PAT secret 未配置，跳过自动审查。添加 PAT（repo scope）到仓库 Secrets 即可启用。"
+            exit 0
+          fi
+          # 去重：检查是否已存在 /review 评论
           existing=$(gh api "repos/$REPO/issues/$NUMBER/comments" \
             --jq '[.[]|select(.user.login=="github-actions[bot]" and (.body|startswith("/review")))]|length')
           if [ "$existing" -eq 0 ]; then
             gh pr comment "$NUMBER" --repo "$REPO" --body "/review"
+            echo "Posted /review comment via PAT"
           else
-            echo "bootstrap comment already present, skipping"
+            echo "Bootstrap comment already present, skipping"
           fi
 
-  # ② 秘钥探测：LLM 三件套配置齐全才继续（secrets 不能直接用于 job.if，须经输出中转）
+  # ② 秘钥探测：LLM 三件套配置齐全才继续
   config-check:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request
     runs-on: ubuntu-latest
@@ -53,9 +59,7 @@ jobs:
           if [ -n "$_BASE" ]; then echo "configured=true" >> "$GITHUB_OUTPUT";
           else echo "configured=false" >> "$GITHUB_OUTPUT"; fi
 
-  # ③ 真实审查：允许维护者手动命令与 github-actions[bot] 自动命令；
-  #    命令别名：/review 与 /robin 均可触发（/summary、/help 由 robin 内部处理不在此列）；
-  #    robin 只通过 API 读 diff 并调用 LLM 出评论，不在 CI 中执行 PR 代码
+  # ③ 真实审查：允许维护者手动命令与 github-actions[bot] 自动命令
   review:
     needs: config-check
     if: >-

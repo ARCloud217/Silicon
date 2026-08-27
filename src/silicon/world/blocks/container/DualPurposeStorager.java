@@ -70,6 +70,21 @@ public class DualPurposeStorager extends StorageBlock {
     // ============================================================
     // 自定义建筑类 - 继承 StorageBuild 以便被原版核心识别并扩容
     // ============================================================
+    // #26 液体状态条：实时跟随当前液体种类与存量（无液体时自动隐藏，注入后自动出现并持续刷新）
+    @Override
+    public void setBars(){
+        super.setBars();
+        addBar("liquid", (DualPurposeStoragerBuild b) -> {
+            if(b.liquids == null || b.liquids.current() == null || b.liquids.currentAmount() <= 0f) return null;
+            Liquid liq = b.liquids.current();
+            return new mindustry.ui.Bar(
+                () -> liq.localizedName,
+                liq::barColor,
+                () -> b.liquids.currentAmount() / liquidCapacity
+            );
+        });
+    }
+
     public class DualPurposeStoragerBuild extends StorageBuild {
 
         private static final float LIQUID_THRESHOLD = 0.001f;

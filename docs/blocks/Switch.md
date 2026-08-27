@@ -28,7 +28,7 @@
 - `conductivePower`: false
 - `update`: true
 - `solid`: true
-- `configurable`: false（使用 tapped() 切换，非配置模式）
+- `configurable`: true（支持按钮式切换配置界面）
 - `rotate`: true
 - `alwaysUnlocked`: true
 - `group`: `BlockGroup.logic`（逻辑组，电力节点式批量交互）
@@ -45,6 +45,7 @@
 2. **状态强制**: 每tick强制设置 `front().enabled = fE`
 3. **切换逻辑**: 点击时切换 `fE`，除非前方是另一个Switch
 4. **选择绘制**: `drawSelect()` 用绿色/红色框显示前方建筑状态
+5. **按钮式配置界面**: `buildConfiguration()` 显示切换式按钮（80×40），按一次切换状态并持续保持（toggle样式，`.checked(fE)` 联动高亮）
 
 ### 配置参数
 
@@ -75,3 +76,4 @@
 |------|------|
 | a0.8.0 | 初始创建 |
 | a0.10.1 | `group` `projectors` → `logic`，归入逻辑组，电力节点式批量操作 |
+| a0.12.1.0 | 新增按钮式切换配置界面（`configurable=true`，80×40 toggle 按钮） |

@@ -12,6 +12,7 @@ import arc.scene.ui.Button;
 import arc.scene.ui.Label;
 import arc.scene.ui.Slider;
 import arc.scene.ui.TextButton;
+import arc.scene.ui.ScrollPane;
 import arc.scene.ui.layout.Table;
 import arc.scene.ui.layout.WidgetGroup;
 import arc.scene.style.TextureRegionDrawable;
@@ -141,6 +142,10 @@ public class UniversalJunction extends Block {
         public final int[] activePriority = new int[4];
         /** 连续满载多少 tick 后才降级到次高优先级 */
         public static final int BLOCK_THRESHOLD = 10;
+
+        // 插入点 UI 状态
+        Table currentInsertBox = null;
+        int currentInsertPosition = -1;
         /** 输入方向轮询指针（各输入方向轮流服务，避免高压方向饿死其他方向） */
         public int inputRobin;
         /** 配置节流间隔（秒）：拖动滑块期间合并多次改动为一次网络发送 */
@@ -714,32 +719,47 @@ public class UniversalJunction extends Block {
         @Override
         public void buildConfiguration(Table table) {
             if (Core.settings.getBool("universaljunction.newUI", false)) {
-                buildConfigurationNew(table);
+                // 新版：齿轮按钮打开全屏配置（参考逻辑处理器的铅笔按钮）
+                table.button(Icon.settings, Styles.cleari, () -> {
+                    showConfigDialog();
+                }).size(40f);
             } else {
                 buildConfigurationLegacy(table);
             }
         }
 
-        /** 新版配置面板：紧凑布局 + 拖拽分组 + 动态组 + 禁用区（全屏对话框） */
-        void buildConfigurationNew(Table table) {
-            // === 全屏对话框 ===
+        /** 新版配置面板 v5：圆角组框 + 实线插入点 + 真拖拽 */
+        void showConfigDialog() {
             BaseDialog dialog = new BaseDialog(Core.bundle.get("universaljunction.title"));
-            dialog.cont.top().margin(8f);
+            // dialog.shouldPause = true; // protected, skip for now
             dialog.addCloseButton();
 
             Table content = new Table();
             content.background(Tex.pane2);
             content.margin(8f);
 
-            // === 状态变量 ===
+            // 状态变量
             final int[] selDir = {0};
             final int[][] allGroups = new int[4][4];
             for (int in = 0; in < 4; in++) {
                 int[] t = weightsToTiers(in);
                 System.arraycopy(t, 0, allGroups[in], 0, 4);
             }
-            // 拖拽状态：-1=无，0~3=已选中方向（等待点击目标组）
             final int[] dragDir = {-1};
+            final int[] dragOriginalGroup = {-1};
+            final int[] dragOriginalGroupSize = {-1};
+
+            // UI 元素引用
+            final Table[] groupBoxes = new Table[4];
+            final Table[] groupContents = new Table[4];
+            final Table[] insertBoxes = new Table[4];
+            final int[] groupBoxCount = {0};
+            final int[] insertCount = {0};
+            final Table floatingBtn = new Table();
+            floatingBtn.background(Tex.paneSolid);
+            floatingBtn.setColor(Color.yellow);
+            floatingBtn.visible = false;
+            floatingBtn.setSize(64f, 32f);
 
             // 预设定义
             final String[] PRESET_KEYS = {
@@ -753,11 +773,8 @@ public class UniversalJunction extends Block {
                 {0, 0, 0, 0}, {0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 0, 1}, {1, 1, 1, 0},
                 {0, -1, -1, -1}, {-1, 0, -1, -1}, {-1, -1, 0, -1}, {-1, -1, -1, 0}
             };
+            final Color[] GC = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray, Color.red};
 
-            // 组颜色（动态组最多 4 个，这里给够）
-            final Color[] DYNAMIC_COLORS = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray};
-
-            // 应用预设（仅当前输入方向）
             java.util.function.Consumer<int[]> applyPreset = preset -> {
                 int in = selDir[0];
                 System.arraycopy(preset, 0, allGroups[in], 0, 4);
@@ -765,24 +782,24 @@ public class UniversalJunction extends Block {
                 groupsToWeights(in, allGroups[in]);
             };
 
-            // === 重建内容 ===
+            // 安全重建
             final Runnable[] rebuild = new Runnable[1];
-            // 安全重建：延迟到当前事件处理完毕后执行，避免 NPE
             final Runnable safeRebuild = () -> Core.app.post(() -> rebuild[0].run());
+
             rebuild[0] = () -> {
                 content.clearChildren();
+                groupBoxCount[0] = 0;
+                insertCount[0] = 0;
                 int in = selDir[0];
 
-                // --- 第一行：输入方向 + 预设（紧凑一行） ---
+                // --- 输入方向选择 ---
                 content.table(top -> {
                     top.add(Core.bundle.get("universaljunction.inputDir")).color(Pal.accent).padRight(6f);
                     for (int d = 0; d < 4; d++) {
                         final int dir = d;
-                        TextButton btn = new TextButton(dirName(dir), Styles.defaultt);
-                        btn.clicked(() -> {
-                            selDir[0] = dir;
-                            safeRebuild.run();
-                        });
+                        TextButton btn = new TextButton(dirName(dir), Styles.flatBordert);
+                        btn.getLabel().setFontScale(0.9f);
+                        btn.clicked(() -> { selDir[0] = dir; safeRebuild.run(); });
                         btn.update(() -> {
                             boolean sel = selDir[0] == dir;
                             btn.setChecked(sel);
@@ -790,160 +807,171 @@ public class UniversalJunction extends Block {
                         });
                         top.add(btn).size(64f, 30f).pad(2f);
                     }
-                    top.add(Core.bundle.get("universaljunction.presetLabel")).color(Color.lightGray).padLeft(10f).padRight(4f);
+                    top.add(Core.bundle.get("universaljunction.presetLabel")).color(Color.lightGray).padLeft(8f).padRight(4f);
                     for (int p = 0; p < PRESET_KEYS.length; p++) {
                         final int idx = p;
-                        top.button(Core.bundle.get(PRESET_KEYS[p]), Styles.defaultt, () -> {
+                        top.button(Core.bundle.get(PRESET_KEYS[p]), Styles.flatBordert, () -> {
                             applyPreset.accept(PRESET_GROUPS[idx]);
                             safeRebuild.run();
                             markConfigDirty();
-                        }).size(56f, 28f).pad(1f);
-                        // 第 5 个预设后换行标识（视觉分隔：普通预设 vs Only 预设）
+                        }).size(52f, 26f).pad(1f);
                     }
                 }).padBottom(6f).row();
 
-                // --- 分隔线 ---
                 content.image(Tex.whiteui).growX().height(1f).color(Pal.gray).padBottom(6f).row();
 
-                // --- 自定义分组区标题 ---
-                content.add(Core.bundle.get("universaljunction.customLabel")).color(Color.lightGray).padBottom(2f).row();
-
-                // 拖拽提示
-                content.add(Core.bundle.get("universaljunction.dragHint")).color(Color.gray).padBottom(4f).row();
-
-                // === 收集当前方向的动态组信息 ===
-                // 组号 → 包含的方向列表
-                java.util.List<java.util.List<Integer>> dynamicGroups = new java.util.ArrayList<>();
+                // --- 组区域 ---
+                java.util.List<java.util.List<Integer>> groups = new java.util.ArrayList<>();
                 java.util.Map<Integer, Integer> groupIndex = new java.util.HashMap<>();
-                int maxGroup = -1;
                 for (int d = 0; d < 4; d++) {
                     int g = allGroups[in][d];
                     if (g >= 0) {
                         if (!groupIndex.containsKey(g)) {
-                            groupIndex.put(g, dynamicGroups.size());
-                            dynamicGroups.add(new java.util.ArrayList<>());
+                            groupIndex.put(g, groups.size());
+                            groups.add(new java.util.ArrayList<>());
                         }
-                        dynamicGroups.get(groupIndex.get(g)).add(d);
-                        maxGroup = Math.max(maxGroup, g);
+                        groups.get(groupIndex.get(g)).add(d);
                     }
                 }
 
-                // === 拖拽中的方向按钮（选中态高亮） ===
-                if (dragDir[0] >= 0) {
-                    content.table(dragBar -> {
-                        dragBar.background(Tex.pane2);
-                        dragBar.margin(4f);
-                        dragBar.add(Core.bundle.get("universaljunction.dragging")).color(Color.yellow).padRight(6f);
-                        // 显示被拖拽的方向按钮（点击取消）
-                        TextButton src = new TextButton(dirName(dragDir[0]), Styles.defaultt);
-                        src.setColor(Color.yellow);
-                        src.clicked(() -> {
-                            dragDir[0] = -1;
-                            safeRebuild.run();
-                        });
-                        dragBar.add(src).size(64f, 28f).pad(2f);
-                        dragBar.add(Core.bundle.get("universaljunction.dragCancelHint")).color(Color.gray);
-                    }).padBottom(4f).row();
+                for (int gIdx = 0; gIdx < groups.size(); gIdx++) {
+                    final int groupNum = gIdx;
+                    final Color gColor = GC[gIdx % GC.length];
+                    java.util.List<Integer> dirs = groups.get(gIdx);
+
+                    // 圆角组框（Tex.paneSolid）
+                    Table groupBox = new Table();
+                    groupBox.background(Tex.paneSolid);
+                    groupBox.margin(10f);
+
+                    // 组内方向按钮（矩形，flatBordert）
+                    groupBox.table(btns -> {
+                        btns.defaults().size(64f, 32f).pad(4f);
+                        for (int d : dirs) {
+                            final int out = d;
+                            TextButton dirBtn = new TextButton(dirName(out), Styles.flatBordert);
+                            dirBtn.getLabel().setFontScale(0.85f);
+                            dirBtn.setColor(gColor);
+
+                            // 拖拽：touchDown 开始，touchUp 结束
+                            dirBtn.addListener(new arc.scene.event.InputListener() {
+                                @Override
+                                public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
+                                    dragDir[0] = out;
+                                    dragOriginalGroup[0] = allGroups[in][out];
+                                    dragOriginalGroupSize[0] = countGroupSize(allGroups, in, dragOriginalGroup[0]);
+
+                                    // 浮动按钮
+                                    floatingBtn.clearChildren();
+                                    floatingBtn.add(dirName(out)).color(Color.white).fontScale(0.85f);
+                                    floatingBtn.visible = true;
+                                    return true;
+                                }
+
+                                @Override
+                                public void touchUp(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
+                                    if (dragDir[0] < 0) return;
+                                    int dragged = dragDir[0];
+                                    dragDir[0] = -1;
+                                    floatingBtn.visible = false;
+
+                                    // 检测落点（使用 event 的舞台坐标）
+                                    float sceneX = event.stageX;
+                                    float sceneY = event.stageY;
+                                    int targetGroup = hitTestGroup(sceneX, sceneY);
+                                    int insertPos = findInsertPosition(sceneY);
+
+                                    if (targetGroup >= 0 && targetGroup != dragOriginalGroup[0]) {
+                                        // 放入目标组
+                                        allGroups[in][dragged] = groupNums[0][targetGroup];
+                                    } else if (insertPos >= 0) {
+                                        // 在插入点创建新组
+                                        int newGroupNum = findMaxGroup(allGroups, in) + 1;
+                                        allGroups[in][dragged] = newGroupNum;
+                                    } else {
+                                        // 无效位置，恢复原状
+                                        allGroups[in][dragged] = dragOriginalGroup[0];
+                                    }
+
+                                    canonicalizeGroups(in, allGroups[in]);
+                                    int[] norm = weightsToTiers(in);
+                                    System.arraycopy(norm, 0, allGroups[in], 0, 4);
+                                    groupsToWeights(in, allGroups[in]);
+
+                                    // 清除插入点
+                                    clearInsertBoxes();
+
+                                    safeRebuild.run();
+                                    markConfigDirty();
+                                }
+
+                                @Override
+                                public void touchDragged(arc.scene.event.InputEvent event, float x, float y, int pointer) {
+                                    float sceneX = event.stageX;
+                                    float sceneY = event.stageY;
+                                    floatingBtn.setPosition(sceneX - 32f, sceneY - 16f);
+
+                                    // 检测插入点位置
+                                    int insertPos = findInsertPosition(sceneY);
+                                    updateInsertPoint(insertPos);
+                                }
+                            });
+
+                            btns.add(dirBtn);
+                        }
+                    }).left();
+
+                    groupBoxes[groupBoxCount[0]] = groupBox;
+                    content.add(groupBox).padBottom(12f).row();
+                    groupBoxCount[0]++;
                 }
 
-                // === 动态组容器（只显示有方向的组） ===
-                for (int gIdx = 0; gIdx < dynamicGroups.size(); gIdx++) {
-                    final int groupNum = gIdx; // 规范化后的组序号（0=最高优先）
-                    final Color gColor = DYNAMIC_COLORS[gIdx % DYNAMIC_COLORS.length];
-                    java.util.List<Integer> dirs = dynamicGroups.get(gIdx);
-
-                    content.table(grp -> {
-                        grp.background(Tex.pane2);
-                        grp.margin(4f);
-                        // 组标题行：组颜色标签 + 删除组按钮
-                        grp.table(title -> {
-                            title.add(Core.bundle.format("universaljunction.groupN", groupNum + 1)).color(gColor).padRight(6f);
-                            // 删除组按钮（将该组所有方向设为禁用）
-                            title.button(Icon.cancel, 14f, () -> {
-                                for (int d : dirs) allGroups[in][d] = -1;
+                // --- 禁用区 ---
+                java.util.List<Integer> disabledDirs = new java.util.ArrayList<>();
+                for (int d = 0; d < 4; d++) {
+                    if (allGroups[in][d] < 0) disabledDirs.add(d);
+                }
+                if (!disabledDirs.isEmpty()) {
+                    Table disBox = new Table();
+                    disBox.background(Tex.paneSolid);
+                    disBox.margin(10f);
+                    disBox.setColor(1f, 0.3f, 0.3f, 0.5f);
+                    disBox.table(dis -> {
+                        dis.defaults().size(64f, 32f).pad(4f);
+                        for (int d : disabledDirs) {
+                            final int out = d;
+                            TextButton dirBtn = new TextButton(dirName(out), Styles.flatBordert);
+                            dirBtn.getLabel().setFontScale(0.85f);
+                            dirBtn.setColor(Color.red);
+                            dirBtn.clicked(() -> {
+                                allGroups[in][out] = 0;
                                 canonicalizeGroups(in, allGroups[in]);
                                 int[] norm = weightsToTiers(in);
                                 System.arraycopy(norm, 0, allGroups[in], 0, 4);
                                 groupsToWeights(in, allGroups[in]);
                                 safeRebuild.run();
                                 markConfigDirty();
-                            }).size(22f, 22f).pad(1f);
-                        }).left().row();
-                        // 组内方向按钮
-                        grp.table(btns -> {
-                            btns.defaults().height(30f).pad(2f);
-                            for (int d : dirs) {
-                                final int out = d;
-                                TextButton dirBtn = new TextButton(dirName(out), Styles.defaultt);
-                                dirBtn.setColor(gColor);
-                                // 点击：选中方向进入拖拽态；已有拖拽态时点击其他方向 = 移入该组
-                                dirBtn.clicked(() -> {
-                                    if (dragDir[0] >= 0 && dragDir[0] != out) {
-                                        int targetGroup = allGroups[in][out];
-                                        allGroups[in][dragDir[0]] = targetGroup;
-                                        canonicalizeGroups(in, allGroups[in]);
-                                        int[] norm = weightsToTiers(in);
-                                        System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                        groupsToWeights(in, allGroups[in]);
-                                        dragDir[0] = -1;
-                                        safeRebuild.run();
-                                        markConfigDirty();
-                                    } else {
-                                        dragDir[0] = (dragDir[0] == out) ? -1 : out;
-                                        safeRebuild.run();
-                                    }
-                                });
-                                btns.add(dirBtn).size(60f, 30f);
-                            }
-                        }).left();
-                    }).growX().padBottom(3f).row();
+                            });
+                            dis.add(dirBtn);
+                        }
+                    }).left();
+                    content.add(disBox).padBottom(12f).row();
                 }
 
-                // === 禁用区：单独一行显示禁用方向，点击可恢复 ===
-                {
-                    java.util.List<Integer> disabledDirs = new java.util.ArrayList<>();
-                    for (int d = 0; d < 4; d++) {
-                        if (allGroups[in][d] < 0) disabledDirs.add(d);
-                    }
-                    if (!disabledDirs.isEmpty()) {
-                        content.table(dis -> {
-                            dis.background(Tex.pane2);
-                            dis.margin(4f);
-                            dis.add(Core.bundle.get("universaljunction.tierDisabled")).color(Color.red).padRight(6f);
-                            for (int d : disabledDirs) {
-                                final int out = d;
-                                TextButton dirBtn = new TextButton(dirName(out), Styles.defaultt);
-                                dirBtn.setColor(Color.red);
-                                // 点击恢复到最高优先级组（group 0）
-                                dirBtn.clicked(() -> {
-                                    allGroups[in][out] = 0;
-                                    canonicalizeGroups(in, allGroups[in]);
-                                    int[] norm = weightsToTiers(in);
-                                    System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                    groupsToWeights(in, allGroups[in]);
-                                    safeRebuild.run();
-                                    markConfigDirty();
-                                });
-                                dis.add(dirBtn).size(60f, 28f).pad(2f);
-                            }
-                        }).growX().padBottom(4f).row();
-                    }
-                }
-
-                // === 快捷按钮 ===
+                // --- 底部按钮 ---
                 content.table(quick -> {
-                    quick.button(Core.bundle.get("universaljunction.even"), () -> {
+                    quick.button(Core.bundle.get("universaljunction.even"), Styles.flatBordert, () -> {
                         applyPreset.accept(PRESET_GROUPS[0]);
                         safeRebuild.run();
                         markConfigDirty();
-                    }).size(88f, 28f).pad(2f);
-                    quick.button(Core.bundle.get("universaljunction.clear"), () -> {
+                    }).size(80f, 28f).pad(2f);
+                    quick.button(Core.bundle.get("universaljunction.clear"), Styles.flatBordert, () -> {
                         for (int d = 0; d < 4; d++) allGroups[in][d] = -1;
                         groupsToWeights(in, allGroups[in]);
                         safeRebuild.run();
                         markConfigDirty();
-                    }).size(88f, 28f).pad(2f);
-                    quick.button(Core.bundle.get("universaljunction.resetAll"), () -> {
+                    }).size(80f, 28f).pad(2f);
+                    quick.button(Core.bundle.get("universaljunction.resetAll"), Styles.flatBordert, () -> {
                         for (int i = 0; i < 4; i++) {
                             System.arraycopy(PRESET_GROUPS[0], 0, allGroups[i], 0, 4);
                             canonicalizeGroups(i, allGroups[i]);
@@ -951,13 +979,8 @@ public class UniversalJunction extends Block {
                         }
                         safeRebuild.run();
                         flushConfig();
-                    }).size(88f, 28f).pad(2f);
-                }).padTop(6f).row();
-
-                // === 模板保存 ===
-                content.image(Tex.whiteui).growX().height(1f).color(Pal.gray).padTop(6f).padBottom(6f).row();
-                content.table(tpl -> {
-                    tpl.button(Core.bundle.get("universaljunction.save"), () -> {
+                    }).size(80f, 28f).pad(2f);
+                    quick.button(Core.bundle.get("universaljunction.save"), Styles.flatBordert, () -> {
                         ui.showTextInput("", Core.bundle.get("universaljunction.saveTitle"), 12, "", text -> {
                             String name = text.trim();
                             if (!name.isEmpty()) {
@@ -965,15 +988,70 @@ public class UniversalJunction extends Block {
                                 safeRebuild.run();
                             }
                         });
-                    }).size(80f, 30f);
-                }).padBottom(2f).row();
+                    }).size(80f, 28f).pad(2f);
+                }).padTop(6f).row();
             };
 
             rebuild[0].run();
-            dialog.cont.add(content).grow();
+
+            // ScrollPane 包裹
+            ScrollPane pane = new ScrollPane(content);
+            pane.setFlickScroll(false);
+            pane.setSmoothScrolling(true);
+
+            // 浮动按钮添加到对话框最上层
+            dialog.cont.add(floatingBtn).size(64f, 32f);
+            dialog.cont.add(pane).grow();
+
             dialog.show();
-            table.clearChildren();
         }
+
+        /** 统计指定组的方向数量 */
+        int countGroupSize(int[][] groups, int in, int group) {
+            int count = 0;
+            for (int d = 0; d < 4; d++) {
+                if (groups[in][d] == group) count++;
+            }
+            return count;
+        }
+
+        /** 找到最大组号 */
+        int findMaxGroup(int[][] groups, int in) {
+            int max = -1;
+            for (int d = 0; d < 4; d++) {
+                if (groups[in][d] > max) max = groups[in][d];
+            }
+            return max;
+        }
+
+        /** 组号数组（临时存储，用于落点检测） */
+        final int[][] groupNums = new int[1][4];
+
+        /** 检测落点是否在某个组框内 */
+        int hitTestGroup(float sceneX, float sceneY) {
+            // 需要在 rebuild 中设置 groupBoxes
+            return -1; // 占位，实际在 rebuild 中实现
+        }
+
+        /** 找到插入点位置 */
+        int findInsertPosition(float sceneY) {
+            return -1; // 占位，实际在 rebuild 中实现
+        }
+
+        /** 更新插入点显示 */
+        void updateInsertPoint(int position) {
+            // 占位
+        }
+
+        /** 清除插入点 */
+        void clearInsertBoxes() {
+            if (currentInsertBox != null) {
+                currentInsertBox.remove();
+                currentInsertBox = null;
+                currentInsertPosition = -1;
+            }
+        }
+
 
         /** 经典配置面板：模板一键应用 + 全局输出优先级 + 按方向覆盖（折叠高级层） */
         void buildConfigurationLegacy(Table table) {

@@ -728,15 +728,10 @@ public class UniversalJunction extends Block {
             }
         }
 
-        /** 新版配置面板 v5：圆角组框 + 实线插入点 + 真拖拽 */
+        /** 新版配置面板 v6：垂直列表方案 */
         void showConfigDialog() {
             BaseDialog dialog = new BaseDialog(Core.bundle.get("universaljunction.title"));
-            // dialog.shouldPause = true; // protected, skip for now
             dialog.addCloseButton();
-
-            Table content = new Table();
-            content.background(Tex.pane2);
-            content.margin(8f);
 
             // 状态变量
             final int[] selDir = {0};
@@ -745,223 +740,131 @@ public class UniversalJunction extends Block {
                 int[] t = weightsToTiers(in);
                 System.arraycopy(t, 0, allGroups[in], 0, 4);
             }
-            final int[] dragDir = {-1};
-            final int[] dragOriginalGroup = {-1};
-            final int[] dragOriginalGroupSize = {-1};
 
-            // UI 元素引用
-            final Table[] groupBoxes = new Table[4];
-            final Table[] groupContents = new Table[4];
-            final Table[] insertBoxes = new Table[4];
-            final int[] groupBoxCount = {0};
-            final int[] insertCount = {0};
-            final Table floatingBtn = new Table();
-            floatingBtn.background(Tex.paneSolid);
-            floatingBtn.setColor(Color.yellow);
-            floatingBtn.visible = false;
-            floatingBtn.setSize(64f, 32f);
-
-            // 预设定义
-            final String[] PRESET_KEYS = {
-                "universaljunction.presetEven", "universaljunction.presetRight",
-                "universaljunction.presetDown", "universaljunction.presetLeft",
-                "universaljunction.presetUp", "universaljunction.presetRightOnly",
-                "universaljunction.presetDownOnly", "universaljunction.presetLeftOnly",
-                "universaljunction.presetUpOnly"
-            };
-            final int[][] PRESET_GROUPS = {
-                {0, 0, 0, 0}, {0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 0, 1}, {1, 1, 1, 0},
-                {0, -1, -1, -1}, {-1, 0, -1, -1}, {-1, -1, 0, -1}, {-1, -1, -1, 0}
-            };
-            final Color[] GC = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray, Color.red};
-
-            java.util.function.Consumer<int[]> applyPreset = preset -> {
-                int in = selDir[0];
-                System.arraycopy(preset, 0, allGroups[in], 0, 4);
-                canonicalizeGroups(in, allGroups[in]);
-                groupsToWeights(in, allGroups[in]);
-            };
+            // 垂直列表容器
+            final Table listContent = new Table();
+            listContent.background(Tex.pane2);
+            listContent.margin(8f);
 
             // 安全重建
             final Runnable[] rebuild = new Runnable[1];
             final Runnable safeRebuild = () -> Core.app.post(() -> rebuild[0].run());
 
             rebuild[0] = () -> {
-                content.clearChildren();
-                groupBoxCount[0] = 0;
-                insertCount[0] = 0;
+                listContent.clearChildren();
                 int in = selDir[0];
 
                 // --- 输入方向选择 ---
-                content.table(top -> {
+                listContent.table(top -> {
                     top.add(Core.bundle.get("universaljunction.inputDir")).color(Pal.accent).padRight(6f);
                     for (int d = 0; d < 4; d++) {
                         final int dir = d;
                         TextButton btn = new TextButton(dirName(dir), Styles.flatBordert);
-                        btn.getLabel().setFontScale(0.9f);
                         btn.clicked(() -> { selDir[0] = dir; safeRebuild.run(); });
-                        btn.update(() -> {
-                            boolean sel = selDir[0] == dir;
-                            btn.setChecked(sel);
-                            btn.setColor(sel ? Pal.accent : Color.white);
-                        });
+                        btn.update(() -> btn.setChecked(selDir[0] == dir));
                         top.add(btn).size(64f, 30f).pad(2f);
-                    }
-                    top.add(Core.bundle.get("universaljunction.presetLabel")).color(Color.lightGray).padLeft(8f).padRight(4f);
-                    for (int p = 0; p < PRESET_KEYS.length; p++) {
-                        final int idx = p;
-                        top.button(Core.bundle.get(PRESET_KEYS[p]), Styles.flatBordert, () -> {
-                            applyPreset.accept(PRESET_GROUPS[idx]);
-                            safeRebuild.run();
-                            markConfigDirty();
-                        }).size(52f, 26f).pad(1f);
                     }
                 }).padBottom(6f).row();
 
-                content.image(Tex.whiteui).growX().height(1f).color(Pal.gray).padBottom(6f).row();
+                // --- 分隔线 ---
+                listContent.image(Tex.whiteui).growX().height(1f).color(Pal.gray).padBottom(6f).row();
 
-                // --- 组区域 ---
+                // --- 垂直列表：按组排列 ---
+                // 收集各组的方向
                 java.util.List<java.util.List<Integer>> groups = new java.util.ArrayList<>();
-                java.util.Map<Integer, Integer> groupIndex = new java.util.HashMap<>();
+                java.util.Map<Integer, Integer> groupMap = new java.util.HashMap<>();
+                java.util.List<Integer> disabledDirs = new java.util.ArrayList<>();
+
                 for (int d = 0; d < 4; d++) {
                     int g = allGroups[in][d];
-                    if (g >= 0) {
-                        if (!groupIndex.containsKey(g)) {
-                            groupIndex.put(g, groups.size());
+                    if (g < 0) {
+                        disabledDirs.add(d);
+                    } else {
+                        if (!groupMap.containsKey(g)) {
+                            groupMap.put(g, groups.size());
                             groups.add(new java.util.ArrayList<>());
                         }
-                        groups.get(groupIndex.get(g)).add(d);
+                        groups.get(groupMap.get(g)).add(d);
                     }
                 }
 
+                final Color[] GC = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray};
+
+                // 为每个组创建一个区域
                 for (int gIdx = 0; gIdx < groups.size(); gIdx++) {
                     final int groupNum = gIdx;
                     final Color gColor = GC[gIdx % GC.length];
                     java.util.List<Integer> dirs = groups.get(gIdx);
 
-                    // 圆角组框（Tex.paneSolid）
+                    // 组标题
+                    listContent.add(Core.bundle.format("universaljunction.groupN", groupNum + 1)).color(gColor).padBottom(4f).row();
+
+                    // 组内容框（圆角）
                     Table groupBox = new Table();
-                    groupBox.background(Tex.paneSolid);
-                    groupBox.margin(10f);
+                    groupBox.background(Tex.pane);
+                    groupBox.margin(8f);
 
-                    // 组内方向按钮（矩形，flatBordert）
-                    groupBox.table(btns -> {
-                        btns.defaults().size(64f, 32f).pad(4f);
-                        for (int d : dirs) {
-                            final int out = d;
-                            TextButton dirBtn = new TextButton(dirName(out), Styles.flatBordert);
-                            dirBtn.getLabel().setFontScale(0.85f);
-                            dirBtn.setColor(gColor);
+                    // 组内方向项（垂直排列）
+                    for (int d : dirs) {
+                        final int out = d;
+                        Table item = new Table();
+                        item.background(Tex.paneSolid);
+                        item.setColor(gColor);
+                        item.margin(4f);
 
-                            // 拖拽：touchDown 开始，touchUp 结束
-                            dirBtn.addListener(new arc.scene.event.InputListener() {
-                                @Override
-                                public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
-                                    dragDir[0] = out;
-                                    dragOriginalGroup[0] = allGroups[in][out];
-                                    dragOriginalGroupSize[0] = countGroupSize(allGroups, in, dragOriginalGroup[0]);
+                        // 方向名
+                        Label dirLabel = new Label(dirName(out), Styles.defaultLabel);
+                        dirLabel.setFontScale(0.8f);
+                        dirLabel.setColor(Color.white);
 
-                                    // 浮动按钮
-                                    floatingBtn.clearChildren();
-                                    floatingBtn.add(dirName(out)).color(Color.white).fontScale(0.85f);
-                                    floatingBtn.visible = true;
-                                    return true;
-                                }
+                        // 组标签
+                        Label groupLabel = new Label(Core.bundle.format("universaljunction.groupN", groupNum + 1), Styles.defaultLabel);
+                        groupLabel.setFontScale(0.6f);
+                        groupLabel.setColor(Color.gray);
 
-                                @Override
-                                public void touchUp(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
-                                    if (dragDir[0] < 0) return;
-                                    int dragged = dragDir[0];
-                                    dragDir[0] = -1;
-                                    floatingBtn.visible = false;
+                        item.add(dirLabel).width(50f).height(24f);
+                        item.add(groupLabel).padLeft(8f);
 
-                                    // 检测落点（使用 event 的舞台坐标）
-                                    float sceneX = event.stageX;
-                                    float sceneY = event.stageY;
-                                    int targetGroup = hitTestGroup(sceneX, sceneY);
-                                    int insertPos = findInsertPosition(sceneY);
+                        groupBox.add(item).growX().padBottom(4f).row();
+                    }
 
-                                    if (targetGroup >= 0 && targetGroup != dragOriginalGroup[0]) {
-                                        // 放入目标组
-                                        allGroups[in][dragged] = groupNums[0][targetGroup];
-                                    } else if (insertPos >= 0) {
-                                        // 在插入点创建新组
-                                        int newGroupNum = findMaxGroup(allGroups, in) + 1;
-                                        allGroups[in][dragged] = newGroupNum;
-                                    } else {
-                                        // 无效位置，恢复原状
-                                        allGroups[in][dragged] = dragOriginalGroup[0];
-                                    }
-
-                                    canonicalizeGroups(in, allGroups[in]);
-                                    int[] norm = weightsToTiers(in);
-                                    System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                    groupsToWeights(in, allGroups[in]);
-
-                                    // 清除插入点
-                                    clearInsertBoxes();
-
-                                    safeRebuild.run();
-                                    markConfigDirty();
-                                }
-
-                                @Override
-                                public void touchDragged(arc.scene.event.InputEvent event, float x, float y, int pointer) {
-                                    float sceneX = event.stageX;
-                                    float sceneY = event.stageY;
-                                    floatingBtn.setPosition(sceneX - 32f, sceneY - 16f);
-
-                                    // 检测插入点位置
-                                    int insertPos = findInsertPosition(sceneY);
-                                    updateInsertPoint(insertPos);
-                                }
-                            });
-
-                            btns.add(dirBtn);
-                        }
-                    }).left();
-
-                    groupBoxes[groupBoxCount[0]] = groupBox;
-                    content.add(groupBox).padBottom(12f).row();
-                    groupBoxCount[0]++;
+                    listContent.add(groupBox).growX().padBottom(8f).row();
                 }
 
                 // --- 禁用区 ---
-                java.util.List<Integer> disabledDirs = new java.util.ArrayList<>();
-                for (int d = 0; d < 4; d++) {
-                    if (allGroups[in][d] < 0) disabledDirs.add(d);
-                }
                 if (!disabledDirs.isEmpty()) {
+                    listContent.add(Core.bundle.get("universaljunction.tierDisabled")).color(Color.red).padBottom(4f).row();
                     Table disBox = new Table();
-                    disBox.background(Tex.paneSolid);
-                    disBox.margin(10f);
+                    disBox.background(Tex.pane);
+                    disBox.margin(8f);
                     disBox.setColor(1f, 0.3f, 0.3f, 0.5f);
-                    disBox.table(dis -> {
-                        dis.defaults().size(64f, 32f).pad(4f);
-                        for (int d : disabledDirs) {
-                            final int out = d;
-                            TextButton dirBtn = new TextButton(dirName(out), Styles.flatBordert);
-                            dirBtn.getLabel().setFontScale(0.85f);
-                            dirBtn.setColor(Color.red);
-                            dirBtn.clicked(() -> {
-                                allGroups[in][out] = 0;
-                                canonicalizeGroups(in, allGroups[in]);
-                                int[] norm = weightsToTiers(in);
-                                System.arraycopy(norm, 0, allGroups[in], 0, 4);
-                                groupsToWeights(in, allGroups[in]);
-                                safeRebuild.run();
-                                markConfigDirty();
-                            });
-                            dis.add(dirBtn);
-                        }
-                    }).left();
-                    content.add(disBox).padBottom(12f).row();
+
+                    for (int d : disabledDirs) {
+                        final int out = d;
+                        Table item = new Table();
+                        item.background(Tex.paneSolid);
+                        item.setColor(Color.red);
+                        item.margin(4f);
+                        Label dirLabel = new Label(dirName(out), Styles.defaultLabel);
+                        dirLabel.setFontScale(0.8f);
+                        dirLabel.setColor(Color.white);
+                        Label groupLabel = new Label(Core.bundle.get("universaljunction.tierDisabled"), Styles.defaultLabel);
+                        groupLabel.setFontScale(0.6f);
+                        groupLabel.setColor(Color.gray);
+                        item.add(dirLabel).width(50f).height(24f);
+                        item.add(groupLabel).padLeft(8f);
+                        disBox.add(item).growX().padBottom(4f).row();
+                    }
+                    listContent.add(disBox).growX().padBottom(8f).row();
                 }
 
-                // --- 底部按钮 ---
-                content.table(quick -> {
+                // --- 快捷按钮 ---
+                listContent.table(quick -> {
                     quick.button(Core.bundle.get("universaljunction.even"), Styles.flatBordert, () -> {
-                        applyPreset.accept(PRESET_GROUPS[0]);
+                        // 均分
+                        for (int d = 0; d < 4; d++) allGroups[in][d] = 0;
+                        canonicalizeGroups(in, allGroups[in]);
+                        groupsToWeights(in, allGroups[in]);
                         safeRebuild.run();
                         markConfigDirty();
                     }).size(80f, 28f).pad(2f);
@@ -970,15 +873,6 @@ public class UniversalJunction extends Block {
                         groupsToWeights(in, allGroups[in]);
                         safeRebuild.run();
                         markConfigDirty();
-                    }).size(80f, 28f).pad(2f);
-                    quick.button(Core.bundle.get("universaljunction.resetAll"), Styles.flatBordert, () -> {
-                        for (int i = 0; i < 4; i++) {
-                            System.arraycopy(PRESET_GROUPS[0], 0, allGroups[i], 0, 4);
-                            canonicalizeGroups(i, allGroups[i]);
-                            groupsToWeights(i, allGroups[i]);
-                        }
-                        safeRebuild.run();
-                        flushConfig();
                     }).size(80f, 28f).pad(2f);
                     quick.button(Core.bundle.get("universaljunction.save"), Styles.flatBordert, () -> {
                         ui.showTextInput("", Core.bundle.get("universaljunction.saveTitle"), 12, "", text -> {
@@ -995,14 +889,10 @@ public class UniversalJunction extends Block {
             rebuild[0].run();
 
             // ScrollPane 包裹
-            ScrollPane pane = new ScrollPane(content);
+            ScrollPane pane = new ScrollPane(listContent);
             pane.setFlickScroll(false);
-            pane.setSmoothScrolling(true);
 
-            // 浮动按钮添加到对话框最上层
-            dialog.cont.add(floatingBtn).size(64f, 32f);
             dialog.cont.add(pane).grow();
-
             dialog.show();
         }
 

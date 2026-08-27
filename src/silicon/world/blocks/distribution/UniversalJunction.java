@@ -874,24 +874,9 @@ public class UniversalJunction extends Block {
                                 final int out = d;
                                 TextButton dirBtn = new TextButton(dirName(out), Styles.defaultt);
                                 dirBtn.setColor(gColor);
-                                // touchDown: 开始拖拽（选中方向）
-                                dirBtn.addListener(new arc.scene.event.InputListener() {
-                                    @Override
-                                    public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
-                                        if (dragDir[0] == out) {
-                                            // 再次 touchDown 同一方向 = 取消拖拽
-                                            dragDir[0] = -1;
-                                        } else {
-                                            dragDir[0] = out;
-                                        }
-                                        rebuild[0].run();
-                                        return true;
-                                    }
-                                });
-                                // clicked: 如果有拖拽中的方向，点击此按钮 = 将拖拽方向移到该组
+                                // 点击：选中方向进入拖拽态；已有拖拽态时点击其他方向 = 移入该组
                                 dirBtn.clicked(() -> {
                                     if (dragDir[0] >= 0 && dragDir[0] != out) {
-                                        // 将 dragDir 方向移到 out 所在组
                                         int targetGroup = allGroups[in][out];
                                         allGroups[in][dragDir[0]] = targetGroup;
                                         canonicalizeGroups(in, allGroups[in]);
@@ -901,8 +886,10 @@ public class UniversalJunction extends Block {
                                         dragDir[0] = -1;
                                         rebuild[0].run();
                                         markConfigDirty();
+                                    } else {
+                                        dragDir[0] = (dragDir[0] == out) ? -1 : out;
+                                        rebuild[0].run();
                                     }
-                                    // 无拖拽态时点击无操作（避免误触切换选中）
                                 });
                                 btns.add(dirBtn).size(60f, 30f);
                             }

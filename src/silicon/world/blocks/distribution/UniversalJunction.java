@@ -721,251 +721,215 @@ public class UniversalJunction extends Block {
         }
 
         /** 新版配置面板：全局优先级 → 按方向覆盖 → 模板管理（精简版） */
-        /** 新版配置面板：预设模式（零冗余）+ 自定义（组号按钮） */
+        /** 新版配置面板：预设模式 + 拖拽分组（全屏对话框） */
         void buildConfigurationNew(Table table) {
-            table.clearChildren();
-            Table bg = new Table();
-            bg.background(Tex.pane2);
-            bg.margin(10f);
-            table.add(bg);
+            // 打开全屏对话框
+            BaseDialog dialog = new BaseDialog(Core.bundle.get("universaljunction.title"));
+            dialog.cont.top();
+            dialog.addCloseButton();
 
+            Table content = new Table();
+            content.background(Tex.pane2);
+            content.margin(16f);
+
+            // 当前选中的输入方向
             final int[] selDir = {0};
-            Table dirTable = new Table();
-            Table templateTable = new Table();
-
-            // 当前各方向的组号分配（0=最高, 1, 2, 3=最低, -1=禁用）
+            // 当前各方向的组号分配
             final int[][] allGroups = new int[4][4];
             for (int in = 0; in < 4; in++) {
                 int[] t = weightsToTiers(in);
                 System.arraycopy(t, 0, allGroups[in], 0, 4);
             }
+            // 当前选中的方向（用于拖拽）
+            final int[] selectedDir = {-1};
 
-            // 预设模式定义：名称 → 各方向的组号分配
-            final String[][] PRESET_KEYS = {
-                {"universaljunction.presetEven"},      // 全均分
-                {"universaljunction.presetRight"},     // 右优先
-                {"universaljunction.presetDown"},      // 下优先
-                {"universaljunction.presetLeft"},      // 左优先
-                {"universaljunction.presetUp"},        // 上优先
-                {"universaljunction.presetRightOnly"}, // 只往右
-                {"universaljunction.presetDownOnly"},  // 只往下
-                {"universaljunction.presetLeftOnly"},  // 只往左
-                {"universaljunction.presetUpOnly"},    // 只往上
+            // 预设模式定义
+            final String[] PRESET_KEYS = {
+                "universaljunction.presetEven", "universaljunction.presetRight",
+                "universaljunction.presetDown", "universaljunction.presetLeft",
+                "universaljunction.presetUp", "universaljunction.presetRightOnly",
+                "universaljunction.presetDownOnly", "universaljunction.presetLeftOnly",
+                "universaljunction.presetUpOnly"
             };
             final int[][] PRESET_GROUPS = {
-                {0, 0, 0, 0},  // 全均分
-                {0, 1, 1, 1},  // 右优先
-                {1, 0, 1, 1},  // 下优先
-                {1, 1, 0, 1},  // 左优先
-                {1, 1, 1, 0},  // 上优先
-                {0, -1, -1, -1}, // 只往右
-                {-1, 0, -1, -1}, // 只往下
-                {-1, -1, 0, -1}, // 只往左
-                {-1, -1, -1, 0}, // 只往上
+                {0, 0, 0, 0}, {0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 0, 1}, {1, 1, 1, 0},
+                {0, -1, -1, -1}, {-1, 0, -1, -1}, {-1, -1, 0, -1}, {-1, -1, -1, 0}
             };
 
-            // 组号标签和颜色
-            final String[] GROUP_LABELS = {"1组", "2组", "3组", "4组"};
-            final Color[] GROUP_COLORS = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray};
+            final String[] GROUP_LABELS = {"第1组", "第2组", "第3组", "第4组", "禁用"};
+            final Color[] GROUP_COLORS = {Pal.accent, Color.sky, Color.lightGray, Color.darkGray, Color.red};
 
-            // 应用预设到指定输入方向
+            // 应用预设
             java.util.function.BiConsumer<Integer, int[]> applyPreset = (in, preset) -> {
                 System.arraycopy(preset, 0, allGroups[in], 0, 4);
                 canonicalizeGroups(in, allGroups[in]);
-                // 同步到 weights
                 groupsToWeights(in, allGroups[in]);
             };
 
-            // 重建方向配置区
-            final Runnable[] rDir = new Runnable[1];
-            rDir[0] = () -> {
-                dirTable.clearChildren();
+            // 重建内容
+            final Table[] groupContainers = new Table[5]; // 0-3=组, 4=禁用
+            final Runnable[] rebuild = new Runnable[1];
+            rebuild[0] = () -> {
+                content.clearChildren();
                 int in = selDir[0];
 
-                // 方向选择按钮
-                dirTable.table(inputs -> {
-                    inputs.defaults().growX().height(36f).pad(3f);
+                // 输入方向选择
+                content.add(Core.bundle.get("universaljunction.inputDir")).color(Pal.accent).padBottom(4f).row();
+                content.table(inputs -> {
+                    inputs.defaults().height(40f).pad(4f);
                     for (int d = 0; d < 4; d++) {
                         final int dir = d;
-                        Button btn = inputs.button(b -> {
-                            b.image(dirIcons[dir]).padRight(4f);
-                            b.add(dirName(dir));
-                        }, () -> {
+                        TextButton btn = new TextButton(dirName(dir), Styles.defaultt);
+                        btn.clicked(() -> {
                             selDir[0] = dir;
-                            rDir[0].run();
-                        }).get();
-                        btn.update(() -> btn.setChecked(selDir[0] == dir));
+                            rebuild[0].run();
+                        });
+                        btn.update(() -> {
+                            btn.setChecked(selDir[0] == dir);
+                            btn.setColor(selDir[0] == dir ? Pal.accent : Color.white);
+                        });
+                        inputs.add(btn).size(80f, 40f);
                     }
-                }).padBottom(6f).row();
+                }).padBottom(8f).row();
 
-                // 当前方向说明
-                dirTable.add(Core.bundle.format("universaljunction.from", dirName(in))).color(Pal.accent).padBottom(6f).row();
-
-                // 预设模式选择
-                dirTable.add(Core.bundle.get("universaljunction.presetLabel")).color(Color.lightGray).padBottom(3f).row();
-                dirTable.table(presets -> {
+                // 预设模式
+                content.add(Core.bundle.get("universaljunction.presetLabel")).color(Color.lightGray).padBottom(4f).row();
+                content.table(presets -> {
                     presets.defaults().height(32f).pad(2f);
                     for (int p = 0; p < PRESET_KEYS.length; p++) {
-                        final int presetIdx = p;
-                        presets.button(Core.bundle.get(PRESET_KEYS[p][0]), Styles.defaultt, () -> {
-                            applyPreset.accept(in, PRESET_GROUPS[presetIdx]);
-                            rDir[0].run();
+                        final int idx = p;
+                        presets.button(Core.bundle.get(PRESET_KEYS[p]), Styles.defaultt, () -> {
+                            applyPreset.accept(in, PRESET_GROUPS[idx]);
+                            rebuild[0].run();
                             markConfigDirty();
                         }).size(72f, 32f);
-                        if (p == 4) presets.row(); // 第二行从第5个开始
+                        if (p == 4) presets.row();
+                    }
+                }).padBottom(8f).row();
+
+                // 分隔线
+                content.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padBottom(8f).row();
+
+                // 自定义分组（拖拽区）
+                content.add(Core.bundle.get("universaljunction.customLabel")).color(Color.lightGray).padBottom(4f).row();
+                content.add(Core.bundle.get("universaljunction.dragHint")).color(Color.gray).padBottom(6f).row();
+
+                // 未分配方向池
+                content.add(Core.bundle.get("universaljunction.unassigned")).color(Color.lightGray).padBottom(2f).row();
+                content.table(pool -> {
+                    pool.defaults().height(40f).pad(4f);
+                    boolean hasUnassigned = false;
+                    for (int d = 0; d < 4; d++) {
+                        if (allGroups[in][d] >= 0) continue;
+                        hasUnassigned = true;
+                        final int out = d;
+                        TextButton dirBtn = new TextButton(dirName(out), Styles.defaultt);
+                        dirBtn.setColor(Color.red);
+                        dirBtn.clicked(() -> {
+                            selectedDir[0] = (selectedDir[0] == out) ? -1 : out;
+                            rebuild[0].run();
+                        });
+                        dirBtn.update(() -> dirBtn.setChecked(selectedDir[0] == out));
+                        pool.add(dirBtn).size(72f, 40f);
+                    }
+                    if (!hasUnassigned) {
+                        pool.add(Core.bundle.get("universaljunction.none")).color(Color.gray);
                     }
                 }).padBottom(6f).row();
 
-                // 分隔线
-                dirTable.image(Tex.whiteui).growX().height(1f).color(Pal.gray).padBottom(6f).row();
+                // 各组容器
+                for (int g = 0; g < 5; g++) {
+                    final int group = g;
+                    final String label = GROUP_LABELS[g];
+                    final Color color = GROUP_COLORS[g];
 
-                // 自定义：4个输出方向的组号按钮
-                dirTable.add(Core.bundle.get("universaljunction.customLabel")).color(Color.lightGray).padBottom(3f).row();
-                dirTable.table(custom -> {
-                    for (int d = 0; d < 4; d++) {
-                        final int out = d;
-                        final int[] group = {allGroups[in][d]};
-                        Table row = new Table();
+                    content.add(label).color(color).padBottom(2f).row();
+                    Table container = new Table();
+                    container.background(Tex.pane2);
+                    container.margin(8f);
+                    groupContainers[g] = container;
 
-                        // 方向标签
-                        row.add(dirName(out) + " →").width(50f).height(36f).padRight(4f);
+                    // 组内方向按钮
+                    container.table(btns -> {
+                        btns.defaults().height(40f).pad(4f);
+                        boolean hasDirs = false;
+                        for (int d = 0; d < 4; d++) {
+                            if (allGroups[in][d] != (group < 4 ? group : -1)) continue;
+                            hasDirs = true;
+                            final int out = d;
+                            TextButton dirBtn = new TextButton(dirName(out), Styles.defaultt);
+                            dirBtn.setColor(color);
+                            dirBtn.clicked(() -> {
+                                selectedDir[0] = (selectedDir[0] == out) ? -1 : out;
+                                rebuild[0].run();
+                            });
+                            dirBtn.update(() -> dirBtn.setChecked(selectedDir[0] == out));
+                            btns.add(dirBtn).size(72f, 40f);
+                        }
+                        if (!hasDirs) {
+                            btns.add(Core.bundle.get("universaljunction.none")).color(Color.gray);
+                        }
+                    }).row();
 
-                        // 组号按钮（点击循环）
-                        TextButton groupBtn = new TextButton("", Styles.defaultt);
-                        groupBtn.update(() -> {
-                            if (group[0] < 0) {
-                                groupBtn.setText(Core.bundle.get("universaljunction.tierDisabled"));
-                                groupBtn.setColor(Color.red);
-                            } else {
-                                groupBtn.setText(GROUP_LABELS[group[0]]);
-                                groupBtn.setColor(group[0] < GROUP_COLORS.length ? GROUP_COLORS[group[0]] : Color.white);
-                            }
-                        });
-                        groupBtn.clicked(() -> {
-                            // 循环：0→1→2→3→禁用→0
-                            group[0] = (group[0] + 1) % 5;
-                            if (group[0] >= 4) group[0] = -1;
-                            allGroups[in][out] = group[0];
-                            // 规范化并同步
-                            canonicalizeGroups(in, allGroups[in]);
-                            int[] normalized = weightsToTiers(in);
-                            System.arraycopy(normalized, 0, allGroups[in], 0, 4);
-                            group[0] = allGroups[in][out];
-                            groupsToWeights(in, allGroups[in]);
-                            markConfigDirty();
-                        });
-                        row.add(groupBtn).size(80f, 36f).padRight(8f);
+                    // 点击组容器 = 将选中的方向放入该组
+                    container.clicked(() -> {
+                        if (selectedDir[0] < 0) return;
+                        int out = selectedDir[0];
+                        allGroups[in][out] = group < 4 ? group : -1;
+                        canonicalizeGroups(in, allGroups[in]);
+                        int[] normalized = weightsToTiers(in);
+                        System.arraycopy(normalized, 0, allGroups[in], 0, 4);
+                        groupsToWeights(in, allGroups[in]);
+                        selectedDir[0] = -1;
+                        rebuild[0].run();
+                        markConfigDirty();
+                    });
 
-                        // 当前权重值
-                        Label valL = new Label("w=" + weights[in][d]);
-                        valL.setColor(Color.gray);
-                        row.add(valL).height(36f);
-
-                        dirTable.add(row).growX().padBottom(3f).row();
-                    }
-                }).padBottom(4f).row();
+                    content.add(container).growX().padBottom(6f).row();
+                }
 
                 // 快捷按钮
-                dirTable.table(quick -> {
+                content.table(quick -> {
                     quick.button(Core.bundle.get("universaljunction.even"), () -> {
-                        applyPreset.accept(in, PRESET_GROUPS[0]); // 全均分
-                        rDir[0].run();
+                        applyPreset.accept(in, PRESET_GROUPS[0]);
+                        rebuild[0].run();
                         markConfigDirty();
-                    }).size(110f, 32f).pad(3f).tooltip(Core.bundle.get("universaljunction.tipEven"));
+                    }).size(100f, 32f).pad(3f);
                     quick.button(Core.bundle.get("universaljunction.clear"), () -> {
-                        applyPreset.accept(in, PRESET_GROUPS[5]); // 只往右（实际是清零：全禁用）
-                        // 清零：全部禁用
                         for (int d = 0; d < 4; d++) allGroups[in][d] = -1;
                         groupsToWeights(in, allGroups[in]);
-                        rDir[0].run();
+                        rebuild[0].run();
                         markConfigDirty();
-                    }).size(110f, 32f).pad(3f).tooltip(Core.bundle.get("universaljunction.tipClear"));
-                }).padTop(4f).row();
-
-                // 重置全部按钮
-                dirTable.button(Core.bundle.get("universaljunction.resetAll"), () -> {
-                    BaseDialog confirm = new BaseDialog(Core.bundle.get("universaljunction.resetAll"));
-                    confirm.cont.add(Core.bundle.get("universaljunction.resetAllConfirm")).width(300f).wrap().pad(16f).row();
-                    confirm.buttons.button(Core.bundle.get("universaljunction.confirm"), Styles.defaultt, () -> {
+                    }).size(100f, 32f).pad(3f);
+                    quick.button(Core.bundle.get("universaljunction.resetAll"), () -> {
                         for (int i = 0; i < 4; i++) {
-                            applyPreset.accept(i, PRESET_GROUPS[0]); // 全均分
+                            applyPreset.accept(i, PRESET_GROUPS[0]);
                         }
-                        rDir[0].run();
-                        table.invalidateHierarchy();
+                        rebuild[0].run();
                         flushConfig();
-                        confirm.hide();
-                    }).size(90f, 38f).pad(6f);
-                    confirm.buttons.button(Core.bundle.get("universaljunction.cancel"), Styles.defaultt, confirm::hide).size(90f, 38f).pad(6f);
-                    confirm.closeOnBack();
-                    confirm.show();
-                }).size(220f, 32f).padTop(6f);
-            };
+                    }).size(100f, 32f).pad(3f);
+                }).padTop(8f).row();
 
-            // 重建模板区
-            final Runnable[] rTpl = new Runnable[1];
-            rTpl[0] = () -> {
-                templateTable.clearChildren();
-                templateTable.button(Core.bundle.get("universaljunction.save"), () -> {
-                    ui.showTextInput("", Core.bundle.get("universaljunction.saveTitle"), 12, "", text -> {
-                        String name = text.trim();
-                        if (!name.isEmpty()) {
-                            saveTemplate(name, currentTemplate());
-                            rTpl[0].run();
-                        }
-                    });
-                }).size(110f, 36f).padBottom(6f).row();
-
-                java.util.Map<String, int[]> custom = loadTemplates();
-                if (!custom.isEmpty()) {
-                    templateTable.add(Core.bundle.get("universaljunction.customTemplates")).color(Pal.accent).padBottom(3f).row();
-                    for (java.util.Map.Entry<String, int[]> e : custom.entrySet()) {
-                        final String name = e.getKey();
-                        final int[] row = e.getValue();
-                        templateTable.table(t -> {
-                            t.add(clip(name, 10)).left().padRight(8f);
-                            t.button(Core.bundle.get("universaljunction.use"), () -> {
-                                applyTemplate(row);
-                                for (int i = 0; i < 4; i++) {
-                                    int[] n = weightsToTiers(i);
-                                    System.arraycopy(n, 0, allGroups[i], 0, 4);
-                                }
-                                rDir[0].run();
-                                flushConfig();
-                            }).size(56f, 28f).pad(2f);
-                            t.button(Core.bundle.get("universaljunction.delete"), () -> {
-                                deleteTemplate(name);
-                                rTpl[0].run();
-                            }).size(56f, 28f).pad(2f);
-                        }).padBottom(3f).row();
-                    }
-                }
-
-                templateTable.add(Core.bundle.get("universaljunction.builtinTemplates")).color(Pal.accent).padBottom(3f).padTop(4f).row();
-                for (int i = 0; i < BUILTIN_TEMPLATE_KEYS.length; i++) {
-                    final String name = Core.bundle.get(BUILTIN_TEMPLATE_KEYS[i]);
-                    final int[] row = BUILTIN_TEMPLATE_ROWS[i];
-                    templateTable.table(t -> {
-                        t.add(name).left().padRight(8f);
-                        t.button(Core.bundle.get("universaljunction.use"), () -> {
-                            applyTemplate(row);
-                            for (int j = 0; j < 4; j++) {
-                                int[] n = weightsToTiers(j);
-                                System.arraycopy(n, 0, allGroups[j], 0, 4);
+                // 模板区
+                content.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(8f).row();
+                content.table(tpl -> {
+                    tpl.button(Core.bundle.get("universaljunction.save"), () -> {
+                        ui.showTextInput("", Core.bundle.get("universaljunction.saveTitle"), 12, "", text -> {
+                            String name = text.trim();
+                            if (!name.isEmpty()) {
+                                saveTemplate(name, currentTemplate());
+                                rebuild[0].run();
                             }
-                            rDir[0].run();
-                            flushConfig();
-                        }).size(56f, 28f).pad(2f);
-                    }).padBottom(3f).row();
-                }
+                        });
+                    }).size(88f, 36f);
+                }).padBottom(4f).row();
             };
 
-            // ====== 布局 ======
-            bg.add(Core.bundle.get("universaljunction.tierHint")).color(Color.gray).padBottom(6f).row();
-            bg.add(dirTable).growX().padBottom(6f).row();
-            bg.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(4f).padBottom(4f).row();
-            bg.add(templateTable).padBottom(4f).row();
-
-            rDir[0].run();
+            rebuild[0].run();
+            dialog.cont.add(content).grow().pad(8f);
+            dialog.show();
+            // 返回空 table（因为对话框已显示）
+            table.clearChildren();
         }
 
         /** 经典配置面板：模板一键应用 + 全局输出优先级 + 按方向覆盖（折叠高级层） */

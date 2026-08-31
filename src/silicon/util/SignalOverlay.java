@@ -109,16 +109,17 @@ public class SignalOverlay {
             minDist = bestMin;
         }
         usedHues.add(hue);
-        // 亮度：默认 0.75；同色系（色相最小距离 < 30°）时按该色相使用次数交替 0.75/0.55/0.95 拉开
+        // 亮度：默认 75（0~100，arc HSVtoRGB 的 value 为百分比）；同色系（色相最小距离 < 30°）时
+        // 按该色相使用次数交替 75/55/95 拉开（55/75/95 均为 0~100 亮度百分比）
         int count = hueCount.get(hue, 0);
-        float value = 0.75f;
+        float value = 75f;
         if (minDist < 30f) {
             int m = count % 3;
-            value = m == 1 ? 0.55f : (m == 2 ? 0.95f : 0.75f);
+            value = m == 1 ? 55f : (m == 2 ? 95f : 75f);
         }
         hueCount.put(hue, count + 1);
-        // 固定饱和度（0.85）：颜色差异由色相 + 亮度保证，不受地形背景亮度影响
-        Color c = Color.HSVtoRGB(hue, 0.85f, value);
+        // 饱和度 85%（0~100）；亮度按上取值——注意 arc HSVtoRGB 的 s/v 是 0~100 百分比（0~1 会导致近黑）
+        Color c = Color.HSVtoRGB(hue, 85f, value);
         colorCache.put(code, c);
         return c;
     }

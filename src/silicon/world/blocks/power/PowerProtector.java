@@ -4,52 +4,41 @@ import arc.Core;
 import arc.audio.Sound;
 import arc.files.Fi;
 import arc.graphics.Color;
-import arc.graphics.g2d.Draw;
 import arc.math.Interp;
 import arc.math.Mathf;
 import arc.scene.actions.Actions;
 import arc.scene.event.Touchable;
 import arc.scene.style.NinePatchDrawable;
+import arc.scene.ui.Image;
 import arc.scene.ui.Label;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.TextButton.TextButtonStyle;
 import arc.scene.ui.layout.Table;
-import arc.struct.Seq;
 import arc.util.*;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
-import mindustry.core.Renderer;
 import mindustry.core.UI;
 import mindustry.gen.Building;
 import mindustry.gen.Groups;
-import mindustry.gen.Icon;
 import mindustry.gen.Tex;
-import mindustry.graphics.Layer;
 import mindustry.graphics.Pal;
-import mindustry.io.TypeIO;
 import mindustry.logic.LAccess;
 import mindustry.ui.Bar;
 import mindustry.ui.Fonts;
 import mindustry.ui.Styles;
-import mindustry.world.Edges;
 import mindustry.world.Tile;
-import mindustry.world.blocks.power.BeamNode;
 import mindustry.world.blocks.power.PowerGenerator;
 import mindustry.world.blocks.power.PowerGraph;
-import mindustry.world.blocks.power.PowerNode;
 import mindustry.world.blocks.sandbox.PowerVoid;
 import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.StatUnit;
-import mindustry.world.Block;
-import silicon.util.SiliconLog;
 
 import static mindustry.Vars.control;
 import static mindustry.Vars.player;
 import static mindustry.Vars.state;
 import static mindustry.Vars.tree;
 import static mindustry.Vars.ui;
-import static mindustry.Vars.world;
 import static mindustry.content.Blocks.powerVoid;
 import static silicon.Vars.*;
 
@@ -76,12 +65,8 @@ public class PowerProtector extends PowerGenerator {
     public float restoreInterval = 5f; // 5s 恢复 1s
     /** 欠款进度条满格对应的欠款值（仅用于显示归一化） */
     public float maxDebt = 100000f;
-    /** 配置面板固定宽度：停止按钮与各信息行统一铺满该宽度 */
-    public float panelWidth = 200f;
     /** 预热动画速度 */
     public float warmupSpeed = 0.1f;
-
-    private static final Seq<Building> emptySeq = new Seq<>(0);
 
     /** 启用按钮样式：与 flatTogglet 相同，但 checked 高亮边框为红色（Pal.remove）。懒加载以避免 Styles 类初始化顺序问题 */
     private static TextButtonStyle redToggle;
@@ -174,11 +159,6 @@ public class PowerProtector extends PowerGenerator {
     @Override
     public boolean canPlaceOn(Tile tile, mindustry.game.Team team, int rotation) {
         return true;
-    }
-
-    @Override
-    public void drawPlace(int x, int y, int rotation, boolean valid) {
-        super.drawPlace(x, y, rotation, valid);
     }
 
     /** 运行时模式（纯显示） */
@@ -565,11 +545,6 @@ public class PowerProtector extends PowerGenerator {
         }
 
         @Override
-        public void draw() {
-            super.draw();
-        }
-
-        @Override
         public double sense(LAccess sensor) {
             if (sensor == LAccess.powerNetStored) return powerStored.get(this);
             if (sensor == LAccess.powerNetCapacity) return powerCapacity.get(this);
@@ -579,7 +554,7 @@ public class PowerProtector extends PowerGenerator {
 
         // ===== UI 配置面板 =====
         private Table configTable = null;
-        private Label statusLabel = null, remainingLabel = null, spentLabel = null, powerLabel = null;
+        private Label statusLabel = null, remainingLabel = null, debtLabel = null, supplyLabel = null;
         private TextButton stopButton = null;
         private Table bannerTable = null, breakBannerTable = null;
 
@@ -613,76 +588,93 @@ public class PowerProtector extends PowerGenerator {
         public void buildConfiguration(Table table) {
             this.configTable = table;
             table.top();
-            table.background(Tex.pane);
 
-            // ── 启用/禁用大按钮（跨所有列，铺满信息列表宽度）──
-            stopButton = table.button("", redToggle(), () -> {
+            // 内容包裹表：背景 + 内边距，宽度由内容撑开
+            Table inner = new Table();
+            inner.background(Tex.pane);
+            inner.margin(8f, 12f, 8f, 12f);
+            table.add(inner).growX();
+
+            // ── 状态徽章 ──
+            inner.table(status -> {
+                Image dot = status.image(Tex.whiteui).size(10f).padRight(6f).get();
+                dot.update(() -> dot.setColor(modeColor()));
+                statusLabel = status.add("").style(Styles.outlineLabel).get();
+            }).colspan(2).center().padBottom(8f).row();
+
+            // ── 可用保护时间 ──
+            inner.table(t -> {
+                t.add(Core.bundle.get("block.silicon-power-protector.ui.availableTime"))
+                    .color(Color.lightGray).left().growX();
+                remainingLabel = t.add("").color(Color.cyan).right().get();
+            }).colspan(2).growX().padBottom(4f).row();
+
+            // ── 欠下电力 ──
+            inner.table(t -> {
+                t.add(Core.bundle.get("block.silicon-power-protector.ui.totalSpent"))
+                    .color(Color.lightGray).left().growX();
+                debtLabel = t.add("").color(Pal.powerBar).right().get();
+            }).colspan(2).growX().padBottom(4f).row();
+
+            // ── 当前供电 ──
+            inner.table(t -> {
+                t.add(Core.bundle.get("block.silicon-power-protector.ui.currentSupply"))
+                    .color(Color.lightGray).left().growX();
+                supplyLabel = t.add("").right().get();
+            }).colspan(2).growX().padBottom(8f).row();
+
+            // ── 启用/禁用按钮 ──
+            stopButton = inner.button("", redToggle(), () -> {
                 state.stopped = !state.stopped;
                 updateConfigUI();
-            }).colspan(3).height(64f).growX().get();
+            }).colspan(2).height(40f).growX().get();
             stopButton.getLabel().setAlignment(Align.center);
-            stopButton.getLabel().setFontScale(1.6f);
-            table.row();
-
-            // ── 分隔线 ──
-            table.image(Tex.whiteui, Color.black).colspan(3).height(2f).growX().pad(2f).row();
-
-            // ── 4 项信息 ──
-            statusLabel = infoRow(table, "block.silicon-power-protector.ui.status", Color.white, false);
-            remainingLabel = infoRow(table, "block.silicon-power-protector.ui.availableTime", Color.cyan, false);
-            spentLabel = infoRow(table, "block.silicon-power-protector.ui.totalSpent", Pal.powerBar, true);
-            powerLabel = infoRow(table, "block.silicon-power-protector.ui.currentSupply", Color.green, true);
+            stopButton.getLabel().setFontScale(1.1f);
 
             updateConfigUI();
-        }
-
-        /** 信息行：左标签（灰）+ 右值（彩色），可选电源图标 */
-        private Label infoRow(Table t, String labelKey, Color valueColor, boolean powerIcon) {
-            t.add(Core.bundle.get(labelKey)).color(Color.lightGray).left().growX().pad(4f);
-            Label value = t.add("").color(valueColor).right().pad(4f).get();
-            if (powerIcon) {
-                t.image(Icon.power).color(Pal.power).size(14f).pad(4f).padLeft(0f);
-            }
-            t.row();
-            return value;
         }
 
         @Override
         public void onConfigureClosed() {
             configTable = null;
-            statusLabel = remainingLabel = spentLabel = powerLabel = null;
+            statusLabel = null;
+            remainingLabel = null;
+            debtLabel = null;
+            supplyLabel = null;
             stopButton = null;
         }
 
         private void updateConfigUI() {
             if (configTable == null) return;
 
-            // 启用/禁用 按钮：checked = 已禁用（红色高亮）；文本 = 当前状态（已启用/已禁用）
+            // 启用/禁用按钮
             if (stopButton != null) {
                 stopButton.setChecked(state.stopped);
                 stopButton.setText(state.stopped
-                        ? Core.bundle.get("block.silicon-power-protector.ui.disableRun")
-                        : Core.bundle.get("block.silicon-power-protector.ui.enableRun"));
+                    ? Core.bundle.get("block.silicon-power-protector.ui.disableRun")
+                    : Core.bundle.get("block.silicon-power-protector.ui.enableRun"));
             }
 
-            // 状态
+            // 状态徽章
             if (statusLabel != null) {
                 statusLabel.setText(modeText());
                 statusLabel.setColor(modeColor());
             }
 
             // 可用保护时间
-            float remaining = Math.max(0f, state.remainingProtectionTime / 60f);
-            if (remainingLabel != null) remainingLabel.setText(Strings.fixed(remaining, 1) + "s");
+            if (remainingLabel != null) {
+                float sec = Math.max(0f, state.remainingProtectionTime / 60f);
+                remainingLabel.setText(Strings.fixed(sec, 1) + "s");
+            }
 
             // 欠下电力
-            if (spentLabel != null) spentLabel.setText(UI.formatAmount((long) state.debt));
+            if (debtLabel != null) debtLabel.setText(UI.formatAmount((long) state.debt));
 
             // 当前供电
-            if (powerLabel != null) {
-                float supply = shared.mode == Mode.Protecting ? state.tickPPower * 60f : 0f;
-                powerLabel.setText(Strings.fixed(supply, 1));
-                powerLabel.setColor(shared.mode == Mode.Protecting ? Color.green : Color.gray);
+            if (supplyLabel != null) {
+                float supply = shared != null && shared.mode == Mode.Protecting ? state.tickPPower * 60f : 0f;
+                supplyLabel.setText(Strings.fixed(supply, 1) + "/s");
+                supplyLabel.setColor(shared != null && shared.mode == Mode.Protecting ? Color.green : Color.gray);
             }
         }
 

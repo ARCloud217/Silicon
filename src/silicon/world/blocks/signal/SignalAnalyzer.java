@@ -71,7 +71,7 @@ public class SignalAnalyzer extends Block {
                         () -> SignalJammer.jammed(team, c, x, y) ? Pal.remove
                                 : (strengths[c] > SignalNet.DEFAULT_SENSITIVITY ? Pal.accent : Pal.gray),
                         () -> SignalJammer.jammed(team, c, x, y) ? 1f
-                                : Mathf.clamp((strengths[c] + 100f) / 110f)))
+                                : (strengths[c] > SignalNet.DEFAULT_SENSITIVITY ? Mathf.clamp((strengths[c] + 100f) / 110f) : 0f)))
                         .height(16f).growX();
                 table.row();
             }

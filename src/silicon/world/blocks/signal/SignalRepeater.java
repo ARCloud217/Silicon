@@ -73,6 +73,14 @@ public class SignalRepeater extends Block {
             boolean newActive = false;
             float bestStrength = SignalNet.DEFAULT_SENSITIVITY;
             float bestValue = 0f;
+            // 被干扰器压制（同信道/全信道）时无法转发
+            if (SignalJammer.jammed(team, channel, x, y)) {
+                if (active) {
+                    active = false;
+                    SignalNet.markDirty();
+                }
+                return;
+            }
             // 遍历本队信号源（发射器 + 其他激活中继器）
             for (Building b : SignalNet.allSources(team)) {
                 if (b == this) continue;

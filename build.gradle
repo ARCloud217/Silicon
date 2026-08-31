@@ -1,5 +1,7 @@
 apply plugin: "java"
 
+import java.util.zip.ZipFile
+
 version = '1.0'
 
 sourceSets.main.java.srcDirs = ["src"]
@@ -15,11 +17,22 @@ repositories {
         patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/Mindustry.jar' }
         metadataSources { artifact() }
     }
-
-    //For depending on the absolute newest commit for Mindustry
     ivy {
         url = 'https://github.com/'
-        patternLayout { artifact '/[organisation]/[module]/releases/download/master/[revision].jar' }
+        patternLayout { artifact '/[organisation]/[module]/releases/download/[revision]/dependencies.jar' }
+        metadataSources { artifact() }
+    }
+
+    //For depending on the absolute newest commit for Mindustry
+//    ivy {
+//        url = 'https://github.com/'
+//        patternLayout { artifact '/[organisation]/[module]/releases/download/master/[revision].jar' }
+//        metadataSources { artifact() }
+//    }
+//     If the version is set to 'latest', downloads the latest Mindustry *release* as a dependency
+    ivy {
+        url = 'https://github.com/'
+        patternLayout { artifact '/[organisation]/[module]/releases/[revision]/download/dependencies.jar' }
         metadataSources { artifact() }
     }
 }
@@ -51,8 +64,9 @@ ext{
 }
 
 dependencies{
-    compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
-    compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
+    compileOnly mindustryVersion == "be" ? "Anuken:MindustryBuilds:latest" : "Anuken:Mindustry:$mindustryVersion"
+//    compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
+//    compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
 }
 
 tasks.register('jarAndroid') {
@@ -72,25 +86,40 @@ tasks.register('jarAndroid') {
         // not split into multiple arguments.
         def classpathDeps = configurations.compileClasspath.asList() + configurations.runtimeClasspath.asList()
 
-        // NOTE: build-tools 34.0.0 d8 (R8 8.2.2-dev) requires JDK 17; it crashes with a
-        // NullPointerException on classes compiled by JDK 21. Build with JDK 17 (as CI does).
-        def d8File = new File("$sdkRoot/build-tools/34.0.0/${isWindows ? 'd8.bat' : 'd8'}")
-        if (!d8File.exists()) throw new GradleException("d8 not found at ${d8File.path}. Ensure build-tools 34.0.0 is installed.")
-        def d8 = d8File.path
+        // dex 化改用独立 R8 8.3.37，不再用 build-tools 34.0.0 的 d8（R8 8.2.2-dev）。
+        // 背景：旧 d8 开启 desugaring 时会在 classpath 含 java.lang.Record 的情况下
+        // 崩溃（NPE），当年为绕开而加 --no-desugaring；结果模组自身的 invoke-dynamic
+        // （字符串拼接/lambda/switch 等）未被脱糖，被编译成 $$ExternalSyntheticThrowRTE0
+        // 占位方法，安卓真机加载即抛 "Instruction is unrepresentable in DEX V35:
+        // invoke-dynamic"。R8 8.3.37 可安全处理 classpath 中的 record，恢复默认脱糖。
+        // 需 JDK 17+（CI 与本地均用 JDK 17）。
+        def r8Dir = new File(project.projectDir, "gradle/r8")
+        def r8File = new File(r8Dir, "r8-8.3.37.jar")
+        if (!r8File.exists()) {
+            r8Dir.mkdirs()
+            def tmp = new File(r8Dir, "r8-8.3.37.jar.part")
+            println "Downloading R8 8.3.37 (~16.6MB) for desugaring..."
+            new URL("https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.3.37/r8-8.3.37.jar").withInputStream { ins ->
+                tmp.withOutputStream { outs -> outs << ins }
+            }
+            if (!tmp.renameTo(r8File)) throw new GradleException("Failed to move R8 jar into place: ${r8File.path}")
+        }
+        def javaBin = new File(System.getProperty("java.home"), "bin" + File.separator + (isWindows ? "java.exe" : "java"))
+        if (!javaBin.exists()) throw new GradleException("java not found at ${javaBin.path}")
 
         def cmd = new ArrayList<String>()
-        cmd.add(d8)
+        cmd.add(javaBin.path)
+        cmd.add("-cp"); cmd.add(r8File.absolutePath)
+        cmd.add("com.android.tools.r8.D8")
         classpathDeps.each { dep -> cmd.add("--classpath"); cmd.add(dep.path) }
         cmd.add("--lib"); cmd.add(new File(platformRoot, "android.jar").path)
         cmd.add("--min-api"); cmd.add("21")
-        // build-tools 34.0.0 的 d8（R8 8.2.2-dev）在启用 desugaring 时会因
-        // java.lang.Record 类路径冲突抛 NPE，必须关闭（对齐 Anuken 官方模板/CI）
-        cmd.add("--no-desugaring")
+        // 默认脱糖开启（不再 --no-desugaring），确保 invoke-dynamic 全部转成 dex 表示
         cmd.add("--output"); cmd.add(projectName + "Android.jar")
         cmd.add(projectName + "Desktop.jar")
 
         def process = new ProcessBuilder(cmd)
-                .directory(new File("build/libs"))
+                .directory(new File(project.projectDir, "build/libs"))
                 .redirectErrorStream(true)
                 .start()
         process.consumeProcessOutput(System.out, System.err)
@@ -98,6 +127,40 @@ tasks.register('jarAndroid') {
         if (process.exitValue() != 0) {
             throw new GradleException("d8 dexing failed with exit code ${process.exitValue()}")
         }
+
+        // 产物自检：classes.dex 不得残留 $$ExternalSyntheticThrowRTE* 占位方法，
+        // 否则模块必在安卓真机加载时抛 "Instruction is unrepresentable in DEX"。
+        def androidJar = new File(project.projectDir, "build/libs/${projectName}Android.jar")
+        def zf = new ZipFile(androidJar)
+        try {
+            def entry = zf.getEntry("classes.dex")
+            if (entry == null) throw new GradleException("classes.dex missing in ${androidJar.path}")
+            def dex = new byte[(int) entry.size]
+            def ins = zf.getInputStream(entry)
+            try {
+                int off = 0
+                while (off < dex.length) {
+                    int r = ins.read(dex, off, dex.length - off)
+                    if (r < 0) break
+                    off += r
+                }
+            } finally { ins.close() }
+            def marker = "ExternalSyntheticThrowRTE".getBytes("ISO-8859-1")
+            boolean found = false
+            int i = 0
+            while (!found && i <= dex.length - marker.length) {
+                boolean match = true
+                for (int j = 0; j < marker.length; j++) {
+                    if (dex[i + j] != marker[j]) { match = false; break }
+                }
+                if (match) found = true
+                i++
+            }
+            if (found) {
+                throw new GradleException("classes.dex contains ExternalSyntheticThrowRTE placeholders (" +
+                        "un-desugared invoke-dynamic). Desugaring must stay enabled — do not re-add --no-desugaring.")
+            }
+        } finally { zf.close() }
     }
 }
 

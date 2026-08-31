@@ -9,6 +9,7 @@ import arc.input.KeyCode;
 import arc.math.Mathf;
 import arc.math.geom.Rect;
 import arc.scene.ui.Label;
+import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import arc.util.Tmp;
 import mindustry.Vars;
@@ -40,7 +41,7 @@ public class SignalOverlay {
     public static final Color SIGNAL_COLOR = Color.valueOf("3a6fe0");
     /** 无信号颜色（灰色） */
     public static final Color NO_SIGNAL_COLOR = Color.valueOf("9a9a9a");
-    /** 信号源区分色板（16 色，覆盖全色相）：不同信号源/中继器用不同颜色显示其覆盖（按名称/位置哈希选取） */
+    /** 信号源区分色板（备用：无编码时兜底；有编码时按 HSV 色相生成，颜色数量不限） */
     public static final Color[] SOURCE_COLORS = {
             Color.valueOf("e05555"), // 红
             Color.valueOf("e08a3a"), // 橙
@@ -59,20 +60,32 @@ public class SignalOverlay {
             Color.valueOf("9a9a9a"), // 灰
             Color.valueOf("c0c0c0"), // 银
     };
+    /** 信号专属颜色缓存（编码 → Color），避免每帧分配 */
+    private static final ObjectMap<String, Color> colorCache = new ObjectMap<>();
     /** 缩放阈值（相机视野宽度，像素）：视野宽于该值（缩小视角）显示蓝色范围，否则显示数字 */
     public static final float ZOOM_THRESHOLD_WIDTH = 600f;
     /** 预计算的强度数字字符串（0~15），避免每帧分配 */
     private static final String[] NUMBER_STRINGS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"};
 
-    /** 信号源颜色：基于信号名称哈希从色板选取（同一信号源颜色稳定） */
-    public static Color sourceColor(SignalSourceBuild sb) {
-        if (sb.signal == null) return SOURCE_COLORS[0];
-        return SOURCE_COLORS[(sb.signal.name.hashCode() & 0x7fffffff) % SOURCE_COLORS.length];
+    /** 信号专属颜色：按编码哈希生成 HSV 色相（0~360°，颜色数量不限），缓存复用避免每帧分配 */
+    public static Color signalColor(String code) {
+        Color cached = colorCache.get(code);
+        if (cached != null) return cached;
+        int h = code.hashCode() & 0x7fffffff;
+        Color c = Color.HSVtoRGB(h % 360f, 0.75f, 0.9f);
+        colorCache.put(code, c);
+        return c;
     }
 
-    /** 中继器颜色：基于世界坐标哈希从色板选取（标识不同转发来源，稳定） */
+    /** 信号源颜色：基于信号编码生成（同一信号源颜色稳定） */
+    public static Color sourceColor(SignalSourceBuild sb) {
+        if (sb.signal == null) return SOURCE_COLORS[0];
+        return signalColor(sb.signal.name);
+    }
+
+    /** 中继器颜色：基于世界坐标生成（标识不同转发来源，稳定） */
     public static Color relayColor(SignalRelayBuild rb) {
-        return SOURCE_COLORS[((int) (rb.x * 7f + rb.y * 13f) & 0x7fffffff) % SOURCE_COLORS.length];
+        return signalColor("R" + ((int) rb.x * 7 + (int) rb.y * 13));
     }
 
     /** 覆盖中某建筑的信号颜色（信号源/中继器用各自颜色，其余用浅蓝） */
@@ -187,10 +200,10 @@ public class SignalOverlay {
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
         float t = satStrength / SignalSource.MAX_STRENGTH;
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-        // 颜色：卫星所属信号的专属色（按编码哈希取色板）；无归属时浅蓝→深蓝渐变
+        // 颜色：卫星所属信号的专属色（按编码生成，不限数量）；无归属时浅蓝→深蓝渐变
         String sig = SatelliteManager.satelliteSignal(team);
         if (sig != null) {
-            Tmp.c1.set(SOURCE_COLORS[(sig.hashCode() & 0x7fffffff) % SOURCE_COLORS.length]);
+            Tmp.c1.set(signalColor(sig));
         } else {
             Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
         }

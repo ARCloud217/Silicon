@@ -69,23 +69,29 @@ public class SignalOverlay {
     /** 预计算的强度数字字符串（0~15），避免每帧分配 */
     private static final String[] NUMBER_STRINGS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"};
 
-    /** 信号专属颜色：色相动态分配——新编码选择与所有已用颜色色相距离最大的色相（贪心最远点，保证明显可辨），
-     *  饱和度 0.85、亮度固定 0.75（鲜艳、非灰黑白，不受背景影响——颜色只由色相区分）；结果缓存复用 */
-    public static Color signalColor(String code) {
+    /** 信号专属颜色：色相动态分配——新编码选择与所有已用颜色色相距离最大、且与所在区块背景色相差异大的色相
+     *  （避开背景相近色，优先补色方向；bgHue=-1 表示背景无彩/未知，不限制），
+     *  饱和度 0.85、亮度固定 0.75（鲜艳、非灰黑白，不受背景影响）；结果缓存复用 */
+    public static Color signalColor(String code, float bgHue) {
         Color cached = colorCache.get(code);
         if (cached != null) return cached;
-        // 贪心最远点：遍历候选色相（5° 步进），选与已用色相环距离最小者最大化的候选
         float hue;
         if (usedHues.isEmpty()) {
+            // 第一个：取编码哈希色相，若与背景色相近则偏移到补色方向
             int h0 = code.hashCode() & 0x7fffffff;
             hue = h0 % 360f;
+            if (bgHue >= 0f && hueDist(hue, bgHue) < 45f) {
+                hue = (bgHue + 180f) % 360f;
+            }
         } else {
+            // 贪心最远点：遍历候选色相（5° 步进），剔除与背景色相相近的候选，
+            // 选与已用色相环距离最小者最大化的候选（颜色间必然明显可辨）
             float bestHue = 0f, bestMin = -1f;
             for (float cand = 0f; cand < 360f; cand += 5f) {
+                if (bgHue >= 0f && hueDist(cand, bgHue) < 45f) continue; // 与背景太近，跳过
                 float minDist = 360f;
                 for (int i = 0; i < usedHues.size; i++) {
-                    float d = Math.abs(cand - usedHues.get(i));
-                    if (d > 180f) d = 360f - d; // 色相环最短距离
+                    float d = hueDist(cand, usedHues.get(i));
                     if (d < minDist) minDist = d;
                 }
                 if (minDist > bestMin) {
@@ -96,21 +102,47 @@ public class SignalOverlay {
             hue = bestHue;
         }
         usedHues.add(hue);
-        // 固定亮度（0.75）与饱和度（0.85）：颜色差异完全由色相保证，不受地形背景影响
+        // 固定亮度（0.75）与饱和度（0.85）：颜色差异完全由色相保证，不受地形背景亮度影响
         Color c = Color.HSVtoRGB(hue, 0.85f, 0.75f);
         colorCache.put(code, c);
         return c;
     }
 
-    /** 信号源颜色：基于信号编码生成（同一信号源颜色稳定） */
-    public static Color sourceColor(SignalSourceBuild sb) {
-        if (sb.signal == null) return SOURCE_COLORS[0];
-        return signalColor(sb.signal.name);
+    /** 色相环最短距离（0~180） */
+    static float hueDist(float a, float b) {
+        float d = Math.abs(a - b);
+        return d > 180f ? 360f - d : d;
     }
 
-    /** 中继器颜色：基于世界坐标生成（标识不同转发来源，稳定） */
+    /** RGB 颜色 → 色相（度，0~360；无彩/近灰返回 -1） */
+    static float hueOf(Color c) {
+        float r = c.r, g = c.g, b = c.b;
+        float max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b));
+        if (max - min < 0.01f) return -1f;
+        float h;
+        if (max == r) h = 60f * ((g - b) / (max - min));
+        else if (max == g) h = 60f * (2f + (b - r) / (max - min));
+        else h = 60f * (4f + (r - g) / (max - min));
+        if (h < 0f) h += 360f;
+        return h;
+    }
+
+    /** 世界坐标处地形区块颜色色相（基于地面 mapColor；无地面/无彩返回 -1） */
+    static float groundHue(float wx, float wy) {
+        mindustry.world.Tile t = Vars.world.tileWorld(wx, wy);
+        if (t == null || t.floor() == null) return -1f;
+        return hueOf(t.floor().mapColor);
+    }
+
+    /** 信号源颜色：基于信号编码 + 所在区块背景色相生成（同一信号源颜色稳定） */
+    public static Color sourceColor(SignalSourceBuild sb) {
+        if (sb.signal == null) return SOURCE_COLORS[0];
+        return signalColor(sb.signal.name, groundHue(sb.x, sb.y));
+    }
+
+    /** 中继器颜色：基于世界坐标 + 该处区块背景色相生成（标识不同转发来源，稳定） */
     public static Color relayColor(SignalRelayBuild rb) {
-        return signalColor("R" + ((int) rb.x * 7 + (int) rb.y * 13));
+        return signalColor("R" + ((int) rb.x * 7 + (int) rb.y * 13), groundHue(rb.x, rb.y));
     }
 
     /** 覆盖中某建筑的信号颜色（信号源/中继器用各自颜色，其余用浅蓝） */
@@ -225,10 +257,10 @@ public class SignalOverlay {
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
         float t = satStrength / SignalSource.MAX_STRENGTH;
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-        // 颜色：卫星所属信号的专属色（按编码生成，不限数量，固定亮度）；无归属时浅蓝→深蓝渐变
+        // 颜色：卫星所属信号的专属色（按编码生成，不限数量，不限制背景）；无归属时浅蓝→深蓝渐变
         String sig = SatelliteManager.satelliteSignal(team);
         if (sig != null) {
-            Tmp.c1.set(signalColor(sig));
+            Tmp.c1.set(signalColor(sig, -1f));
         } else {
             Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
         }

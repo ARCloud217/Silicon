@@ -140,10 +140,11 @@ public class SatelliteManager {
         }
         // 全图播报：xx队发射了一颗xx卫星
         String teamName = Core.bundle.get("team." + team.name + ".name", team.name);
-        String typeKey = switch (type) {
-            case SatelliteLauncher.TYPE_TEST -> "block.silicon-satellite-console.type.test";
-            default -> "block.silicon-satellite-console.type.signal";
-        };
+        String typeKey;
+        switch (type) {
+            case SatelliteLauncher.TYPE_TEST: typeKey = "block.silicon-satellite-console.type.test"; break;
+            default: typeKey = "block.silicon-satellite-console.type.signal"; break;
+        }
         Call.sendMessage(Core.bundle.format("satellite.launch.message", teamName, Core.bundle.get(typeKey)));
         return LAUNCH_OK;
     }

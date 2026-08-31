@@ -40,16 +40,24 @@ public class SignalOverlay {
     public static final Color SIGNAL_COLOR = Color.valueOf("3a6fe0");
     /** 无信号颜色（灰色） */
     public static final Color NO_SIGNAL_COLOR = Color.valueOf("9a9a9a");
-    /** 信号源区分色板：不同信号源/中继器用不同颜色显示其覆盖（按名称/位置哈希选取） */
+    /** 信号源区分色板（16 色，覆盖全色相）：不同信号源/中继器用不同颜色显示其覆盖（按名称/位置哈希选取） */
     public static final Color[] SOURCE_COLORS = {
             Color.valueOf("e05555"), // 红
             Color.valueOf("e08a3a"), // 橙
             Color.valueOf("e0c43a"), // 黄
+            Color.valueOf("9ec42a"), // 黄绿
             Color.valueOf("5fb04c"), // 绿
+            Color.valueOf("2fbf8f"), // 青绿
             Color.valueOf("3ac0c0"), // 青
+            Color.valueOf("3aa8e0"), // 天蓝
             Color.valueOf("4a6fe0"), // 蓝
+            Color.valueOf("6a4ae0"), // 紫蓝
             Color.valueOf("8a4ae0"), // 紫
+            Color.valueOf("bf4ae0"), // 品红
             Color.valueOf("e04a9a"), // 粉
+            Color.valueOf("d07a4a"), // 棕
+            Color.valueOf("9a9a9a"), // 灰
+            Color.valueOf("c0c0c0"), // 银
     };
     /** 缩放阈值（相机视野宽度，像素）：视野宽于该值（缩小视角）显示蓝色范围，否则显示数字 */
     public static final float ZOOM_THRESHOLD_WIDTH = 600f;

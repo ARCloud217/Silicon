@@ -122,7 +122,9 @@ public class SignalTransmitter extends Block {
             slider.changed(() -> configure(slider.getValue()));
             table.add(slider).width(240f).pad(2f);
             table.row();
-            table.add(Core.bundle.format("block.silicon-signal-transmitter.value.current", (int) value)).color(arc.graphics.Color.lightGray).pad(2f);
+            // 实时显示当前发送值（动态 label，slider 拖动即时刷新）
+            table.label(() -> Core.bundle.format("block.silicon-signal-transmitter.value.current", (int) value))
+                    .color(arc.graphics.Color.lightGray).pad(2f);
         }
 
         /** 选中显示：信道、功率、发送值（动态刷新） */

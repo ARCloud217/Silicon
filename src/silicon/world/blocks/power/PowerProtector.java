@@ -1,163 +1,179 @@
 package silicon.world.blocks.power;
 
 import arc.Core;
-import arc.func.Boolf;
-import arc.func.Cons;
+import arc.audio.Sound;
+import arc.files.Fi;
 import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
+import arc.math.Interp;
 import arc.math.Mathf;
-import arc.math.geom.Point2;
+import arc.scene.actions.Actions;
+import arc.scene.event.Touchable;
+import arc.scene.style.NinePatchDrawable;
+import arc.scene.ui.Label;
+import arc.scene.ui.TextButton;
+import arc.scene.ui.TextButton.TextButtonStyle;
+import arc.scene.ui.layout.Table;
 import arc.struct.Seq;
 import arc.util.*;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.core.Renderer;
 import mindustry.core.UI;
-import mindustry.game.Team;
 import mindustry.gen.Building;
+import mindustry.gen.Groups;
+import mindustry.gen.Icon;
+import mindustry.gen.Tex;
 import mindustry.graphics.Layer;
 import mindustry.graphics.Pal;
 import mindustry.io.TypeIO;
 import mindustry.logic.LAccess;
 import mindustry.ui.Bar;
+import mindustry.ui.Fonts;
+import mindustry.ui.Styles;
 import mindustry.world.Edges;
 import mindustry.world.Tile;
 import mindustry.world.blocks.power.BeamNode;
 import mindustry.world.blocks.power.PowerGenerator;
+import mindustry.world.blocks.power.PowerGraph;
 import mindustry.world.blocks.power.PowerNode;
 import mindustry.world.blocks.sandbox.PowerVoid;
 import mindustry.world.meta.Env;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.StatUnit;
+import mindustry.world.Block;
 import silicon.util.SiliconLog;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
+import static mindustry.Vars.control;
+import static mindustry.Vars.player;
+import static mindustry.Vars.state;
+import static mindustry.Vars.tree;
+import static mindustry.Vars.ui;
 import static mindustry.Vars.world;
 import static mindustry.content.Blocks.powerVoid;
 import static silicon.Vars.*;
 
 /**
- * PowerProtector - A block that protects the power network when power drops to 0,
- * locks power >= 1, exits protection after 5 minutes or after 30 seconds of
- * continuous power growth, records spent power, and enters recovery mode after exiting.
+ * PowerProtector - 存档级共享状态的电力保护器
+ * <p>
+ * 架构：
+ * - 数据字段写在每个保护器的存档中（write/read），属于存档层面而非游戏全局静态
+ * - 同一电网同队伍的保护器共享同一个 State 引用（模式/冲突/提示/会话时间，由最早放置的作 Master 维护）
+ * - 全队共享"可用保护时间"：跨电网由队伍 Master 统一维护消耗与回充，每台保护器持有副本用于存档
+ * - 欠款（debt）每台保护器独立计算与偿还
+ * - 保护时按每台 1x 速率扣减全队时间池；全队无欠款时才回充
+ * - 模式仅为显示文本：根据实际在供电/消耗/空闲/阻塞 自动推导，不控制逻辑
+ * - 供电/消耗逻辑独立：满足条件即执行，不受模式切换影响
  */
 public class PowerProtector extends PowerGenerator {
-    /**
-     * Protection time in ticks (5 minutes)
-     */
-    public float protectionTime = 5 * 60 * 60f;
-    /**
-     * Time required for continuous power growth to exit protection (30 seconds)
-     */
-    public float exitGrowthTime = 30 * 60f;
-    /**
-     * Recovery rate per second (0.1%)
-     */
-    public float secondRecoveryRate = 0.001f;
-    /**
-     * Speed of warmup animation transition
-     */
+    /** 保护总时长（tick），默认 90 秒 */
+    public float protectionTime = 90 * 60f;
+    /** 恢复利率（每秒） */
+    public float recoveryRatePerSecond = 0.02f; // 2%/s
+    /** 偿还手续费比例（10%） */
+    public float recoverySurcharge = 0.1f; // 10%
+    /** 恢复间隔秒数：每达到该时长线性恢复 1 秒可用保护时间 */
+    public float restoreInterval = 5f; // 5s 恢复 1s
+    /** 欠款进度条满格对应的欠款值（仅用于显示归一化） */
+    public float maxDebt = 100000f;
+    /** 配置面板固定宽度：停止按钮与各信息行统一铺满该宽度 */
+    public float panelWidth = 200f;
+    /** 预热动画速度 */
     public float warmupSpeed = 0.1f;
 
     private static final Seq<Building> emptySeq = new Seq<>(0);
 
-    /**
-     * Constructor for PowerProtector
-     * Sets up basic properties for the block
-     */
-    public PowerProtector(String name) {
-        super(name);
-        // Basic properties setup
-        update = true;           // Needs updating
-        solid = true;            // Is solid
-        consumesPower = true;
-        outputsPower = true;     // Outputs power
-        size = 2;                // Size of the block
-        health = 600;            // Health points
-        envEnabled = Env.any;    // Effective in any environment
-        configurable = false;    // Not configurable
-        saveConfig = false;      // Don't save configuration
-        displayFlow = false;     // Don't display flow
-        drawArrow = false;  // Don't draw arrow
-        consumePowerDynamic((entity) -> ((PowerProtectorBuild) entity).tickRPower).optional(false, false);
+    /** 启用按钮样式：与 flatTogglet 相同，但 checked 高亮边框为红色（Pal.remove）。懒加载以避免 Styles 类初始化顺序问题 */
+    private static TextButtonStyle redToggle;
+
+    private static TextButtonStyle redToggle() {
+        if (redToggle == null) {
+            redToggle = new TextButtonStyle(){{
+                font = Fonts.def;
+                fontColor = Color.white;
+                up = Styles.flatTogglet.up;
+                over = Styles.flatTogglet.over;
+                down = ((NinePatchDrawable)Styles.flatDown).tint(Pal.remove);
+                checked = down;
+                disabled = Styles.flatTogglet.disabled;
+                disabledFontColor = Color.gray;
+            }};
+        }
+        return redToggle;
     }
 
-    /**
-     * Sets up statistics for the block
-     */
+    // 拆除提示节流（避免 validBreak 轮询时刷屏）
+    private static float lastBreakToast = Float.NEGATIVE_INFINITY;
+
+    public PowerProtector(String name) {
+        super(name);
+        update = true;
+        solid = true;
+        consumesPower = true;
+        outputsPower = true;
+        size = 2;
+        health = 600;
+        envEnabled = Env.any;
+        configurable = true;
+        saveConfig = false;
+        displayFlow = false;
+        drawArrow = false;
+        // 不可被其他方块覆盖替换（放置时红色无效）
+        replaceable = false;
+        // 动态消费：恢复时按 tickRPower 消耗，否则不消耗
+        consumePowerDynamic(entity -> {
+            PowerProtectorBuild ppb = (PowerProtectorBuild) entity;
+            return ppb.state != null ? ppb.state.tickRPower : 0f;
+        }).optional(false, false);
+    }
+
     @Override
     public void setStats() {
         super.setStats();
         stats.add(Stat.repairTime, protectionTime / (60 * 60), StatUnit.minutes);
     }
 
-    /**
-     * Sets up status bars for the block
-     */
     @Override
     public void setBars() {
         super.setBars();
-        addBar("power", (PowerProtectorBuild entity) -> new Bar(() ->
-                Core.bundle.format("bar.power1", entity.status == 1 ?
-                        Strings.fixed(entity.getPowerProduction() * 60 * entity.timeScale(), 1) :
-                        Strings.fixed(entity.tickRPower * 60 * entity.timeScale() * entity.repayStatus(), 1)),
-                () -> Pal.powerBar,
-                () -> entity.productionEfficiency));
 
-        addBar("spent-power", (PowerProtectorBuild entity) -> new Bar(
-                () -> Core.bundle.format("bar.spent-power", UI.formatAmount((long) (entity.totalSpentPower))),
-                () -> Pal.powerBar,
-                () -> entity.totalSpentPower > 0 ? 1f : 0f
-        ));
+        // 状态：满格，颜色随模式变化（与配置面板状态文字一致）
+        addBar("status", (PowerProtectorBuild entity) -> new Bar(
+                entity::modeText,
+                entity::modeColor,
+                () -> 1f));
 
-        addBar("protection", (PowerProtectorBuild entity) -> new Bar(
-                () -> entity.isInRecoveryMode() ? Core.bundle.get("block.silicon-power-protector.recovery") :
-                        entity.isError() ? Core.bundle.get("block.silicon-power-protector.error") :
-                                entity.isInProtectionMode() ? Core.bundle.get("block.silicon-power-protector.protection") :
-                                        Core.bundle.get("block.silicon-power-protector.normal"),
-                () -> entity.isInRecoveryMode() ? Color.orange : entity.isError() ? Color.red :
-                        entity.isInProtectionMode() ? Color.green : Color.white,
-                () -> 1f)
-        );
+        // 可用保护时间：青色，与配置面板剩余时间一致
+        addBar("available", (PowerProtectorBuild entity) -> new Bar(
+                () -> Core.bundle.get("block.silicon-power-protector.ui.availableTime"),
+                () -> Color.cyan,
+                () -> Mathf.clamp(entity.state.remainingProtectionTime / protectionTime)));
+
+        // 欠下电力：淡橙，与配置面板欠款文字颜色一致
+        addBar("debt", (PowerProtectorBuild entity) -> new Bar(
+                () -> Core.bundle.get("block.silicon-power-protector.ui.totalSpent"),
+                () -> Pal.powerBar,
+                () -> Mathf.clamp((float) (entity.state.debt / maxDebt))));
     }
 
     @Override
     public boolean canBreak(Tile tile) {
-        return tile.build instanceof PowerProtectorBuild b && b.status == 0;
+        // 欠下电力时不可拆除（防止通过拆除抹掉欠款）
+        if(tile != null && tile.build instanceof PowerProtectorBuild ppb && ppb.state != null && ppb.state.debt > 0){
+            if(Time.time - lastBreakToast >= 90f){
+                lastBreakToast = Time.time;
+                if(!mindustry.Vars.headless && !state.isMenu()){
+                    ppb.showCannotBreakBanner();
+                }
+            }
+            return false;
+        }
+        return true;
     }
 
     @Override
-    public boolean canPlaceOn(Tile tile, Team team, int rotation) {
-        AtomicBoolean canPlace = new AtomicBoolean(true);
-        PowerNode.getNodeLinks(tile, this, team, other -> {
-            for (Building e : other.power.graph.consumers.items) {
-                if (e instanceof PowerProtectorBuild) {
-                    canPlace.set(false);
-                    return;
-                }
-            }
-        });
-        BeamNode.getNodeLinks(tile, this, team, other -> {
-            for (Building e : other.power.graph.consumers.items) {
-                if (e instanceof PowerProtectorBuild) {
-                    canPlace.set(false);
-                    return;
-                }
-            }
-        });
-        for (Point2 p : Edges.getEdges(size)) {
-            Tile t = tile.nearby(p);
-            if (t != null && t.build != null && t.build.power != null && canPlace.get()) {
-                for (Building e : t.build.power.graph.consumers.items) {
-                    if (e instanceof PowerProtectorBuild) {
-                        canPlace.set(false);
-                    }
-                }
-            }
-        }
-
-        return canPlace.get();
+    public boolean canPlaceOn(Tile tile, mindustry.game.Team team, int rotation) {
+        return true;
     }
 
     @Override
@@ -165,201 +181,377 @@ public class PowerProtector extends PowerGenerator {
         super.drawPlace(x, y, rotation, valid);
     }
 
-    /**
-     * Internal building class for PowerProtector
-     */
-    public class PowerProtectorBuild extends GeneratorBuild {
-        /**
-         * Interval timer for periodic operations
-         */
-        private final Interval interval = new Interval();
-        private byte status = 0;
-        private float protectionTimer = 0f;
-        private float growthTimer = 0f;
-        private double totalSpentPower = 0f;
-        private float tickPPower = 0f;
-        private float lastTickPPower = 0f;
-        private double rPowerPrincipal = 0f;
-        private float tickRPower = 0f;
-        private float lastTickRPower = 0f;
-        private boolean error = false;
-        private Building node = null;
+    /** 运行时模式（纯显示） */
+    public enum Mode {
+        Normal,      // 未启用
+        Protecting,  // 保护中（正在供电）
+        Recovering,  // 恢复中（正在消耗偿还）
+        Blocked,     // 被阻塞（同电网有其他保护器在工作）
+        Error,       // 错误（同电网多保护器冲突）
+        Stopped      // 手动停止（不供电不恢复）
+    }
 
-        /**
-         * Updates the tile every frame
-         */
+    /** 共享状态数据（存档字段 + 运行时临时变量） */
+    public static class State {
+        // ===== 存档字段（每个保护器都写入/读取）=====
+        /** 全队共享可用保护时间（tick）。由队伍 Master 统一维护，其余成员每帧拷贝同一份副本 */
+        public float remainingProtectionTime = 90 * 60f;
+        /** 自家欠下电力（每台保护器独立计算与偿还，不同步） */
+        public double debt = 0;
+        /** 全队回充累积器（tick）。与时间池一样为全队副本 */
+        public float restoreTimer = 0f;
+        /** 同电网冲突标记（网格级，读网格 Master 的 state） */
+        public boolean error = false;
+        /** 手动停止运行（自家） */
+        public boolean stopped = false;
+
+        // ===== 运行时临时变量（不存档）=====
+        public Mode mode = Mode.Normal;                   // 当前显示模式（网格级）
+        public float protectionTimer = 0f;                // 本次保护已用时间（网格级会话）
+        public float tickPPower = 0f, lastTickPPower = 0f; // 供电相关（自家）
+        public float tickRPower = 0f, lastTickRPower = 0f; // 恢复消耗相关（自家）
+        public double rPowerPrincipal = 0;                // 均摊本金（自家）
+        public float announceDelay = 0f;                  // 提示延迟（网格级）
+        public boolean announced = false;                 // 已提示（网格级）
+    }
+
+    public class PowerProtectorBuild extends GeneratorBuild {
+        // 运行时共享状态引用（指向同电网 Master 的 State）
+        private State shared;
+
+        // 全队共享时间池维护者（跨电网选举 id 最小的同队保护器，仅它执行消耗与回充）
+        private PowerProtectorBuild teamMaster;
+
+        // 间隔检测
+        private final Interval interval = new Interval();
+
+        // 电力不足警报音（仅随提示横幅播放一次）
+        private Sound warnSfx;
+
         @Override
         public void updateTile() {
-            {
-                // #23 保护/恢复期间免疫外部关停（开关方块、逻辑控制等）：
-                // 被关停会把 status 清零进入空闲态，进而可被直接拆除
-                if (isInProtectionMode() || isInRecoveryMode()) {
-                    if (!enabled) enabled = true;
-                }
-                if (!enabled && status == 0) return;
-                if (!enabled && status != 0) { status = 0; }
-                for (Building b : team.data().buildingTypes.get(block, emptySeq)) {
-                    if (power.graph.all.contains(b) && b != self()) {
-                        error = true;
-                        return;
-                    }
-                }
-                error = false;
-                for (Building b : team.data().buildingTypes.get(powerVoid, emptySeq)) {
-                    if (b.block instanceof PowerVoid && power.graph.all.contains(b)) return;
-                }
-            }
+            // 1. 同步引用：电网共享（模式/冲突/提示）+ 全队时间池
+            syncSharedState();
+            syncTeamState();
 
-            // Check if we should enter protection mode (when power is 0 or negative)
-            if (status == 0 && powerStored.get(self()) <= Mathf.FLOAT_ROUNDING_ERROR &&
-                    power.graph.all.items.length > 0 && powerChanged.get(self()) < 0f && powerCapacity.get(self()) > 0 && !error) {
-                enterProtectionMode();
-            }
+            State s = shared;
+            if (s == null) return; // 无电网或无 Master
 
-            // Handle protection mode
-            if (status == 1) {
-                handleProtectionMode();
+            // 2. 检测冲突/阻塞
+            detectConflictAndBlock();
 
-                // Exit conditions for protection mode:
-                // 1. After 5 minutes have passed
-                // 2. After 30 seconds of continuous power growth
-                if (protectionTimer >= protectionTime || growthTimer >= exitGrowthTime
-                        || totalSpentPower >= Float.MAX_VALUE || power.graph.all.items.length == 0
-                        || powerCapacity.get(self()) == 0 || error || Double.isNaN(totalSpentPower)) {
-                    exitProtectionMode(); // Exit protection mode
-                }
-            } else if (status == -1) {
-                handleRecoveryMode();
-            }
-        }
+            // 3. 计算电网状态
+            float stored = powerStored.get(this);
+            float capacity = powerCapacity.get(this);
+            float changed = powerChanged.get(this); // 负值=净消耗
+            float gridNet = gridNetWithoutSelf(); // 电网自身净盈余（不含本保护器）
+            boolean hasStorage = capacity > Mathf.FLOAT_ROUNDING_ERROR && stored > Mathf.FLOAT_ROUNDING_ERROR;
 
-        /**
-         * Enters protection mode
-         */
-        private void enterProtectionMode() {
-            lastTickPPower = tickPPower = tickRPower = lastTickRPower = growthTimer = protectionTimer = 0f;
-            status = 1;
-            SiliconLog.info("Power Protector entered protection mode.");
-        }
+            // 3.1 判断实际工作条件（与模式无关，纯逻辑）
+            // 保护模式：电网亏电 && 无存储电力 && 无冲突 && 全队时间池有剩余
+            boolean canProtect = state.remainingProtectionTime > Mathf.FLOAT_ROUNDING_ERROR
+                    && !hasStorage
+                    && gridNet < 0f
+                    && power.graph != null && power.graph.all.size > 0
+                    && !s.error
+                    && !isBlockedByOther()
+                    && !state.stopped;
 
-        private void handleProtectionMode() {
-            protectionTimer += Time.delta;
-            lastTickPPower = tickPPower;
-            if (status == 1 && powerChanged.get(self()) > 0f) {
-                growthTimer += Time.delta;
+            // 恢复：自家有欠款 && 电网富余
+            boolean shouldRecover = state.debt > 0
+                    && gridNet > 0f
+                    && power.graph != null
+                    && !state.stopped;
+
+            // 未启用：自家无欠款 && 电网富余 && 无冲突
+            boolean isNormal = state.debt == 0
+                    && gridNet > 0f
+                    && !s.error
+                    && !isBlockedByOther()
+                    && !state.stopped;
+
+            // 3.2 更新显示模式（纯根据实际工作状态推导）
+            if (state.stopped) {
+                s.mode = Mode.Stopped;
+            } else if (s.error) {
+                s.mode = Mode.Error;
+            } else if (isBlockedByOther()) {
+                s.mode = Mode.Blocked;
+            } else if (canProtect) {
+                s.mode = Mode.Protecting;
+            } else if (shouldRecover) {
+                s.mode = Mode.Recovering;
+            } else if (isNormal) {
+                s.mode = Mode.Normal;
             } else {
-                growthTimer = 0f;
+                s.mode = Mode.Normal; // 兜底
             }
 
-            tickPPower = Math.max(-(powerChanged.get(self()) - lastTickPPower) - powerStored.get(self()), 0f);
-
-            totalSpentPower = Mathf.clamp(tickPPower + totalSpentPower, Mathf.FLOAT_ROUNDING_ERROR, Float.MAX_VALUE);
-        }
-
-        /**
-         * Handles recovery mode logic.
-         * 修复：恢复期间不再频繁断开/重连电网，避免电网波动导致物品传输中枢等消费者跳变。
-         * 改为：进入恢复时一次性连接电网并保持，直到恢复完成才断开。
-         */
-        private void handleRecoveryMode() {
-
-            // In recovery mode, consume spent power using equal principal method at 1% per second
-            if (totalSpentPower > 0) {
-                // Calculate equal principal amount to consume per second
-                updateTick();
+            // 3.3 全队共享时间池：仅由队伍 Master 执行消耗与回充
+            if (teamMaster == this) {
+                manageTeamTimePool();
             }
 
-            // 进入恢复时建立电网连接（仅首次或断开后重连），之后保持不中断
-            if (node == null || !power.graph.all.contains(node)) {
-                // 尝试连接电网（如果尚未连接）
-                getLink(team, other -> {
-                    node = other;
-                    other.power.links.addUnique(pos());
-                    if (team == other.team) {
-                        power.links.addUnique(other.pos());
-                    }
-                    power.graph.addGraph(other.power.graph);
-                });
+            // 4. 执行供电逻辑（保护）
+            if (canProtect) {
+                handleProtection(powerStored.get(this), powerChanged.get(this));
+            } else {
+                state.tickPPower = state.lastTickPPower = 0f;
+                s.protectionTimer = 0f;
+                s.announceDelay = 0f;
+                s.announced = false;
             }
 
-            // Exit recovery mode when time is up or all spent power is consumed
-            if (totalSpentPower <= 0 || Double.isNaN(totalSpentPower)) {
-                status = 0;
-                totalSpentPower = 0f;
-                tickRPower = 0f;
-                // 恢复完成：断开临时电网连接
-                if (node != null) {
-                    node.configureAny(pos());
-                    node = null;
-                }
+            // 5. 执行恢复逻辑（恢复）
+            if (shouldRecover) {
+                handleRecovery(gridNetWithoutSelf());
+            } else {
+                state.tickRPower = state.lastTickRPower = 0f;
+                state.rPowerPrincipal = 0;
+            }
+
+            // 6. UI 刷新
+            if (configTable != null && control.input.config.isShown() && control.input.config.getSelected() == this) {
+                updateConfigUI();
             }
         }
 
-        private void exitProtectionMode() {
-            growthTimer = tickPPower = lastTickPPower = 0f;
-            status = -1;
-            // The Recovery period is the same as the protection period
-            // How long the recovery period should last
-            float rTime = Math.max(protectionTimer, 1f);
-            protectionTimer = 0f;
-            rPowerPrincipal = totalSpentPower / rTime; // Convert ticks to seconds
-        }
-
-        /**
-         * Calculates the amount of power to recover per tick
-         */
-        private void updateTick() {
-            if (status != -1) {
-                tickRPower = 0f;
+        /** 同步电网共享引用：选举同电网同队伍 Master，所有保护器指向同一个 State（模式/冲突/提示/会话时间） */
+        private void syncSharedState() {
+            if (power == null || power.graph == null) {
+                shared = null;
                 return;
             }
-            lastTickRPower = tickRPower * repayStatus(); // #1 按电网实际交付比例偿还（本块为纯消费，generator efficiency 恒 0 曾致恢复期不耗电）
-            // Reduce the current spent power by the recovery amount
-            totalSpentPower -= lastTickRPower;
 
+            // 找到同电网同队伍的所有保护器，选 id 最小的作为 Master
+            PowerProtectorBuild master = null;
+            for (Building b : power.graph.all) {
+                if (b instanceof PowerProtectorBuild ppb && ppb.team == team) {
+                    if (master == null || b.id < master.id) {
+                        master = ppb;
+                    }
+                }
+            }
 
-            // Also add interest at 1% per second of remaining spent power
-            double interestPerSecond = totalSpentPower * secondRecoveryRate / 60;// 0.1% per second
+            shared = master != null ? master.state : null;
+        }
 
-            double interestPerTick = interestPerSecond / 60;
-            totalSpentPower += interestPerTick;
-            double dP = rPowerPrincipal + interestPerTick;
-            if (dP < Float.MAX_VALUE) {
-                tickRPower = (float) Mathf.clamp(powerStored.get(self()) / 2 + powerChanged.get(self()) + lastTickRPower,
-                        Math.max(Mathf.FLOAT_ROUNDING_ERROR, dP), Float.MAX_VALUE);
-            } else {
-                tickRPower = Float.MAX_VALUE;
+        /** 同步全队时间池：跨电网选举 id 最小且有电网的同队保护器作为队伍 Master，其余成员每帧拷贝时间池存档字段 */
+        private void syncTeamState() {
+            teamMaster = null;
+            PowerProtectorBuild master = null;
+            for (Building b : Groups.build) {
+                if (b instanceof PowerProtectorBuild ppb && ppb.team == team
+                        && ppb.power != null && ppb.power.graph != null) {
+                    if (master == null || b.id < master.id) {
+                        master = ppb;
+                    }
+                }
+            }
+
+            if (master != null) {
+                teamMaster = master;
+                if (master != this) {
+                    // 同步全队共享时间池（欠款各台独立，不同步）
+                    this.state.remainingProtectionTime = master.state.remainingProtectionTime;
+                    this.state.restoreTimer = master.state.restoreTimer;
+                }
             }
         }
 
-        /**
-         * Checks if the protector is in protection mode
-         */
-        public boolean isInProtectionMode() {
-            return status == 1;
+        /** 维护全队共享时间池：保护时按每台 1x 扣减，全队无欠款才回充。仅队伍 Master 调用 */
+        private void manageTeamTimePool() {
+            float activeCnt = 0f;
+            boolean anyDebt = false;
+
+            for (Building b : Groups.build) {
+                if (!(b instanceof PowerProtectorBuild ppb) || ppb.team != team) continue;
+
+                if (ppb.power != null && ppb.power.graph != null && ppb.shared != null && ppb.shared.mode == Mode.Protecting) {
+                    activeCnt += 1f;
+                }
+                if (ppb.state.debt > 0) anyDebt = true;
+            }
+
+            // 消耗：正在保护的每台保护器按 1x 速率扣减共享时间池（Time.delta 为 tick，1 秒 = 60 tick）
+            if (activeCnt > 0f) {
+                state.remainingProtectionTime = Math.max(0f, state.remainingProtectionTime - activeCnt * Time.delta);
+            }
+
+            // 回充：全队无欠款且未满时线性持续恢复，每 restoreInterval 秒恢复 1 秒可用时间（Time.delta 为 tick）
+            if (!anyDebt && state.remainingProtectionTime < protectionTime) {
+                state.remainingProtectionTime = Math.min(protectionTime, state.remainingProtectionTime + Time.delta / restoreInterval);
+            }
         }
 
-        /** #1 恢复偿还的电网交付比例（0~1）：动态消费的实际满足率，替代恒为 0 的 generator efficiency。 */
-        public float repayStatus(){
-            return power == null ? 0f : Mathf.clamp(power.status);
+        /** 检测冲突与阻塞 */
+        private void detectConflictAndBlock() {
+            shared.error = false;
+            if (power.graph != null) {
+                int count = 0;
+                for (Building b : power.graph.all) {
+                    if (b instanceof PowerProtectorBuild ppb && ppb.team == team) {
+                        count++;
+                    }
+                }
+                if (count > 1) shared.error = true;
+            }
+            if (!shared.error && power.graph != null) {
+                for (Building b : power.graph.all) {
+                    if (b.block instanceof PowerVoid) return;
+                }
+            }
         }
 
-
-        /**
-         * Checks if the protector is in recovery mode
-         */
-        public boolean isInRecoveryMode() {
-            return status == -1;
+        /** 是否被同电网其他正在工作的保护器阻塞 */
+        private boolean isBlockedByOther() {
+            if (power.graph == null) return false;
+            for (Building b : power.graph.all) {
+                if (b instanceof PowerProtectorBuild other && other != this && other.team == team) {
+                    if (other.shared != null && (other.shared.mode == Mode.Protecting || other.shared.mode == Mode.Recovering)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
-        public boolean isError() {
-            return error;
+        /** 电网自身净盈余（不含本保护器） */
+        private float gridNetWithoutSelf() {
+            if (power == null || power.graph == null) return 0f;
+            float produced = power.graph.getPowerProduced();
+            float needed = power.graph.getPowerNeeded();
+            float selfProduced = shared.mode == Mode.Protecting ? state.tickPPower : 0f;
+            float selfConsumed = shared.mode == Mode.Recovering ? state.tickRPower : 0f;
+            return (produced - selfProduced) - (needed - selfConsumed);
+        }
+
+        /** 保护供电：填补电网缺口 */
+        private void handleProtection(float stored, float changed) {
+            shared.protectionTimer += Time.delta;
+
+            state.tickPPower = Math.max(-(changed - state.lastTickPPower) - stored, 0f);
+            state.lastTickPPower = state.tickPPower;
+
+            state.debt = Math.min(state.debt + state.tickPPower, Double.MAX_VALUE);
+
+            if (!shared.announced && state.tickPPower > 0f) {
+                shared.announceDelay += Time.delta;
+                if (shared.announceDelay >= 20f) {
+                    shared.announced = true;
+                    if (player != null && team == player.team()) {
+                        showPowerShortageBanner();
+                    }
+                }
+            }
+        }
+
+        /** 恢复消耗：从电网富余+电池偿还自家欠款 */
+        private void handleRecovery(float gridNet) {
+            if (state.debt <= 0 || Double.isNaN(state.debt)) return;
+
+            float net = gridNetWithoutSelf();
+            if (net < 0f) {
+                state.tickRPower = state.lastTickRPower = 0f;
+                return;
+            }
+
+            float surplus = Math.max(0f, net);
+            float batteryAvailable = power.graph != null ? power.graph.getBatteryStored() : 0f;
+            float available = surplus + batteryAvailable;
+
+            double interest = state.debt * recoveryRatePerSecond / 60.0;
+            float desiredRate = (float) ((state.debt / Math.max(shared.protectionTimer, 1f) + interest) * (1f + recoverySurcharge));
+
+            state.tickRPower = Math.min(desiredRate, Math.max(0f, available));
+
+            float repayRatio = Math.max(repayStatus(), 0.01f);
+            state.lastTickRPower = state.tickRPower * repayRatio;
+
+            state.debt -= state.lastTickRPower;
+            if (state.debt < 0) state.debt = 0;
+
+            state.rPowerPrincipal = state.debt / Math.max(shared.protectionTimer, 1f);
+        }
+
+        /** 播放电力不足警报音（与提示横幅绑定，横幅出现时播放一次；若该音效当前正在播放则取消本次，避免高频进出保护时声音重叠） */
+        private void playWarnSfx() {
+            if (mindustry.Vars.headless) return;
+            if (warnSfx == null) {
+                for (String path : new String[]{"sounds/warn/power-protector.ogg", "assets/sounds/warn/power-protector.ogg"}) {
+                    Fi f = tree.get(path);
+                    if (f.exists()) {
+                        warnSfx = new Sound(f);
+                        break;
+                    }
+                }
+            }
+            if (warnSfx != null && warnSfx.countPlaying() <= 0) warnSfx.play();
+        }
+
+        private void showPowerShortageBanner() {
+            playWarnSfx();
+            if (bannerTable != null) return;
+            Table t = new Table(Styles.black3);
+            t.touchable = Touchable.disabled;
+            t.margin(8f);
+            Label label = t.add(Core.bundle.format("block.silicon-power-protector.announce.powerShortageTime", "999.0"))
+                    .style(Styles.outlineLabel).padLeft(14f).get();
+            label.setAlignment(Align.left);
+            label.update(() -> {
+                float remainingSec = Math.max(0f, state.remainingProtectionTime / 60f);
+                label.setText(Core.bundle.format("block.silicon-power-protector.announce.powerShortageTime",
+                        Strings.fixed(remainingSec, 1)));
+                label.setColor(Tmp.c1.set(Color.orange).lerp(Color.scarlet, Mathf.absin(Time.time, 2f, 1f)));
+            });
+            t.update(() -> {
+                t.pack();
+                t.setPosition(6f, Core.graphics.getHeight() * 0.6f, Align.topLeft);
+                if (shared.mode != Mode.Protecting || mindustry.Vars.state.isMenu() || !ui.hudfrag.shown) {
+                    if (bannerTable == t) bannerTable = null;
+                    t.remove();
+                }
+            });
+            bannerTable = t;
+            t.pack();
+            t.act(0.1f);
+            // 参照原版 HUD 层级：挂到 hudGroup（先于弹窗加入 Core.scene），菜单/弹窗自然在其上方
+            ui.hudGroup.addChild(t);
+        }
+
+        /** 禁止拆除提示横幅：位于电力不足横幅上方并与其左对齐，文字也左对齐，短暂显示后消失 */
+        private void showCannotBreakBanner() {
+            if(breakBannerTable != null) return;
+            Table t = new Table(Styles.black3);
+            t.touchable = Touchable.disabled;
+            t.margin(8f);
+            Label label = t.add(Core.bundle.get("block.silicon-power-protector.ui.cannotBreak"))
+                    .style(Styles.outlineLabel).padLeft(2f).get();
+            label.setAlignment(Align.left);
+            t.update(() -> {
+                t.pack();
+                // 电力不足横幅上方，左对齐（y 为顶边，更小 y = 更靠屏幕上方）
+                float y = bannerTable != null
+                        ? bannerTable.getY(Align.top) - t.getPrefHeight() - 4f
+                        : Core.graphics.getHeight() * 0.6f - 24f;
+                t.setPosition(6f, y, Align.topLeft);
+                if(mindustry.Vars.state.isMenu() || !ui.hudfrag.shown){
+                    if(breakBannerTable == t) breakBannerTable = null;
+                    t.remove();
+                }
+            });
+            t.actions(Actions.fadeOut(2.4f, Interp.pow4In), Actions.run(() -> {
+                if(breakBannerTable == t) breakBannerTable = null;
+            }), Actions.remove());
+            breakBannerTable = t;
+            t.pack();
+            t.act(0.1f);
+            ui.hudGroup.addChild(t);
         }
 
         @Override
         public float getPowerProduction() {
-            // Return current power generation
-            return tickPPower;
+            return shared != null && shared.mode == Mode.Protecting ? state.tickPPower : 0f;
         }
 
         @Override
@@ -369,106 +561,155 @@ public class PowerProtector extends PowerGenerator {
 
         @Override
         public byte version() {
-            return 8;
+            return 14;
         }
 
         @Override
         public void draw() {
             super.draw();
-
-            if (Mathf.zero(Renderer.laserOpacity) || isPayload() || team == Team.derelict) return;
-
-            Draw.z(Layer.power);
-            setupColor(power.graph.getSatisfaction());
-
-            if (node != null && team.data().buildings.contains(node)) {
-                if (node instanceof PowerNode.PowerNodeBuild p)
-                    ((PowerNode) p.block).drawLaser(x, y, node.x, node.y, size, node.block.size);
-                if (node instanceof BeamNode.BeamNodeBuild p) {
-                    ((BeamNode) p.block).drawLaser(x, y, node.x, node.y, size, node.block.size);
-
-                }
-            }
-
-
-            Draw.reset();
         }
 
-        protected void setupColor(float satisfaction) {
-            Draw.color(Tmp.c1.set(Color.white).lerp(Pal.powerLight, (1f - satisfaction) * 0.86f + Mathf.absin(3f, 0.1f)).a(Renderer.laserOpacity));
-        }
-
-
-        /**
-         * Provides sensor access to power network data
-         */
         @Override
         public double sense(LAccess sensor) {
-            if (sensor == LAccess.powerNetStored) return powerStored.get(self());
-            if (sensor == LAccess.powerNetCapacity) return powerCapacity.get(self());
+            if (sensor == LAccess.powerNetStored) return powerStored.get(this);
+            if (sensor == LAccess.powerNetCapacity) return powerCapacity.get(this);
             if (sensor == LAccess.efficiency) return shouldConsume() ? efficiency : 0f;
             return super.sense(sensor);
         }
 
-        private void getLink(Team team, Cons<Building> others) {
-            Boolf<Building> valid = other -> (powerCapacity.get(other) > Mathf.FLOAT_ROUNDING_ERROR &&
-                    powerStored.get(other) > Mathf.FLOAT_ROUNDING_ERROR) ||
-                    powerChanged.get(other) > Mathf.FLOAT_ROUNDING_ERROR;
+        // ===== UI 配置面板 =====
+        private Table configTable = null;
+        private Label statusLabel = null, remainingLabel = null, spentLabel = null, powerLabel = null;
+        private TextButton stopButton = null;
+        private Table bannerTable = null, breakBannerTable = null;
 
-            tempBuilds.clear();
+        /** 当前显示模式文案（与方块进度条共用） */
+        public String modeText() {
+            Mode m = shared != null ? shared.mode : Mode.Normal;
+            return switch (m) {
+                case Protecting -> Core.bundle.get("block.silicon-power-protector.protection");
+                case Recovering -> Core.bundle.get("block.silicon-power-protector.recovery");
+                case Blocked -> Core.bundle.get("block.silicon-power-protector.blocked");
+                case Error -> Core.bundle.get("block.silicon-power-protector.error");
+                case Stopped -> Core.bundle.get("block.silicon-power-protector.stopped");
+                default -> Core.bundle.get("block.silicon-power-protector.normal");
+            };
+        }
 
-            Seq<Building> buildings = team.data().buildings;
-            if (buildings != null) {
-                buildings.each(b -> b instanceof PowerNode.PowerNodeBuild p && p.power.links.size < ((PowerNode) p.block).maxNodes, tempBuilds::add);
-                buildings.each(b -> b instanceof BeamNode.BeamNodeBuild p && p.power.links.size < ((PowerNode) p.block).maxNodes, tempBuilds::add);
+        /** 当前显示模式颜色（恢复模式与剩余时间保持一致青色） */
+        public Color modeColor() {
+            Mode m = shared != null ? shared.mode : Mode.Normal;
+            return switch (m) {
+                case Protecting -> Color.green;
+                case Recovering -> Color.cyan;
+                case Blocked -> Color.red;
+                case Error -> Color.red;
+                case Stopped -> Color.gray;
+                default -> Color.white;
+            };
+        }
+
+        @Override
+        public void buildConfiguration(Table table) {
+            this.configTable = table;
+            table.top();
+            table.background(Tex.pane);
+
+            // ── 启用/禁用大按钮（跨所有列，铺满信息列表宽度）──
+            stopButton = table.button("", redToggle(), () -> {
+                state.stopped = !state.stopped;
+                updateConfigUI();
+            }).colspan(3).height(64f).growX().get();
+            stopButton.getLabel().setAlignment(Align.center);
+            stopButton.getLabel().setFontScale(1.6f);
+            table.row();
+
+            // ── 分隔线 ──
+            table.image(Tex.whiteui, Color.black).colspan(3).height(2f).growX().pad(2f).row();
+
+            // ── 4 项信息 ──
+            statusLabel = infoRow(table, "block.silicon-power-protector.ui.status", Color.white, false);
+            remainingLabel = infoRow(table, "block.silicon-power-protector.ui.availableTime", Color.cyan, false);
+            spentLabel = infoRow(table, "block.silicon-power-protector.ui.totalSpent", Pal.powerBar, true);
+            powerLabel = infoRow(table, "block.silicon-power-protector.ui.currentSupply", Color.green, true);
+
+            updateConfigUI();
+        }
+
+        /** 信息行：左标签（灰）+ 右值（彩色），可选电源图标 */
+        private Label infoRow(Table t, String labelKey, Color valueColor, boolean powerIcon) {
+            t.add(Core.bundle.get(labelKey)).color(Color.lightGray).left().growX().pad(4f);
+            Label value = t.add("").color(valueColor).right().pad(4f).get();
+            if (powerIcon) {
+                t.image(Icon.power).color(Pal.power).size(14f).pad(4f).padLeft(0f);
+            }
+            t.row();
+            return value;
+        }
+
+        @Override
+        public void onConfigureClosed() {
+            configTable = null;
+            statusLabel = remainingLabel = spentLabel = powerLabel = null;
+            stopButton = null;
+        }
+
+        private void updateConfigUI() {
+            if (configTable == null) return;
+
+            // 启用/禁用 按钮：checked = 已禁用（红色高亮）；文本 = 当前状态（已启用/已禁用）
+            if (stopButton != null) {
+                stopButton.setChecked(state.stopped);
+                stopButton.setText(state.stopped
+                        ? Core.bundle.get("block.silicon-power-protector.ui.disableRun")
+                        : Core.bundle.get("block.silicon-power-protector.ui.enableRun"));
             }
 
-            tempBuilds.sort((a, b) -> {
-                int type = -Boolean.compare(valid.get(a), valid.get(b));
-                if (type != 0) return type;
-                if (a.power.graph == b.power.graph) return 0;
-                float pA = powerStored.get(a) + powerChanged.get(a) * 60f;
-                float pB = powerStored.get(b) + powerChanged.get(b) * 60f;
-                if (a.power.graph == power.graph) pA += lastTickRPower * 60f;
-                if (b.power.graph == power.graph) pB += lastTickRPower * 60f;
-                return -Float.compare(pA, pB);
-            });
-
-            if (tempBuilds.size > 0 && tempBuilds.first() instanceof PowerNode.PowerNodeBuild p) {
-                others.get(p);
+            // 状态
+            if (statusLabel != null) {
+                statusLabel.setText(modeText());
+                statusLabel.setColor(modeColor());
             }
+
+            // 可用保护时间
+            float remaining = Math.max(0f, state.remainingProtectionTime / 60f);
+            if (remainingLabel != null) remainingLabel.setText(Strings.fixed(remaining, 1) + "s");
+
+            // 欠下电力
+            if (spentLabel != null) spentLabel.setText(UI.formatAmount((long) state.debt));
+
+            // 当前供电
+            if (powerLabel != null) {
+                float supply = shared.mode == Mode.Protecting ? state.tickPPower * 60f : 0f;
+                powerLabel.setText(Strings.fixed(supply, 1));
+                powerLabel.setColor(shared.mode == Mode.Protecting ? Color.green : Color.gray);
+            }
+        }
+
+        public float repayStatus() {
+            return power == null ? 0f : Mathf.clamp(power.status);
         }
 
         @Override
         public void write(Writes write) {
             super.write(write);
-            write.b(status);
-            write.f(protectionTimer);
-            write.f(growthTimer);
-            write.d(totalSpentPower);
-            write.f(tickPPower);
-            write.f(lastTickPPower);
-            write.d(rPowerPrincipal);
-            write.f(tickRPower);
-            write.f(lastTickRPower);
-            write.b(error ? 1 : 0);
-            TypeIO.writeBuilding(write, node);
+            // remainingProtectionTime/restoreTimer 为全队一致的时间池副本，debt 为各台自己的欠款
+            write.f(state.remainingProtectionTime);
+            write.d(state.debt);
+            write.f(state.restoreTimer);
+            write.b(state.error ? 1 : 0);
         }
 
         @Override
         public void read(Reads read, byte revision) {
             super.read(read, revision);
-            status = read.b();
-            protectionTimer = read.f();
-            growthTimer = read.f();
-            totalSpentPower = read.d();
-            tickPPower = read.f();
-            lastTickPPower = read.f();
-            rPowerPrincipal = read.d();
-            tickRPower = read.f();
-            lastTickRPower = read.f();
-            error = read.b() == 1;
-            node = TypeIO.readBuilding(read);
+            state.remainingProtectionTime = read.f();
+            state.debt = read.d();
+            state.restoreTimer = read.f();
+            state.error = read.b() == 1;
         }
+
+        // ===== 实例状态（存档 + 运行时）=====
+        public final State state = new State();
     }
 }

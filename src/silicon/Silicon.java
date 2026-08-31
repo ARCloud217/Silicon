@@ -26,6 +26,7 @@ import silicon.util.SiliconLog;
 import silicon.util.SignalOverlay;
 import silicon.util.UpdateChecker;
 import silicon.world.blocks.distribution.ItemTransferHubNetwork;
+import silicon.world.blocks.power.PowerProtector;
 import silicon.world.blocks.production.MineConverter;
 import silicon.world.blocks.signal.SignalRelay;
 import silicon.world.blocks.signal.SignalSource;
@@ -75,10 +76,12 @@ public class Silicon extends Mod {
     public void init() {
         // Reset hub network ID counter on world load to avoid ID collisions with saved hubs.
         // 信号源/中继器按队缓存也在世界加载时失效重建（读档后建筑重新加入 Groups.build）。
+        // 电力保护器全局状态也需重置。
         Events.on(EventType.WorldLoadEvent.class, e -> {
             ItemTransferHubNetwork.resetIdCounter();
             SignalSource.markDirty();
             SignalRelay.markDirty();
+            // PowerProtector 无全局静态状态，数据随存档保存，无需重置
         });
 
         BlockSearch.init();

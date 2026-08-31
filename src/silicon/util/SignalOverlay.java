@@ -20,6 +20,8 @@ import mindustry.gen.Building;
 import mindustry.gen.Player;
 import mindustry.ui.Fonts;
 import mindustry.ui.Styles;
+import silicon.world.blocks.signal.SignalChannel;
+import silicon.world.blocks.signal.SignalJammer;
 import silicon.world.blocks.signal.SignalRelay;
 import silicon.world.blocks.signal.SignalRelay.SignalRelayBuild;
 import silicon.world.blocks.signal.SignalSource;
@@ -234,9 +236,6 @@ public class SignalOverlay {
         if (hintLabel != null) hintLabel.visible = false;
     }
 
-    /** 信号源与激活中继器列表（静态复用，避免每帧分配） */
-    private static final Seq<Building> sources = new Seq<>();
-
     static void drawOverlay(Team team, float alpha) {
         // 视野宽（缩小视角）显示蓝色范围；视野窄（放大视角）显示数字
         boolean rangeMode = Core.camera.width >= ZOOM_THRESHOLD_WIDTH;
@@ -245,22 +244,16 @@ public class SignalOverlay {
             lastRangeMode = rangeMode;
             displayAlpha = 0f;
         }
-        // 收集所有信号源与已激活中继器（同队；静态列表复用，不产生分配）
-        sources.clear();
-        sources.addAll(SignalSource.allSources(team));
-        for (SignalRelayBuild rb : SignalRelay.allRelays(team)) {
-            if (rb.active) sources.add(rb);
-        }
         // 卫星全图信号强度（信号卫星每颗 +1，上限 15）
         int satStrength = SatelliteManager.signalStrength(team);
         if (rangeMode) {
-            // 范围模式：先画卫星全图基础层（按卫星所属信号着色），再逐格合成各源覆盖
+            // 范围模式：先画卫星全图基础层（按卫星所属信号着色），再逐格绘制各信道有效信号
             if (satStrength > 0) {
                 drawSatelliteRange(team, satStrength, alpha);
             }
-            drawRangeComposite(team, alpha);
+            drawRangeComposite(team, satStrength, alpha);
         } else {
-            // 数字模式：逐格取 max（卫星基础强度 + 各源强度），每格只绘制一次，避免重复/叠加
+            // 数字模式：逐格取各信道最大有效信号（含底噪/CCI/ACI/干扰器），每格只绘制一次
             drawNumbersOverlay(team, satStrength, alpha);
         }
         Draw.reset();
@@ -288,7 +281,26 @@ public class SignalOverlay {
         }
     }
 
-    /** 数字模式：可见区域内逐格计算强度 = max(卫星基础强度, 各源强度)，每格只绘制一次（字号覆盖一格 8px）；颜色取最强来源的专属色 */
+    /** 每格最大有效信号（各信道有效强度取最大，与卫星层取 max）；返回有效强度与最强来源（null=仅卫星） */
+    static float bestSignal(Team team, int satStrength, float wx, float wy, Building[] bestSrcOut) {
+        float bestStr = 0f;
+        Building bestSrc = null;
+        for (int ch = 1; ch <= SignalJammer.CHANNEL_MAX; ch++) {
+            SignalChannel.Result r = SignalChannel.effective(team, ch, wx, wy);
+            if (r.strength > bestStr) {
+                bestStr = r.strength;
+                bestSrc = r.bestSource;
+            }
+        }
+        if (satStrength > bestStr) {
+            bestStr = satStrength;
+            bestSrc = null; // 卫星层
+        }
+        bestSrcOut[0] = bestSrc;
+        return bestStr;
+    }
+
+    /** 数字模式：可见区域内逐格取各信道最大有效信号，每格只绘制一次（字号覆盖一格 8px）；颜色取最强来源的专属色 */
     static void drawNumbersOverlay(Team team, int satStrength, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
@@ -299,26 +311,18 @@ public class SignalOverlay {
         float oldScale = Fonts.def.getData().scaleX;
         // 字号 0.2（约 3.2px），远小于一格（8px）
         Fonts.def.getData().setScale(0.2f);
+        Building[] bestSrc = new Building[1];
         try {
             for (int gx = x0; gx <= x1; gx++) {
                 for (int gy = y0; gy <= y1; gy++) {
                     float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
-                    float s = satStrength; // 卫星全图基础强度
-                    int best = -1; // 提供最强信号的来源索引（-1=仅卫星）
-                    for (int i = 0; i < sources.size; i++) {
-                        Building b = sources.get(i);
-                        float bs = sourceStrength(b, wx, wy);
-                        if (bs > s) {
-                            s = bs;
-                            best = i;
-                        }
-                    }
+                    float s = bestSignal(team, satStrength, wx, wy, bestSrc);
                     if (s <= 0f) continue;
                     int val = Mathf.round(s);
                     float t = s / SignalSource.MAX_STRENGTH;
                     // 颜色：最强来源的专属色（信号源/中继器不同色）；仅卫星信号时为蓝色渐变
-                    if (best >= 0) {
-                        Tmp.c1.set(buildingColor(sources.get(best)));
+                    if (bestSrc[0] != null) {
+                        Tmp.c1.set(buildingColor(bestSrc[0]));
                     } else {
                         Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
                     }
@@ -335,50 +339,24 @@ public class SignalOverlay {
         }
     }
 
-    /** 该源/中继器在 (wx, wy) 的信号强度（信号源无信号/断电、中继器未激活时为 0） */
-    static float sourceStrength(Building b, float wx, float wy) {
-        if (b instanceof SignalSourceBuild sb) {
-            // 复用实例方法：含断电检查
-            return sb.strengthAt(wx, wy);
-        }
-        if (b instanceof SignalRelayBuild rb) {
-            // active 已受 enabled + 供电约束
-            return rb.active ? SignalSource.strengthAt(b.x, b.y, wx, wy) : 0f;
-        }
-        return 0f;
-    }
-
-    /** 范围模式（逐格合成）：每格取最强信号来源，用其专属颜色绘制（重叠区域显示最强源，不做半透明混合） */
-    static void drawRangeComposite(Team team, float alpha) {
-        if (sources.isEmpty()) return;
+    /** 范围模式（逐格合成）：每格取各信道最大有效信号，用最强来源的专属颜色绘制（重叠/干扰区显示最强或空白） */
+    static void drawRangeComposite(Team team, int satStrength, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         float rpx = SignalSource.RADIUS * 8f;
-        float rpxSq = rpx * rpx;
         // 格子范围：视口外扩一个覆盖半径（源在视口外但覆盖进入视口）
         int x0 = (int) ((view.x - rpx) / 8f) - 1, x1 = (int) ((view.x + view.width + rpx) / 8f) + 1;
         int y0 = (int) ((view.y - rpx) / 8f) - 1, y1 = (int) ((view.y + view.height + rpx) / 8f) + 1;
         // 范围模式透明度（0~100，设置项）
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
+        Building[] bestSrc = new Building[1];
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {
                 float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
-                float best = 0f;
-                int bestIdx = -1;
-                for (int i = 0; i < sources.size; i++) {
-                    Building b = sources.get(i);
-                    // 平方距离快速跳过（覆盖半径外无信号）
-                    float dx = wx - b.x, dy = wy - b.y;
-                    if (dx * dx + dy * dy > rpxSq) continue;
-                    float bs = sourceStrength(b, wx, wy);
-                    if (bs > best) {
-                        best = bs;
-                        bestIdx = i;
-                    }
-                }
-                if (bestIdx < 0) continue;
-                float t = best / SignalSource.MAX_STRENGTH;
-                // 最强来源的专属颜色，不透明度随强度（基础 0.45，中心更实 0.8）——保证色相/明暗差异清晰可见
-                Draw.color(buildingColor(sources.get(bestIdx)), (0.45f + 0.35f * t) * rangeAlpha * alpha);
+                float s = bestSignal(team, satStrength, wx, wy, bestSrc);
+                if (s <= 0f) continue;
+                float t = s / SignalSource.MAX_STRENGTH;
+                // 最强来源的专属颜色（仅卫星时为浅蓝），不透明度随强度
+                Draw.color(bestSrc[0] != null ? buildingColor(bestSrc[0]) : LIGHT_BLUE, (0.45f + 0.35f * t) * rangeAlpha * alpha);
                 Fill.rect(wx, wy, 8f, 8f);
             }
         }

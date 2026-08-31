@@ -110,35 +110,17 @@ public class SignalRelay extends Block {
         }
 
         void updateActive() {
-            boolean newActive = false;
             // 被禁用（如开关控制）或断电时不激活
             if (!enabled || !hasPower()) {
                 active = false;
                 return;
             }
-            // 遍历本队信号源缓存（不再每帧遍历 Groups.build）：同信道才激活；干扰强度削弱接收信号
-            for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
-                if (sb.channel != channel) continue;
-                if (Mathf.dst(x, y, sb.x, sb.y) <= RADIUS * 8f) {
-                    float s = sb.strengthAt(x, y);
-                    float j = SignalJammer.strengthAt(team, channel, x, y);
-                    if (s - j > 0.5f) {
-                        newActive = true;
-                        break;
-                    }
-                }
+            // 统一信号模型：同信道有效强度（含底噪/CCI/ACI/干扰器）> 阈值才激活（级联源也包含在内）
+            boolean newActive = SignalChannel.effective(team, channel, x, y).strength > 0.5f;
+            if (newActive != active) {
+                active = newActive;
+                SignalRelay.markDirty();
             }
-            // 附近有已激活的同信道中继器（级联），走中继器缓存
-            if (!newActive) {
-                for (SignalRelayBuild rb : SignalRelay.allRelays(team)) {
-                    if (rb == this || !rb.active || rb.channel != channel) continue;
-                    if (Mathf.dst(x, y, rb.x, rb.y) <= RADIUS * 8f) {
-                        newActive = true;
-                        break;
-                    }
-                }
-            }
-            active = newActive;
         }
 
         /** 配置面板：信道选择（1~5，灰底面板） */
@@ -164,12 +146,10 @@ public class SignalRelay extends Block {
             }).pad(4f);
         }
 
-        /** 本中继器在指定世界坐标处的信号强度（0~15，激活时；减去同信道干扰强度） */
+        /** 本中继器在指定世界坐标处的原始信号强度（0~15，激活时；干扰由 SignalChannel 统一计算） */
         public float strengthAt(float wx, float wy) {
             if (!active) return 0f;
-            float s = SignalSource.strengthAt(x, y, wx, wy);
-            float j = SignalJammer.strengthAt(team, channel, wx, wy);
-            return Math.max(0f, s - j);
+            return SignalSource.strengthAt(x, y, wx, wy);
         }
 
         /** 选中时显示信号范围（激活=深蓝，未激活=灰色） */

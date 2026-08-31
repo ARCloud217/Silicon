@@ -110,12 +110,12 @@ public class SignalOverlay {
         }
         usedHues.add(hue);
         // 亮度：默认 75（0~100，arc HSVtoRGB 的 value 为百分比）；同色系（色相最小距离 < 30°）时
-        // 按该色相使用次数交替 75/55/95 拉开（55/75/95 均为 0~100 亮度百分比）
+        // 按该色相使用次数交替 100/40/75（亮/暗/标准），明暗差异明显
         int count = hueCount.get(hue, 0);
         float value = 75f;
         if (minDist < 30f) {
             int m = count % 3;
-            value = m == 1 ? 55f : (m == 2 ? 95f : 75f);
+            value = m == 1 ? 40f : (m == 2 ? 100f : 75f);
         }
         hueCount.put(hue, count + 1);
         // 饱和度 85%（0~100）；亮度按上取值——注意 arc HSVtoRGB 的 s/v 是 0~100 百分比（0~1 会导致近黑）
@@ -280,7 +280,7 @@ public class SignalOverlay {
         } else {
             Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
         }
-        Draw.color(Tmp.c1, (0.1f + 0.25f * t) * rangeAlpha * alpha);
+        Draw.color(Tmp.c1, (0.45f + 0.35f * t) * rangeAlpha * alpha);
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {
                 Fill.rect(gx * 8f, gy * 8f, 8f, 8f);
@@ -375,8 +375,8 @@ public class SignalOverlay {
                 }
                 if (bestIdx < 0) continue;
                 float t = best / SignalSource.MAX_STRENGTH;
-                // 最强来源的专属颜色，透明度随强度（越近越不透明）
-                Draw.color(buildingColor(sources.get(bestIdx)), (0.1f + 0.25f * t) * rangeAlpha * alpha);
+                // 最强来源的专属颜色，不透明度随强度（基础 0.45，中心更实 0.8）——保证色相/明暗差异清晰可见
+                Draw.color(buildingColor(sources.get(bestIdx)), (0.45f + 0.35f * t) * rangeAlpha * alpha);
                 Fill.rect(wx, wy, 8f, 8f);
             }
         }

@@ -139,9 +139,8 @@ public class SignalNet {
         return strengthAt(team, channel, wx, wy) > DEFAULT_SENSITIVITY;
     }
 
-    /** 查询某位置某信道的最强信号值（无信号或被干扰返回 0） */
+    /** 查询某位置某信道的最强信号值（无信号返回 0） */
     public static float valueAt(Team team, int channel, float wx, float wy) {
-        if (SignalJammer.jammed(team, channel, wx, wy)) return 0f;
         float best = DEFAULT_SENSITIVITY;
         float val = 0f;
         for (Building b : allSources(team)) {

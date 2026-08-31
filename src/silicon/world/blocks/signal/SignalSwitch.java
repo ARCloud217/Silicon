@@ -48,14 +48,11 @@ public class SignalSwitch extends Block {
         public void updateTile() {
             hasSignal = false;
             currentValue = 0f;
-            // 被干扰器压制（同信道/全信道）时收不到信号
-            if (SignalJammer.jammed(team, channel, x, y)) {
-                enabled = false;
-                return;
-            }
             float bestStrength = SignalNet.DEFAULT_SENSITIVITY;
             for (Building b : SignalNet.allSources(team)) {
                 if (SignalNet.channelOf(b) != channel) continue;
+                // 被干扰器压制则不算
+                if (SignalJammer.jammed(team, channel, x, y)) continue;
                 float s = SignalNet.strengthAt(b.x, b.y, x, y, SignalNet.powerOf(b));
                 if (s > bestStrength) {
                     bestStrength = s;

@@ -1,8 +1,10 @@
 package silicon.world.blocks.signal;
 
+import arc.Core;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
+import arc.scene.ui.layout.Table;
 import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import arc.util.io.Reads;
@@ -11,6 +13,7 @@ import mindustry.game.Team;
 import mindustry.gen.Building;
 import mindustry.gen.Groups;
 import mindustry.graphics.Drawf;
+import mindustry.ui.Styles;
 import mindustry.world.Block;
 import silicon.util.SignalOverlay;
 
@@ -74,6 +77,8 @@ public class SignalRelay extends Block {
     public class SignalRelayBuild extends Building {
         /** 是否已激活（在信号覆盖范围内） */
         public boolean active = false;
+        /** 中继信道（1~5，默认 1）：只转发同信道信号 */
+        public int channel = 1;
         private int timer = 0;
 
         @Override
@@ -104,17 +109,23 @@ public class SignalRelay extends Block {
                 active = false;
                 return;
             }
-            // 遍历本队信号源缓存（不再每帧遍历 Groups.build）
+            // 被同信道/全信道干扰器压制时不激活
+            if (SignalJammer.jammed(team, channel, x, y)) {
+                active = false;
+                return;
+            }
+            // 遍历本队信号源缓存（不再每帧遍历 Groups.build）：同信道才激活
             for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
+                if (sb.channel != channel) continue;
                 if (Mathf.dst(x, y, sb.x, sb.y) <= RADIUS * 8f) {
                     newActive = true;
                     break;
                 }
             }
-            // 附近有已激活的中继器（级联），走中继器缓存
+            // 附近有已激活的同信道中继器（级联），走中继器缓存
             if (!newActive) {
                 for (SignalRelayBuild rb : SignalRelay.allRelays(team)) {
-                    if (rb == this || !rb.active) continue;
+                    if (rb == this || !rb.active || rb.channel != channel) continue;
                     if (Mathf.dst(x, y, rb.x, rb.y) <= RADIUS * 8f) {
                         newActive = true;
                         break;
@@ -124,9 +135,29 @@ public class SignalRelay extends Block {
             active = newActive;
         }
 
+        /** 配置面板：信道选择（1~5） */
+        @Override
+        public void buildConfiguration(Table table) {
+            table.clearChildren();
+            table.top();
+            table.add(Core.bundle.get("block.silicon-signal-relay.channel")).pad(2f);
+            table.row();
+            arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
+            for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
+                arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(String.valueOf(i), Styles.flatTogglet);
+                btn.setChecked(channel == i);
+                int ch = i;
+                btn.clicked(() -> configure(ch));
+                group.add(btn);
+                table.add(btn).size(44f, 40f).pad(2f);
+            }
+        }
+
         /** 本中继器在指定世界坐标处的信号强度（0~15，激活时） */
         public float strengthAt(float wx, float wy) {
             if (!active) return 0f;
+            // 转发区域被干扰时无信号
+            if (SignalJammer.jammed(team, channel, wx, wy)) return 0f;
             return SignalSource.strengthAt(x, y, wx, wy);
         }
 
@@ -145,12 +176,16 @@ public class SignalRelay extends Block {
         public void write(Writes write) {
             super.write(write);
             write.bool(active);
+            write.i(channel);
         }
 
         @Override
         public void read(Reads read, byte revision) {
             super.read(read, revision);
             active = read.bool();
+            if (revision >= 1) {
+                channel = read.i();
+            }
         }
     }
 }

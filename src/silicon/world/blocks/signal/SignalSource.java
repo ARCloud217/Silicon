@@ -6,6 +6,7 @@ import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
 import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
+import arc.scene.ui.layout.Table;
 import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import arc.util.io.Reads;
@@ -17,6 +18,7 @@ import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.graphics.Drawf;
 import mindustry.ui.Fonts;
+import mindustry.ui.Styles;
 import mindustry.world.Block;
 import silicon.util.SignalOverlay;
 import silicon.world.meta.Signal;
@@ -50,6 +52,8 @@ public class SignalSource extends Block {
                 b.signal = new Signal(value);
             }
         });
+        // 信道（1~5）
+        config(Integer.class, (SignalSourceBuild b, Integer v) -> b.channel = Math.max(1, Math.min(SignalJammer.CHANNEL_MAX, v)));
     }
 
     /**
@@ -130,6 +134,8 @@ public class SignalSource extends Block {
     public class SignalSourceBuild extends Building {
         /** 本源注册的信号（null 表示未生成/未同步） */
         public Signal signal;
+        /** 信道（1~5，默认 1）：同信道信号互相隔离；被干扰器压制时失效 */
+        public int channel = 1;
 
         @Override
         public void placed() {
@@ -162,10 +168,30 @@ public class SignalSource extends Block {
             markDirty();
         }
 
-        /** 本源在指定世界坐标处的信号强度（0~15；无信号时为 0） */
+        /** 本源在指定世界坐标处的信号强度（0~15；无信号或被干扰时为 0） */
         public float strengthAt(float wx, float wy) {
             if (signal == null) return 0f;
+            // 被同信道/全信道干扰器压制时无信号
+            if (SignalJammer.jammed(team, channel, wx, wy)) return 0f;
             return SignalSource.strengthAt(x, y, wx, wy);
+        }
+
+        /** 配置面板：信道选择（1~5） */
+        @Override
+        public void buildConfiguration(Table table) {
+            table.clearChildren();
+            table.top();
+            table.add(Core.bundle.get("block.silicon-signal-source.channel")).pad(2f);
+            table.row();
+            arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
+            for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
+                arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(String.valueOf(i), Styles.flatTogglet);
+                btn.setChecked(channel == i);
+                int ch = i;
+                btn.clicked(() -> configure(ch));
+                group.add(btn);
+                table.add(btn).size(44f, 40f).pad(2f);
+            }
         }
 
         /** 选中时显示信号覆盖范围（填充圆 + 圆环，类似电力节点；半径为像素，15 格 = 120px） */
@@ -206,6 +232,7 @@ public class SignalSource extends Block {
         public void write(Writes write) {
             super.write(write);
             write.str(signal == null ? "" : signal.name);
+            write.i(channel);
         }
 
         @Override
@@ -213,6 +240,9 @@ public class SignalSource extends Block {
             super.read(read, revision);
             String name = read.str();
             signal = name.isEmpty() ? null : new Signal(name);
+            if (revision >= 1) {
+                channel = read.i();
+            }
         }
     }
 }

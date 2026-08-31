@@ -1,0 +1,55 @@
+name: build-mod
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download Mindustry jar (v159.7, compile classpath)
+        run: curl -fsSL -o Mindustry.jar https://github.com/Anuken/Mindustry/releases/download/v159.7/Mindustry.jar
+
+      - name: Download R8 (D8 desugar, Android compat)
+        run: curl -fsSL -o r8.jar https://dl.google.com/dl/android/maven2/com/android/tools/r8/9.4.17/r8-9.4.17.jar
+
+      - name: Compile
+        run: |
+          mkdir -p build/classes
+          find src -name '*.java' > sources.txt
+          javac --release 17 -encoding UTF-8 -XDstringConcat=inline -cp Mindustry.jar -d build/classes @sources.txt
+
+      - name: Desugar to dex (D8)
+        run: |
+          mkdir -p build/dex
+          jar --create --file build/classes.jar -C build/classes .
+          # warnings about missing JDK classes in the lib are expected (Android provides them at runtime)
+          java -cp r8.jar com.android.tools.r8.D8 --release --lib Mindustry.jar --output build/dex build/classes.jar || true
+          test -f build/dex/classes.dex && echo "dex OK: $(stat -c%s build/dex/classes.dex) bytes"
+
+      - name: Package Silicon.jar (.class for PC + classes.dex for Android + resources)
+        run: |
+          mkdir -p dist
+          jar --create --file dist/Silicon.jar \
+            -C build/classes . \
+            -C build/dex classes.dex \
+            -C . mod.hjson \
+            -C . pinyin.txt \
+            -C assets .
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Silicon-jar
+          path: dist/Silicon.jar

@@ -9,6 +9,7 @@ import arc.input.KeyCode;
 import arc.math.Mathf;
 import arc.math.geom.Rect;
 import arc.scene.ui.Label;
+import arc.struct.ObjectIntMap;
 import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import arc.util.Tmp;
@@ -64,18 +65,22 @@ public class SignalOverlay {
     private static final ObjectMap<String, Color> colorCache = new ObjectMap<>();
     /** 已分配的色相（度），用于为新信号选择与已有颜色差异最大的色相（保证颜色明显不同） */
     private static final Seq<Float> usedHues = new Seq<>();
+    /** 色相使用次数：同色系（色相接近）时按次数交替亮度，进一步拉开区分 */
+    private static final ObjectIntMap<Float> hueCount = new ObjectIntMap<>();
     /** 缩放阈值（相机视野宽度，像素）：视野宽于该值（缩小视角）显示蓝色范围，否则显示数字 */
     public static final float ZOOM_THRESHOLD_WIDTH = 600f;
     /** 预计算的强度数字字符串（0~15），避免每帧分配 */
     private static final String[] NUMBER_STRINGS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"};
 
     /** 信号专属颜色：色相动态分配——新编码选择与所有已用颜色色相距离最大、且与所在区块背景色相差异大的色相
-     *  （避开背景相近色，优先补色方向；bgHue=-1 表示背景无彩/未知，不限制），
-     *  饱和度 0.85、亮度固定 0.75（鲜艳、非灰黑白，不受背景影响）；结果缓存复用 */
+     *  （避开背景相近色，优先补色方向；bgHue=-1 表示背景无彩/未知，不限制）。
+     *  信号间区分：色相最远点（主）；信号极多导致色相被迫接近（同色系）时，按色相使用次数交替亮度（0.75/0.55/0.95）
+     *  与地图区分：有彩背景按色相避开 ±45°，无彩背景靠固定亮度（0.75）天然对比。结果缓存复用 */
     public static Color signalColor(String code, float bgHue) {
         Color cached = colorCache.get(code);
         if (cached != null) return cached;
         float hue;
+        float minDist; // 与已用色相的最小距离（用于判断是否同色系）
         if (usedHues.isEmpty()) {
             // 第一个：取编码哈希色相，若与背景色相近则偏移到补色方向
             int h0 = code.hashCode() & 0x7fffffff;
@@ -83,27 +88,37 @@ public class SignalOverlay {
             if (bgHue >= 0f && hueDist(hue, bgHue) < 45f) {
                 hue = (bgHue + 180f) % 360f;
             }
+            minDist = 360f;
         } else {
             // 贪心最远点：遍历候选色相（5° 步进），剔除与背景色相相近的候选，
             // 选与已用色相环距离最小者最大化的候选（颜色间必然明显可辨）
             float bestHue = 0f, bestMin = -1f;
             for (float cand = 0f; cand < 360f; cand += 5f) {
                 if (bgHue >= 0f && hueDist(cand, bgHue) < 45f) continue; // 与背景太近，跳过
-                float minDist = 360f;
+                float curMin = 360f;
                 for (int i = 0; i < usedHues.size; i++) {
                     float d = hueDist(cand, usedHues.get(i));
-                    if (d < minDist) minDist = d;
+                    if (d < curMin) curMin = d;
                 }
-                if (minDist > bestMin) {
-                    bestMin = minDist;
+                if (curMin > bestMin) {
+                    bestMin = curMin;
                     bestHue = cand;
                 }
             }
             hue = bestHue;
+            minDist = bestMin;
         }
         usedHues.add(hue);
-        // 固定亮度（0.75）与饱和度（0.85）：颜色差异完全由色相保证，不受地形背景亮度影响
-        Color c = Color.HSVtoRGB(hue, 0.85f, 0.75f);
+        // 亮度：默认 0.75；同色系（色相最小距离 < 30°）时按该色相使用次数交替 0.75/0.55/0.95 拉开
+        int count = hueCount.get(hue, 0);
+        float value = 0.75f;
+        if (minDist < 30f) {
+            int m = count % 3;
+            value = m == 1 ? 0.55f : (m == 2 ? 0.95f : 0.75f);
+        }
+        hueCount.put(hue, count + 1);
+        // 固定饱和度（0.85）：颜色差异由色相 + 亮度保证，不受地形背景亮度影响
+        Color c = Color.HSVtoRGB(hue, 0.85f, value);
         colorCache.put(code, c);
         return c;
     }

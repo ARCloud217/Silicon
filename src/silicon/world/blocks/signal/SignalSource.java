@@ -17,7 +17,6 @@ import mindustry.gen.Building;
 import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.graphics.Drawf;
-import mindustry.ui.Fonts;
 import mindustry.ui.Styles;
 import mindustry.world.Block;
 import silicon.util.SignalOverlay;
@@ -176,11 +175,14 @@ public class SignalSource extends Block {
             return SignalSource.strengthAt(x, y, wx, wy);
         }
 
-        /** 配置面板：信道选择（1~5） */
+        /** 配置面板（选择信道界面）：顶部显示本信号源编号，下方选信道 */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
             table.top();
+            table.label(() -> Core.bundle.format("block.silicon-signal-source.code",
+                    signal == null ? "----" : signal.name)).pad(2f);
+            table.row();
             table.add(Core.bundle.get("block.silicon-signal-source.channel")).pad(2f);
             table.row();
             arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
@@ -204,28 +206,6 @@ public class SignalSource extends Block {
             Lines.stroke(2f);
             Lines.circle(x, y, RADIUS * 8f);
             Draw.reset();
-        }
-
-        @Override
-        public void draw() {
-            super.draw();
-            // 信号源上方显示其信号唯一编码（4 位数字或字母），透明度可在设置中调节
-            if (signal != null) {
-                Draw.z(35f);
-                Color oldColor = Fonts.def.getColor();
-                float oldScale = Fonts.def.getData().scaleX;
-                float codeAlpha = Core.settings.getInt("signal.codeAlpha", 100) / 100f;
-                Fonts.def.getData().setScale(0.4f);
-                try {
-                    Fonts.def.setColor(Color.white);
-                    Fonts.def.setColor(1f, 1f, 1f, codeAlpha);
-                    Fonts.def.draw(signal.name, x - 8f, y + 5f);
-                } finally {
-                    Fonts.def.setColor(oldColor);
-                    Fonts.def.getData().setScale(oldScale);
-                }
-                Draw.reset();
-            }
         }
 
         @Override

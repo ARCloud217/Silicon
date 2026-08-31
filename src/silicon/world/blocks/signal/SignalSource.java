@@ -189,10 +189,13 @@ public class SignalSource extends Block {
             table.top();
             table.table(Styles.grayPanel, t -> {
                 t.top();
+                // 编号跨满整行（避免挤占首列导致按钮间距不均），居中
                 t.label(() -> Core.bundle.format("block.silicon-signal-source.code",
-                        signal == null ? "----" : signal.name)).pad(2f);
+                        signal == null ? "----" : signal.name)).colspan(SignalJammer.CHANNEL_MAX).center().pad(2f);
                 t.row();
-                t.add(Core.bundle.get("block.silicon-signal-source.channel")).pad(2f);
+                // 标题居中，原版黄色
+                t.add(Core.bundle.get("block.silicon-signal-source.channel")).colspan(SignalJammer.CHANNEL_MAX).center()
+                        .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
                 arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
                 for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
@@ -201,7 +204,7 @@ public class SignalSource extends Block {
                     int ch = i;
                     btn.clicked(() -> configure(ch));
                     group.add(btn);
-                    t.add(btn).size(44f, 40f).pad(2f);
+                    t.add(btn).size(44f, 40f).pad(1f);
                 }
             }).pad(4f);
         }

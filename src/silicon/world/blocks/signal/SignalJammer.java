@@ -103,21 +103,23 @@ public class SignalJammer extends Block {
             table.top();
             table.table(Styles.grayPanel, t -> {
                 t.top();
-                t.add(Core.bundle.get("block.silicon-signal-jammer.channel")).pad(2f);
+                // 标题跨满整行（含全信道共 6 个按钮）、居中、原版黄色（避免挤占首列导致按钮间距不均）
+                t.add(Core.bundle.get("block.silicon-signal-jammer.channel")).colspan(CHANNEL_MAX + 1).center()
+                        .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
                 ButtonGroup<TextButton> group = new ButtonGroup<>();
                 TextButton allBtn = new TextButton(Core.bundle.get("block.silicon-signal-jammer.all"), Styles.flatTogglet);
                 allBtn.setChecked(jamChannel == ALL);
                 allBtn.clicked(() -> configure(ALL));
                 group.add(allBtn);
-                t.add(allBtn).size(68f, 40f).pad(2f);
+                t.add(allBtn).size(68f, 40f).pad(1f);
                 for (int i = 1; i <= CHANNEL_MAX; i++) {
                     TextButton btn = new TextButton(String.valueOf(i), Styles.flatTogglet);
                     btn.setChecked(jamChannel == i);
                     int ch = i;
                     btn.clicked(() -> configure(ch));
                     group.add(btn);
-                    t.add(btn).size(44f, 40f).pad(2f);
+                    t.add(btn).size(44f, 40f).pad(1f);
                 }
             }).pad(4f);
         }

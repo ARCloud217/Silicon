@@ -125,16 +125,16 @@ public class SignalTransmitter extends Block {
             table.add(Core.bundle.format("block.silicon-signal-transmitter.value.current", (int) value)).color(arc.graphics.Color.lightGray).pad(2f);
         }
 
-        /** 选中显示：信道、功率、发送值（动态刷新） */
+        /** 选中显示：信道、功率、发送值 */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.label(() -> Core.bundle.format("block.silicon-signal-transmitter.channel.current", channel)).pad(2f);
+            table.add(Core.bundle.format("block.silicon-signal-transmitter.channel.current", channel)).pad(2f);
             table.row();
-            table.label(() -> Core.bundle.format("block.silicon-signal-transmitter.power.current", power)).pad(2f);
+            table.add(Core.bundle.format("block.silicon-signal-transmitter.power.current", power)).pad(2f);
             table.row();
-            table.label(() -> Core.bundle.format("block.silicon-signal-transmitter.value.current", (int) value)).pad(2f);
+            table.add(Core.bundle.format("block.silicon-signal-transmitter.value.current", (int) value)).pad(2f);
         }
 
         @Override

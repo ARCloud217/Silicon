@@ -2,7 +2,6 @@ package silicon.world.blocks.signal;
 
 import arc.Core;
 import arc.scene.ui.ButtonGroup;
-import arc.scene.ui.Label;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
 import arc.util.io.Reads;
@@ -126,20 +125,19 @@ public class SignalRepeater extends Block {
             }
         }
 
-        /** 选中显示：信道、激活状态、转发值（动态刷新） */
+        /** 选中显示：信道、激活状态、转发值 */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.label(() -> Core.bundle.format("block.silicon-signal-repeater.channel.current", channel)).pad(2f);
+            table.add(Core.bundle.format("block.silicon-signal-repeater.channel.current", channel)).pad(2f);
             table.row();
-            Label stateLabel = new Label(() -> Core.bundle.get(active ? "block.silicon-signal-repeater.active" : "block.silicon-signal-repeater.inactive"));
-            stateLabel.update(() -> stateLabel.setColor(active ? arc.graphics.Color.lime : arc.graphics.Color.lightGray));
-            table.add(stateLabel).pad(2f);
-            table.row();
-            table.label(() -> active
-                    ? Core.bundle.format("block.silicon-signal-repeater.value", (int) relayValue)
-                    : "").pad(2f);
+            table.add(Core.bundle.get(active ? "block.silicon-signal-repeater.active" : "block.silicon-signal-repeater.inactive"))
+                    .color(active ? arc.graphics.Color.lime : arc.graphics.Color.lightGray).pad(2f);
+            if (active) {
+                table.row();
+                table.add(Core.bundle.format("block.silicon-signal-repeater.value", (int) relayValue)).pad(2f);
+            }
         }
 
         @Override

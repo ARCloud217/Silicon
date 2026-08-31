@@ -67,25 +67,38 @@ public class SignalOverlay {
     /** 预计算的强度数字字符串（0~15），避免每帧分配 */
     private static final String[] NUMBER_STRINGS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"};
 
-    /** 信号专属颜色：按编码哈希生成 HSV 色相（0~360°，颜色数量不限），缓存复用避免每帧分配 */
-    public static Color signalColor(String code) {
+    /** 信号专属颜色：按编码哈希生成黄金角色相（均匀分散、区分度大），饱和度 0.85（非灰），
+     *  亮度按背景亮度自适应（暗背景用亮色、亮背景用暗色，保证与地形对比；排除黑/白），缓存复用 */
+    public static Color signalColor(String code, float bgLuminance) {
         Color cached = colorCache.get(code);
         if (cached != null) return cached;
         int h = code.hashCode() & 0x7fffffff;
-        Color c = Color.HSVtoRGB(h % 360f, 0.75f, 0.9f);
+        // 黄金角（137.508°）：哈希差异 → 色相均匀分散，颜色间区分度大
+        float hue = (h * 137.508f) % 360f;
+        // 背景亮 → 暗色（0.4）；背景暗 → 亮色（0.85）；中亮 → 0.65
+        float value = bgLuminance > 0.55f ? 0.4f : (bgLuminance < 0.35f ? 0.85f : 0.65f);
+        Color c = Color.HSVtoRGB(hue, 0.85f, value);
         colorCache.put(code, c);
         return c;
     }
 
-    /** 信号源颜色：基于信号编码生成（同一信号源颜色稳定） */
-    public static Color sourceColor(SignalSourceBuild sb) {
-        if (sb.signal == null) return SOURCE_COLORS[0];
-        return signalColor(sb.signal.name);
+    /** 世界坐标处地形背景亮度（0~1，基于地面 mapColor 的感知亮度；无地面时默认 0.5） */
+    static float groundLuminance(float wx, float wy) {
+        mindustry.world.Tile t = Vars.world.tileWorld(wx, wy);
+        if (t == null || t.floor() == null) return 0.5f;
+        Color c = t.floor().mapColor;
+        return c.r * 0.299f + c.g * 0.587f + c.b * 0.114f;
     }
 
-    /** 中继器颜色：基于世界坐标生成（标识不同转发来源，稳定） */
+    /** 信号源颜色：基于信号编码 + 本源地面亮度生成（同一信号源颜色稳定） */
+    public static Color sourceColor(SignalSourceBuild sb) {
+        if (sb.signal == null) return SOURCE_COLORS[0];
+        return signalColor(sb.signal.name, groundLuminance(sb.x, sb.y));
+    }
+
+    /** 中继器颜色：基于世界坐标 + 该处地面亮度生成（标识不同转发来源，稳定） */
     public static Color relayColor(SignalRelayBuild rb) {
-        return signalColor("R" + ((int) rb.x * 7 + (int) rb.y * 13));
+        return signalColor("R" + ((int) rb.x * 7 + (int) rb.y * 13), groundLuminance(rb.x, rb.y));
     }
 
     /** 覆盖中某建筑的信号颜色（信号源/中继器用各自颜色，其余用浅蓝） */
@@ -200,10 +213,10 @@ public class SignalOverlay {
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
         float t = satStrength / SignalSource.MAX_STRENGTH;
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-        // 颜色：卫星所属信号的专属色（按编码生成，不限数量）；无归属时浅蓝→深蓝渐变
+        // 颜色：卫星所属信号的专属色（按编码生成，不限数量，背景折中亮度）；无归属时浅蓝→深蓝渐变
         String sig = SatelliteManager.satelliteSignal(team);
         if (sig != null) {
-            Tmp.c1.set(signalColor(sig));
+            Tmp.c1.set(signalColor(sig, 0.5f));
         } else {
             Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
         }

@@ -40,10 +40,39 @@ public class SignalOverlay {
     public static final Color SIGNAL_COLOR = Color.valueOf("3a6fe0");
     /** 无信号颜色（灰色） */
     public static final Color NO_SIGNAL_COLOR = Color.valueOf("9a9a9a");
+    /** 信号源区分色板：不同信号源/中继器用不同颜色显示其覆盖（按名称/位置哈希选取） */
+    public static final Color[] SOURCE_COLORS = {
+            Color.valueOf("e05555"), // 红
+            Color.valueOf("e08a3a"), // 橙
+            Color.valueOf("e0c43a"), // 黄
+            Color.valueOf("5fb04c"), // 绿
+            Color.valueOf("3ac0c0"), // 青
+            Color.valueOf("4a6fe0"), // 蓝
+            Color.valueOf("8a4ae0"), // 紫
+            Color.valueOf("e04a9a"), // 粉
+    };
     /** 缩放阈值（相机视野宽度，像素）：视野宽于该值（缩小视角）显示蓝色范围，否则显示数字 */
     public static final float ZOOM_THRESHOLD_WIDTH = 600f;
     /** 预计算的强度数字字符串（0~15），避免每帧分配 */
     private static final String[] NUMBER_STRINGS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"};
+
+    /** 信号源颜色：基于信号名称哈希从色板选取（同一信号源颜色稳定） */
+    public static Color sourceColor(SignalSourceBuild sb) {
+        if (sb.signal == null) return SOURCE_COLORS[0];
+        return SOURCE_COLORS[(sb.signal.name.hashCode() & 0x7fffffff) % SOURCE_COLORS.length];
+    }
+
+    /** 中继器颜色：基于世界坐标哈希从色板选取（标识不同转发来源，稳定） */
+    public static Color relayColor(SignalRelayBuild rb) {
+        return SOURCE_COLORS[((int) (rb.x * 7f + rb.y * 13f) & 0x7fffffff) % SOURCE_COLORS.length];
+    }
+
+    /** 覆盖中某建筑的信号颜色（信号源/中继器用各自颜色，其余用浅蓝） */
+    static Color buildingColor(Building b) {
+        if (b instanceof SignalSourceBuild sb) return sourceColor(sb);
+        if (b instanceof SignalRelayBuild rb) return relayColor(rb);
+        return LIGHT_BLUE;
+    }
 
     private static boolean visible = false;
     private static boolean toggleVisible = false;
@@ -168,7 +197,7 @@ public class SignalOverlay {
         }
     }
 
-    /** 数字模式：可见区域内逐格计算强度 = max(卫星基础强度, 各源强度)，每格只绘制一次（字号覆盖一格 8px） */
+    /** 数字模式：可见区域内逐格计算强度 = max(卫星基础强度, 各源强度)，每格只绘制一次（字号覆盖一格 8px）；颜色取最强来源的专属色 */
     static void drawNumbersOverlay(Team team, int satStrength, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
@@ -184,15 +213,24 @@ public class SignalOverlay {
                 for (int gy = y0; gy <= y1; gy++) {
                     float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
                     float s = satStrength; // 卫星全图基础强度
-                    for (Building b : sources) {
+                    int best = -1; // 提供最强信号的来源索引（-1=仅卫星）
+                    for (int i = 0; i < sources.size; i++) {
+                        Building b = sources.get(i);
                         float bs = sourceStrength(b, wx, wy);
-                        if (bs > s) s = bs;
+                        if (bs > s) {
+                            s = bs;
+                            best = i;
+                        }
                     }
                     if (s <= 0f) continue;
                     int val = Mathf.round(s);
                     float t = s / SignalSource.MAX_STRENGTH;
-                    // 浅蓝 → 深蓝渐变（强度越高越深）
-                    Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+                    // 颜色：最强来源的专属色（信号源/中继器不同色）；仅卫星信号时为蓝色渐变
+                    if (best >= 0) {
+                        Tmp.c1.set(buildingColor(sources.get(best)));
+                    } else {
+                        Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+                    }
                     Tmp.c1.a((0.6f + 0.4f * t) * digitAlpha * alpha);
                     // 复用预计算字符串避免分配；字号 0.2（约 3.2px）时单字符居中偏移
                     Fonts.def.setColor(Tmp.c1);
@@ -217,13 +255,15 @@ public class SignalOverlay {
         return 0f;
     }
 
-    /** 范围模式：半透明蓝色渐变填充信号覆盖圆（每格 8px，不挡方块），强度高=深蓝、低=浅蓝 */
+    /** 范围模式：按信号源颜色半透明填充信号覆盖圆（每格 8px，不挡方块），强度越高越不透明 */
     static void drawRange(Building b, float alpha) {
         int r = (int) SignalSource.RADIUS;
         float radiusPx = SignalSource.RADIUS * 8f;
         // 范围模式透明度（0~100，设置项）
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
         float radiusSq = radiusPx * radiusPx;
+        // 本信号源的专属颜色（不同信号源颜色不同）
+        Color srcColor = buildingColor(b);
         for (int dx = -r; dx <= r; dx++) {
             for (int dy = -r; dy <= r; dy++) {
                 float wx = b.x + dx * 8f, wy = b.y + dy * 8f; // 格子中心（像素）
@@ -232,9 +272,8 @@ public class SignalOverlay {
                 float s = sourceStrength(b, wx, wy);
                 if (s <= 0) continue;
                 float t = s / SignalSource.MAX_STRENGTH;
-                // 浅蓝 → 深蓝渐变（强度越高越深）
-                Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
-                Draw.color(Tmp.c1, (0.1f + 0.25f * t) * rangeAlpha * alpha);
+                // 源专属颜色，透明度随强度（越近越不透明）
+                Draw.color(srcColor, (0.1f + 0.25f * t) * rangeAlpha * alpha);
                 Fill.rect(wx, wy, 8f, 8f);
             }
         }

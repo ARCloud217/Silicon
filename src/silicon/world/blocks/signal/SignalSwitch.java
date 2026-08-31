@@ -2,6 +2,7 @@ package silicon.world.blocks.signal;
 
 import arc.Core;
 import arc.scene.ui.ButtonGroup;
+import arc.scene.ui.Label;
 import arc.scene.ui.Slider;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
@@ -89,18 +90,19 @@ public class SignalSwitch extends Block {
             table.add(Core.bundle.format("block.silicon-signal-switch.threshold.current", (int) threshold)).color(arc.graphics.Color.lightGray).pad(2f);
         }
 
-        /** 选中显示：信道、信号值、开关状态 */
+        /** 选中显示：信道、信号值、开关状态（动态刷新） */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.add(Core.bundle.format("block.silicon-signal-switch.channel.current", channel)).pad(2f);
+            table.label(() -> Core.bundle.format("block.silicon-signal-switch.channel.current", channel)).pad(2f);
             table.row();
-            table.add(Core.bundle.format("block.silicon-signal-switch.value.current",
+            table.label(() -> Core.bundle.format("block.silicon-signal-switch.value.current",
                     hasSignal ? (int) currentValue : Core.bundle.get("block.silicon-signal-switch.nosignal"))).pad(2f);
             table.row();
-            table.add(Core.bundle.get(enabled ? "block.silicon-signal-switch.on" : "block.silicon-signal-switch.off"))
-                    .color(enabled ? arc.graphics.Color.lime : arc.graphics.Color.lightGray).pad(2f);
+            Label stateLabel = new Label(() -> Core.bundle.get(enabled ? "block.silicon-signal-switch.on" : "block.silicon-signal-switch.off"));
+            stateLabel.update(() -> stateLabel.setColor(enabled ? arc.graphics.Color.lime : arc.graphics.Color.lightGray));
+            table.add(stateLabel).pad(2f);
         }
 
         /** 状态显示：启用时绿色状态条（可被其他模组方块引用） */

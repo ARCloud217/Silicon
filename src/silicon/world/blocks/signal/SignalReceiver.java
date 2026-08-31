@@ -84,17 +84,17 @@ public class SignalReceiver extends Block {
             }
         }
 
-        /** 选中显示：信道、信号强度、输出值 */
+        /** 选中显示：信道、信号强度、输出值（动态刷新） */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.add(Core.bundle.format("block.silicon-signal-receiver.channel.current", channel)).pad(2f);
+            table.label(() -> Core.bundle.format("block.silicon-signal-receiver.channel.current", channel)).pad(2f);
             table.row();
-            table.add(Core.bundle.format("block.silicon-signal-receiver.strength",
+            table.label(() -> Core.bundle.format("block.silicon-signal-receiver.strength",
                     hasSignal ? (int) signalStrength : Core.bundle.get("block.silicon-signal-receiver.nosignal"))).pad(2f);
             table.row();
-            table.add(Core.bundle.format("block.silicon-signal-receiver.output",
+            table.label(() -> Core.bundle.format("block.silicon-signal-receiver.output",
                     hasSignal ? (int) outputValue : Core.bundle.get("block.silicon-signal-receiver.nosignal"))).pad(2f);
         }
 

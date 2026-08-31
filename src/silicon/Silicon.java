@@ -130,11 +130,13 @@ public class Silicon extends Mod {
                 st.pref(new CustomSetting(t -> t.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(8f)));
                 // —— 信号显示设置 ——
                 st.checkPref("signal.hkey.toggle", true);
-                // 数字模式 / 范围模式透明度（0~100%）
+                // 数字模式 / 范围模式 / 信号源编码文字透明度（0~100%）
                 st.sliderPref("signal.digitAlpha", 80, 0, 100, 5,
                         i -> Core.bundle.format("setting.signal.digitAlpha.value", i));
                 st.sliderPref("signal.rangeAlpha", 45, 0, 100, 5,
                         i -> Core.bundle.format("setting.signal.rangeAlpha.value", i));
+                st.sliderPref("signal.codeAlpha", 100, 0, 100, 5,
+                        i -> Core.bundle.format("setting.signal.codeAlpha.value", i));
                 // —— 中枢物流调试与连线 ——
                 st.checkPref("hubDebugLog", false, v -> silicon.world.blocks.distribution.ItemTransferHub.debugFlows = v);
                 st.sliderPref("hubLinkOpacity", 100, 0, 100, 5, i -> i + "%");

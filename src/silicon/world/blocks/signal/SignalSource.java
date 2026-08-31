@@ -183,14 +183,16 @@ public class SignalSource extends Block {
         @Override
         public void draw() {
             super.draw();
-            // 信号源上方显示其信号唯一编码（4 位数字或字母），方便识别/卫星归属
+            // 信号源上方显示其信号唯一编码（4 位数字或字母），透明度可在设置中调节
             if (signal != null) {
                 Draw.z(35f);
                 Color oldColor = Fonts.def.getColor();
                 float oldScale = Fonts.def.getData().scaleX;
+                float codeAlpha = Core.settings.getInt("signal.codeAlpha", 100) / 100f;
                 Fonts.def.getData().setScale(0.4f);
                 try {
                     Fonts.def.setColor(Color.white);
+                    Fonts.def.setColor(1f, 1f, 1f, codeAlpha);
                     Fonts.def.draw(signal.name, x - 8f, y + 5f);
                 } finally {
                     Fonts.def.setColor(oldColor);

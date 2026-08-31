@@ -254,21 +254,11 @@ public class SignalOverlay {
         // 卫星全图信号强度（信号卫星每颗 +1，上限 15）
         int satStrength = SatelliteManager.signalStrength(team);
         if (rangeMode) {
-            // 范围模式：先画卫星全图基础层（按卫星所属信号着色），再逐源绘制各覆盖
-            // （每个源独立半透明绘制——重叠区颜色叠加，多个信号源的覆盖都能看到，不会只显示一种颜色）
+            // 范围模式：先画卫星全图基础层（按卫星所属信号着色），再逐格合成各源覆盖
             if (satStrength > 0) {
                 drawSatelliteRange(team, satStrength, alpha);
             }
-            if (sources.isEmpty()) {
-                Draw.reset();
-                return;
-            }
-            // 视野裁剪：屏幕外（含信号半径外扩）的来源跳过
-            Rect view = Core.camera.bounds(Tmp.r1).grow(SignalSource.RADIUS * 8f + 8f);
-            for (Building b : sources) {
-                if (!view.contains(b.x, b.y)) continue;
-                drawRange(b, alpha);
-            }
+            drawRangeComposite(team, alpha);
         } else {
             // 数字模式：逐格取 max（卫星基础强度 + 各源强度），每格只绘制一次，避免重复/叠加
             drawNumbersOverlay(team, satStrength, alpha);
@@ -356,26 +346,37 @@ public class SignalOverlay {
         return 0f;
     }
 
-    /** 范围模式（逐源独立绘制）：每个信号源用自己的颜色半透明填充覆盖圆（每格 8px，不挡方块），
-     *  强度越高越不透明；多个源重叠时颜色叠加，各源覆盖均可见 */
-    static void drawRange(Building b, float alpha) {
-        int r = (int) SignalSource.RADIUS;
-        float radiusPx = SignalSource.RADIUS * 8f;
+    /** 范围模式（逐格合成）：每格取最强信号来源，用其专属颜色绘制（重叠区域显示最强源，不做半透明混合） */
+    static void drawRangeComposite(Team team, float alpha) {
+        if (sources.isEmpty()) return;
+        Rect view = Core.camera.bounds(Tmp.r1);
+        float rpx = SignalSource.RADIUS * 8f;
+        float rpxSq = rpx * rpx;
+        // 格子范围：视口外扩一个覆盖半径（源在视口外但覆盖进入视口）
+        int x0 = (int) ((view.x - rpx) / 8f) - 1, x1 = (int) ((view.x + view.width + rpx) / 8f) + 1;
+        int y0 = (int) ((view.y - rpx) / 8f) - 1, y1 = (int) ((view.y + view.height + rpx) / 8f) + 1;
         // 范围模式透明度（0~100，设置项）
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-        float radiusSq = radiusPx * radiusPx;
-        // 本信号源的专属颜色（不同信号源颜色不同）
-        Color srcColor = buildingColor(b);
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dy = -r; dy <= r; dy++) {
-                float wx = b.x + dx * 8f, wy = b.y + dy * 8f; // 格子中心（像素）
-                float ddx = wx - b.x, ddy = wy - b.y;
-                if (ddx * ddx + ddy * ddy > radiusSq) continue; // 平方距离比较，避免 sqrt
-                float s = sourceStrength(b, wx, wy);
-                if (s <= 0) continue;
-                float t = s / SignalSource.MAX_STRENGTH;
-                // 源专属颜色，不透明度随强度（基础 0.45，中心更实 0.8）——色相/明暗差异清晰可见
-                Draw.color(srcColor, (0.45f + 0.35f * t) * rangeAlpha * alpha);
+        for (int gx = x0; gx <= x1; gx++) {
+            for (int gy = y0; gy <= y1; gy++) {
+                float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
+                float best = 0f;
+                int bestIdx = -1;
+                for (int i = 0; i < sources.size; i++) {
+                    Building b = sources.get(i);
+                    // 平方距离快速跳过（覆盖半径外无信号）
+                    float dx = wx - b.x, dy = wy - b.y;
+                    if (dx * dx + dy * dy > rpxSq) continue;
+                    float bs = sourceStrength(b, wx, wy);
+                    if (bs > best) {
+                        best = bs;
+                        bestIdx = i;
+                    }
+                }
+                if (bestIdx < 0) continue;
+                float t = best / SignalSource.MAX_STRENGTH;
+                // 最强来源的专属颜色，不透明度随强度（基础 0.45，中心更实 0.8）——保证色相/明暗差异清晰可见
+                Draw.color(buildingColor(sources.get(bestIdx)), (0.45f + 0.35f * t) * rangeAlpha * alpha);
                 Fill.rect(wx, wy, 8f, 8f);
             }
         }

@@ -62,19 +62,40 @@ public class SignalOverlay {
     };
     /** 信号专属颜色缓存（编码 → Color），避免每帧分配 */
     private static final ObjectMap<String, Color> colorCache = new ObjectMap<>();
+    /** 已分配的色相（度），用于为新信号选择与已有颜色差异最大的色相（保证颜色明显不同） */
+    private static final Seq<Float> usedHues = new Seq<>();
     /** 缩放阈值（相机视野宽度，像素）：视野宽于该值（缩小视角）显示蓝色范围，否则显示数字 */
     public static final float ZOOM_THRESHOLD_WIDTH = 600f;
     /** 预计算的强度数字字符串（0~15），避免每帧分配 */
     private static final String[] NUMBER_STRINGS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"};
 
-    /** 信号专属颜色：按编码哈希生成黄金角色相（均匀分散、区分度大），饱和度 0.85（非灰），
-     *  亮度按背景亮度自适应（暗背景用亮色、亮背景用暗色，保证与地形对比；排除黑/白），缓存复用 */
+    /** 信号专属颜色：色相动态分配——新编码选择与所有已用颜色色相距离最大的色相（贪心最远点，保证明显可辨），
+     *  饱和度 0.85（非灰），亮度按背景自适应（暗背景亮色、亮背景暗色，排除黑/白）；结果缓存复用 */
     public static Color signalColor(String code, float bgLuminance) {
         Color cached = colorCache.get(code);
         if (cached != null) return cached;
-        int h = code.hashCode() & 0x7fffffff;
-        // 黄金角（137.508°）：哈希差异 → 色相均匀分散，颜色间区分度大
-        float hue = (h * 137.508f) % 360f;
+        // 贪心最远点：遍历候选色相（5° 步进），选与已用色相环距离最小者最大化的候选
+        float hue;
+        if (usedHues.isEmpty()) {
+            int h0 = code.hashCode() & 0x7fffffff;
+            hue = h0 % 360f;
+        } else {
+            float bestHue = 0f, bestMin = -1f;
+            for (float cand = 0f; cand < 360f; cand += 5f) {
+                float minDist = 360f;
+                for (int i = 0; i < usedHues.size; i++) {
+                    float d = Math.abs(cand - usedHues.get(i));
+                    if (d > 180f) d = 360f - d; // 色相环最短距离
+                    if (d < minDist) minDist = d;
+                }
+                if (minDist > bestMin) {
+                    bestMin = minDist;
+                    bestHue = cand;
+                }
+            }
+            hue = bestHue;
+        }
+        usedHues.add(hue);
         // 背景亮 → 暗色（0.4）；背景暗 → 亮色（0.85）；中亮 → 0.65
         float value = bgLuminance > 0.55f ? 0.4f : (bgLuminance < 0.35f ? 0.85f : 0.65f);
         Color c = Color.HSVtoRGB(hue, 0.85f, value);

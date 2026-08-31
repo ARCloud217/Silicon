@@ -174,12 +174,13 @@ public class SignalSource extends Block {
             return power != null && power.status > 0.001f;
         }
 
-        /** 本源在指定世界坐标处的信号强度（0~15；无信号、断电或被干扰时为 0） */
+        /** 本源在指定世界坐标处的信号强度（0~15；无信号、断电或被干扰时为 0；干扰强度与信号同模型，差值 ≤ 0 被压制） */
         public float strengthAt(float wx, float wy) {
             if (signal == null || !hasPower()) return 0f;
-            // 被同信道/全信道干扰器压制时无信号
-            if (SignalJammer.jammed(team, channel, wx, wy)) return 0f;
-            return SignalSource.strengthAt(x, y, wx, wy);
+            float s = SignalSource.strengthAt(x, y, wx, wy);
+            // 减去同信道/全信道干扰强度（随距离衰减，与信号同模型）
+            float j = SignalJammer.strengthAt(team, channel, wx, wy);
+            return Math.max(0f, s - j);
         }
 
         /** 配置面板（选择信道界面，灰底面板）：顶部显示本信号源编号，下方选信道 */

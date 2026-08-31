@@ -18,11 +18,10 @@ import mindustry.world.meta.Stat;
 
 /**
  * 信号干扰器（1×1）：在指定信道（1~5，或全信道 ALL）发射压制噪声。
- * 干扰半径内同信道信号源/中继器的信号被压制（H 覆盖中该区域无信号）。
+ * 干扰强度与信号强度同模型（中心 15，随距离高斯衰减）；某处信号强度减去干扰强度，
+ * 差值 ≤ 0 时该处信号被完全压制（H 覆盖中无信号）。
  */
 public class SignalJammer extends Block {
-    /** 干扰半径（格） */
-    public static final float JAM_RADIUS = 12f;
     /** 全信道模式值 */
     public static final int ALL = -1;
     /** 信道范围（1~5，共 5 个信道） */
@@ -42,7 +41,7 @@ public class SignalJammer extends Block {
     @Override
     public void setStats() {
         super.setStats();
-        stats.add(Stat.powerRange, JAM_RADIUS + " tiles");
+        stats.add(Stat.powerRange, SignalSource.RADIUS + " tiles");
     }
 
     /** 干扰器缓存（每队） */
@@ -70,14 +69,15 @@ public class SignalJammer extends Block {
         return jammerCache.get(team, new Seq<>());
     }
 
-    /** 判断位置 (wx,wy) 是否被同信道（或全信道）干扰器压制 */
-    public static boolean jammed(Team team, int channel, float wx, float wy) {
-        float rangePx = JAM_RADIUS * 8f;
+    /** 位置 (wx,wy) 处的同信道（或全信道）干扰强度（0~15，与信号强度同模型衰减） */
+    public static float strengthAt(Team team, int channel, float wx, float wy) {
+        float best = 0f;
         for (SignalJammerBuild jb : allJammers(team)) {
             if (jb.jamChannel != ALL && jb.jamChannel != channel) continue;
-            if (Mathf.dst(jb.x, jb.y, wx, wy) <= rangePx) return true;
+            float s = SignalSource.strengthAt(jb.x, jb.y, wx, wy);
+            if (s > best) best = s;
         }
-        return false;
+        return best;
     }
 
     public class SignalJammerBuild extends Building {

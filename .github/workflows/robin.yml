@@ -2,8 +2,10 @@ name: Robin
 
 on:
   # ── 自动触发链路 ──
-  # pull_request_target → bootstrap 发 /review 评论（需 PAT 才能触发 issue_comment）
-  # issue_comment → review 执行真实审查（携带 secrets）
+  # pull_request_target → bootstrap 用 GH_PAT 代发 /review 评论，触发 ↓ 的 issue_comment 链路。
+  #   ⚠️ robin action 硬性拒绝 pull_request_target（见其 dist 硬 return），不能直接在路上跑；
+  #     必须靠评论转发。且 GITHUB_TOKEN 发出的评论不触发 issue_comment，必须用 GH_PAT。
+  # issue_comment → review 执行真实审查（secrets 在 base 仓库上下文可用，含 fork PR）。
   pull_request_target:
     types: [opened, reopened]
   issue_comment:
@@ -19,8 +21,6 @@ concurrency:
 
 jobs:
   # ① 引导：PR 建立/重开时，用 PAT 在 PR 下代发 /review 评论，触发 ② 的 issue_comment 链路。
-  #    ⚠️ 必须用 PAT（GH_PAT secret）而非 github.token——GITHUB_TOKEN 发出的评论不会触发
-  #    issue_comment 事件（GitHub 安全机制），导致 review job 永远不跑。
   bootstrap:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
@@ -32,7 +32,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::GH_PAT secret 未配置，跳过自动审查。添加 PAT（repo scope）到仓库 Secrets 即可启用。"
+            echo "::warning::GH_PAT secret 未配置，无法自动触发审查。请用仓库 Secrets 配置 GH_PAT（repo scope）+ 设置 LLM 三件套；或手动在 PR 内评论 /robin。"
             exit 0
           fi
           # 去重：检查是否已存在 /review 评论

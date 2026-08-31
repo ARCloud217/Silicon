@@ -35,6 +35,8 @@ public class SignalRelay extends Block {
         destructible = true;
         // 需要更新以检测激活状态
         update = true;
+        // 需要供电才能工作：50 电力/秒（Mindustry 功耗按 /60 tick 计）
+        consumePower(50f / 60f);
     }
 
     /**
@@ -102,10 +104,15 @@ public class SignalRelay extends Block {
             }
         }
 
+        /** 供电是否充足（power.status：0=无电，1=满电） */
+        private boolean hasPower() {
+            return power != null && power.status > 0.001f;
+        }
+
         void updateActive() {
             boolean newActive = false;
-            // 被禁用（如开关控制）时不激活
-            if (!enabled) {
+            // 被禁用（如开关控制）或断电时不激活
+            if (!enabled || !hasPower()) {
                 active = false;
                 return;
             }

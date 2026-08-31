@@ -19,7 +19,6 @@ import silicon.world.blocks.sandbox.PowerSource;
 import silicon.world.blocks.satellite.SatelliteConsole;
 import silicon.world.blocks.satellite.SatelliteLauncher;
 import silicon.world.blocks.signal.DimensionAnchor;
-import silicon.world.blocks.signal.SignalAnalyzer;
 import silicon.world.blocks.signal.SignalJammer;
 import silicon.world.blocks.signal.SignalReceiver;
 import silicon.world.blocks.signal.SignalRelay;
@@ -34,7 +33,7 @@ public class Blocks {
     public static Block powerGeneratorPump, dualPurposeJunction, dualPurposeStorager,
             rollGenerator, powerProtector, powerSource, mineConverter, theSwitch, itemTransferHub,
             dimensionAnchor, signalSource, universalJunction, signalRelay,
-            signalTransmitter, signalReceiver, signalRepeater, signalJammer, signalSwitch, signalAnalyzer,
+            signalTransmitter, signalReceiver, signalRepeater, signalJammer, signalSwitch,
             satelliteLauncher, satelliteConsole;
 
     public static void load() {
@@ -176,13 +175,6 @@ public class Blocks {
             alwaysUnlocked = true;
             size = 1;
             health = 110;
-        }};
-        signalAnalyzer = new SignalAnalyzer("signal-analyzer") {{
-            requirements(Category.effect, BuildVisibility.shown,
-                    ItemStack.with(Items.copper, 30, Items.lead, 20, Items.silicon, 25, Items.titanium, 15));
-            alwaysUnlocked = true;
-            size = 1;
-            health = 130;
         }};
         satelliteLauncher = new SatelliteLauncher("satellite-launcher") {{
             requirements(Category.effect, BuildVisibility.shown,

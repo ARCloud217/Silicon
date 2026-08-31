@@ -76,8 +76,6 @@ public class Silicon extends Mod {
 
     @Override
     public void init() {
-        // 加载信号网络配置（signal-config.json，可选）
-        silicon.world.blocks.signal.SignalNet.loadConfig();
         // Reset hub network ID counter on world load to avoid ID collisions with saved hubs.
         // 信号源/中继器按队缓存也在世界加载时失效重建（读档后建筑重新加入 Groups.build）。
         // 卫星状态为运行时内存态，世界加载时重置。

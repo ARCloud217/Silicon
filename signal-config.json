@@ -1,8 +1,0 @@
-{
-  "powerLow": 10,
-  "powerMed": 20,
-  "powerHigh": 30,
-  "perSolidDb": 5.0,
-  "defaultSensitivity": -90.0,
-  "jamRadius": 12.0
-}

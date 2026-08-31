@@ -53,8 +53,6 @@ public class SignalReceiver extends Block {
             hasSignal = false;
             outputValue = 0f;
             signalStrength = sensitivity;
-            // 被干扰器压制（同信道/全信道）时收不到信号
-            if (SignalJammer.jammed(team, channel, x, y)) return;
             for (Building b : SignalNet.allSources(team)) {
                 if (SignalNet.channelOf(b) != channel) continue;
                 float s = SignalNet.strengthAt(b.x, b.y, x, y, SignalNet.powerOf(b));

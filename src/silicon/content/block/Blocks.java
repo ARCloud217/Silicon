@@ -19,12 +19,10 @@ import silicon.world.blocks.sandbox.PowerSource;
 import silicon.world.blocks.satellite.SatelliteConsole;
 import silicon.world.blocks.satellite.SatelliteLauncher;
 import silicon.world.blocks.signal.DimensionAnchor;
-import silicon.world.blocks.signal.SignalJammer;
 import silicon.world.blocks.signal.SignalReceiver;
 import silicon.world.blocks.signal.SignalRelay;
 import silicon.world.blocks.signal.SignalRepeater;
 import silicon.world.blocks.signal.SignalSource;
-import silicon.world.blocks.signal.SignalSwitch;
 import silicon.world.blocks.signal.SignalTransmitter;
 
 import static mindustry.type.ItemStack.with;
@@ -33,7 +31,7 @@ public class Blocks {
     public static Block powerGeneratorPump, dualPurposeJunction, dualPurposeStorager,
             rollGenerator, powerProtector, powerSource, mineConverter, theSwitch, itemTransferHub,
             dimensionAnchor, signalSource, universalJunction, signalRelay,
-            signalTransmitter, signalReceiver, signalRepeater, signalJammer, signalSwitch,
+            signalTransmitter, signalReceiver, signalRepeater,
             satelliteLauncher, satelliteConsole;
 
     public static void load() {
@@ -156,20 +154,6 @@ public class Blocks {
             health = 120;
         }};
         signalRepeater = new SignalRepeater("signal-repeater") {{
-            requirements(Category.effect, BuildVisibility.shown,
-                    ItemStack.with(Items.copper, 25, Items.lead, 15, Items.silicon, 20));
-            alwaysUnlocked = true;
-            size = 1;
-            health = 110;
-        }};
-        signalJammer = new SignalJammer("signal-jammer") {{
-            requirements(Category.effect, BuildVisibility.shown,
-                    ItemStack.with(Items.copper, 30, Items.lead, 20, Items.silicon, 25, Items.thorium, 10));
-            alwaysUnlocked = true;
-            size = 1;
-            health = 120;
-        }};
-        signalSwitch = new SignalSwitch("signal-switch") {{
             requirements(Category.effect, BuildVisibility.shown,
                     ItemStack.with(Items.copper, 25, Items.lead, 15, Items.silicon, 20));
             alwaysUnlocked = true;

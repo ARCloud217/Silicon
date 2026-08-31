@@ -23,7 +23,6 @@ public class FrameBlock extends Block {
         for (int i = 0; i < frame; i++) {
             frames[i] = Core.atlas.find(name + "-" + i);
         }
-
     }
 
     public class FrameBuild extends Building {

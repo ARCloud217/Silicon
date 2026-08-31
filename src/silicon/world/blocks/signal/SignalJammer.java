@@ -96,27 +96,30 @@ public class SignalJammer extends Block {
             SignalJammer.markDirty();
         }
 
-        /** 配置面板：信道选择（1~5 + 全信道） */
+        /** 配置面板：信道选择（1~5 + 全信道，灰底面板） */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
             table.top();
-            table.add(Core.bundle.get("block.silicon-signal-jammer.channel")).pad(2f);
-            table.row();
-            ButtonGroup<TextButton> group = new ButtonGroup<>();
-            TextButton allBtn = new TextButton(Core.bundle.get("block.silicon-signal-jammer.all"), Styles.flatTogglet);
-            allBtn.setChecked(jamChannel == ALL);
-            allBtn.clicked(() -> configure(ALL));
-            group.add(allBtn);
-            table.add(allBtn).size(68f, 40f).pad(2f);
-            for (int i = 1; i <= CHANNEL_MAX; i++) {
-                TextButton btn = new TextButton(String.valueOf(i), Styles.flatTogglet);
-                btn.setChecked(jamChannel == i);
-                int ch = i;
-                btn.clicked(() -> configure(ch));
-                group.add(btn);
-                table.add(btn).size(44f, 40f).pad(2f);
-            }
+            table.table(Styles.grayPanel, t -> {
+                t.top();
+                t.add(Core.bundle.get("block.silicon-signal-jammer.channel")).pad(2f);
+                t.row();
+                ButtonGroup<TextButton> group = new ButtonGroup<>();
+                TextButton allBtn = new TextButton(Core.bundle.get("block.silicon-signal-jammer.all"), Styles.flatTogglet);
+                allBtn.setChecked(jamChannel == ALL);
+                allBtn.clicked(() -> configure(ALL));
+                group.add(allBtn);
+                t.add(allBtn).size(68f, 40f).pad(2f);
+                for (int i = 1; i <= CHANNEL_MAX; i++) {
+                    TextButton btn = new TextButton(String.valueOf(i), Styles.flatTogglet);
+                    btn.setChecked(jamChannel == i);
+                    int ch = i;
+                    btn.clicked(() -> configure(ch));
+                    group.add(btn);
+                    t.add(btn).size(44f, 40f).pad(2f);
+                }
+            }).pad(4f);
         }
 
         /** 选中显示：干扰信道 */

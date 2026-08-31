@@ -135,22 +135,25 @@ public class SignalRelay extends Block {
             active = newActive;
         }
 
-        /** 配置面板：信道选择（1~5） */
+        /** 配置面板：信道选择（1~5，灰底面板） */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
             table.top();
-            table.add(Core.bundle.get("block.silicon-signal-relay.channel")).pad(2f);
-            table.row();
-            arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
-            for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
-                arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(String.valueOf(i), Styles.flatTogglet);
-                btn.setChecked(channel == i);
-                int ch = i;
-                btn.clicked(() -> configure(ch));
-                group.add(btn);
-                table.add(btn).size(44f, 40f).pad(2f);
-            }
+            table.table(Styles.grayPanel, t -> {
+                t.top();
+                t.add(Core.bundle.get("block.silicon-signal-relay.channel")).pad(2f);
+                t.row();
+                arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
+                for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
+                    arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(String.valueOf(i), Styles.flatTogglet);
+                    btn.setChecked(channel == i);
+                    int ch = i;
+                    btn.clicked(() -> configure(ch));
+                    group.add(btn);
+                    t.add(btn).size(44f, 40f).pad(2f);
+                }
+            }).pad(4f);
         }
 
         /** 本中继器在指定世界坐标处的信号强度（0~15，激活时） */

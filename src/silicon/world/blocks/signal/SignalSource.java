@@ -175,25 +175,28 @@ public class SignalSource extends Block {
             return SignalSource.strengthAt(x, y, wx, wy);
         }
 
-        /** 配置面板（选择信道界面）：顶部显示本信号源编号，下方选信道 */
+        /** 配置面板（选择信道界面，灰底面板）：顶部显示本信号源编号，下方选信道 */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
             table.top();
-            table.label(() -> Core.bundle.format("block.silicon-signal-source.code",
-                    signal == null ? "----" : signal.name)).pad(2f);
-            table.row();
-            table.add(Core.bundle.get("block.silicon-signal-source.channel")).pad(2f);
-            table.row();
-            arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
-            for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
-                arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(String.valueOf(i), Styles.flatTogglet);
-                btn.setChecked(channel == i);
-                int ch = i;
-                btn.clicked(() -> configure(ch));
-                group.add(btn);
-                table.add(btn).size(44f, 40f).pad(2f);
-            }
+            table.table(Styles.grayPanel, t -> {
+                t.top();
+                t.label(() -> Core.bundle.format("block.silicon-signal-source.code",
+                        signal == null ? "----" : signal.name)).pad(2f);
+                t.row();
+                t.add(Core.bundle.get("block.silicon-signal-source.channel")).pad(2f);
+                t.row();
+                arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
+                for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
+                    arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(String.valueOf(i), Styles.flatTogglet);
+                    btn.setChecked(channel == i);
+                    int ch = i;
+                    btn.clicked(() -> configure(ch));
+                    group.add(btn);
+                    t.add(btn).size(44f, 40f).pad(2f);
+                }
+            }).pad(4f);
         }
 
         /** 选中时显示信号覆盖范围（填充圆 + 圆环，类似电力节点；半径为像素，15 格 = 120px） */

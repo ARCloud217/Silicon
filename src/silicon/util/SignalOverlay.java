@@ -160,9 +160,9 @@ public class SignalOverlay {
         // 卫星全图信号强度（信号卫星每颗 +1，上限 15）
         int satStrength = SatelliteManager.signalStrength(team);
         if (rangeMode) {
-            // 范围模式：先画卫星全图基础层，再画各源覆盖（半透明色块，叠加无碍）
+            // 范围模式：先画卫星全图基础层（按卫星所属信号着色），再画各源覆盖（半透明色块，叠加无碍）
             if (satStrength > 0) {
-                drawSatelliteRange(satStrength, alpha);
+                drawSatelliteRange(team, satStrength, alpha);
             }
             if (sources.isEmpty()) {
                 Draw.reset();
@@ -181,14 +181,20 @@ public class SignalOverlay {
         Draw.reset();
     }
 
-    /** 卫星全图信号层（范围模式）：可见区域内每格按卫星信号强度填充色块 */
-    static void drawSatelliteRange(int satStrength, float alpha) {
+    /** 卫星全图信号层（范围模式）：可见区域内每格按卫星信号强度填充色块；颜色取卫星所属信号编码的专属色（无归属时蓝色渐变） */
+    static void drawSatelliteRange(Team team, int satStrength, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
         float t = satStrength / SignalSource.MAX_STRENGTH;
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-        Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+        // 颜色：卫星所属信号的专属色（按编码哈希取色板）；无归属时浅蓝→深蓝渐变
+        String sig = SatelliteManager.satelliteSignal(team);
+        if (sig != null) {
+            Tmp.c1.set(SOURCE_COLORS[(sig.hashCode() & 0x7fffffff) % SOURCE_COLORS.length]);
+        } else {
+            Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+        }
         Draw.color(Tmp.c1, (0.1f + 0.25f * t) * rangeAlpha * alpha);
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {

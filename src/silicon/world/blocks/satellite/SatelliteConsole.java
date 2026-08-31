@@ -1,7 +1,10 @@
 package silicon.world.blocks.satellite;
 
 import arc.Core;
+import arc.scene.ui.ButtonGroup;
+import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
+import arc.struct.Seq;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
@@ -9,6 +12,8 @@ import mindustry.gen.Building;
 import mindustry.ui.Styles;
 import mindustry.world.Block;
 import silicon.util.SatelliteManager;
+import silicon.world.blocks.signal.SignalSource;
+import silicon.world.meta.Signal;
 
 /**
  * 卫星控制台（3×3）：卫星的发射终端，仅提供发射操作。
@@ -30,9 +35,12 @@ public class SatelliteConsole extends Block {
     }
 
     public class SatelliteConsoleBuild extends Building {
-        /** 发射卫星：由 SatelliteManager 检查/扣减中枢的燃料与缓冲电力 */
+        /** 卫星所属信号编码（4 位；null=无归属，全图信号保持蓝色） */
+        public String selectedSignal = null;
+
+        /** 发射卫星：由 SatelliteManager 检查/扣减中枢的燃料与缓冲电力，并记录卫星所属信号 */
         public void launch() {
-            int result = SatelliteManager.launch(team);
+            int result = SatelliteManager.launch(team, selectedSignal);
             String key = switch (result) {
                 case SatelliteManager.LAUNCH_OK -> "block.silicon-satellite-console.success";
                 case SatelliteManager.LAUNCH_NO_READY -> "block.silicon-satellite-console.noready";
@@ -60,6 +68,25 @@ public class SatelliteConsole extends Block {
             table.row();
             table.add(Core.bundle.format("block.silicon-satellite-console.status.orbit", SatelliteManager.launchedCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
             table.row();
+            // 卫星所属信号选择（本队信号源编码）
+            table.add(Core.bundle.get("block.silicon-satellite-console.signal")).padTop(8f).padBottom(2f);
+            table.row();
+            Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
+            if (srcs.isEmpty()) {
+                table.add(Core.bundle.get("block.silicon-satellite-console.nosignal")).color(arc.graphics.Color.lightGray).pad(2f);
+                table.row();
+            } else {
+                ButtonGroup<TextButton> group = new ButtonGroup<>();
+                for (SignalSource.SignalSourceBuild sb : srcs) {
+                    String code = sb.signal == null ? "----" : sb.signal.name;
+                    TextButton btn = new TextButton(code, Styles.flatTogglet);
+                    btn.setChecked(code.equals(selectedSignal));
+                    btn.clicked(() -> selectedSignal = code);
+                    group.add(btn);
+                    table.add(btn).size(120f, 40f).pad(2f);
+                    table.row();
+                }
+            }
             // 发射按钮
             table.button(Core.bundle.get("block.silicon-satellite-console.launch"), Styles.defaultt, () -> {
                 launch();
@@ -70,11 +97,14 @@ public class SatelliteConsole extends Block {
         @Override
         public void write(Writes write) {
             super.write(write);
+            write.str(selectedSignal == null ? "" : selectedSignal);
         }
 
         @Override
         public void read(Reads read, byte revision) {
             super.read(read, revision);
+            String s = read.str();
+            selectedSignal = s.isEmpty() ? null : s;
         }
     }
 }

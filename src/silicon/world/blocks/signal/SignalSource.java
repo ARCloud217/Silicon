@@ -1,6 +1,7 @@
 package silicon.world.blocks.signal;
 
 import arc.Core;
+import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
 import arc.graphics.g2d.Lines;
@@ -15,6 +16,7 @@ import mindustry.gen.Building;
 import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.graphics.Drawf;
+import mindustry.ui.Fonts;
 import mindustry.world.Block;
 import silicon.util.SignalOverlay;
 import silicon.world.meta.Signal;
@@ -176,6 +178,26 @@ public class SignalSource extends Block {
             Lines.stroke(2f);
             Lines.circle(x, y, RADIUS * 8f);
             Draw.reset();
+        }
+
+        @Override
+        public void draw() {
+            super.draw();
+            // 信号源上方显示其信号唯一编码（4 位数字或字母），方便识别/卫星归属
+            if (signal != null) {
+                Draw.z(35f);
+                Color oldColor = Fonts.def.getColor();
+                float oldScale = Fonts.def.getData().scaleX;
+                Fonts.def.getData().setScale(0.4f);
+                try {
+                    Fonts.def.setColor(Color.white);
+                    Fonts.def.draw(signal.name, x - 8f, y + 5f);
+                } finally {
+                    Fonts.def.setColor(oldColor);
+                    Fonts.def.getData().setScale(oldScale);
+                }
+                Draw.reset();
+            }
         }
 
         @Override

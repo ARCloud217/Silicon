@@ -42,6 +42,8 @@ public class SatelliteManager {
     private static final ObjectMap<Team, ObjectIntMap<Integer>> launched = new ObjectMap<>();
     /** 已生产完成、待发射的中枢列表（按队伍） */
     private static final ObjectMap<Team, Seq<SatelliteLauncher.SatelliteLauncherBuild>> readyLaunchers = new ObjectMap<>();
+    /** 卫星所属信号（按队伍）：控制台选择，发射后全图信号层用该信号的颜色显示（null=无归属，保持蓝色） */
+    private static final ObjectMap<Team, String> satelliteSignal = new ObjectMap<>();
 
     /** 卫星发射特效：巨大光柱尾焰 + 向上喷射粒子 + 烟柱（配合方块自绘动画，1.5 秒） */
     public static final Effect launchFx = new Effect(90f, e -> {
@@ -66,6 +68,7 @@ public class SatelliteManager {
     public static void reset() {
         launched.clear();
         readyLaunchers.clear();
+        satelliteSignal.clear();
     }
 
     /** 某队伍在轨卫星总数 */
@@ -107,10 +110,12 @@ public class SatelliteManager {
     /**
      * 发射一颗卫星：取出第一颗待发射卫星（种类以该中枢选择的为准），
      * 由其中枢扣除燃料（1000 石油）与缓冲电力（10000），在轨 +1，
+     * 记录卫星所属信号（控制台选择，全图信号层用其颜色显示），
      * 给发射队伍的全图玩家应用「卫星在轨」buff，并向全图播报。
+     * @param signalName 卫星所属信号编码（4 位；null=无归属）
      * @return 发射结果（LAUNCH_*）
      */
-    public static int launch(Team team) {
+    public static int launch(Team team, String signalName) {
         Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
         if (list == null || list.isEmpty()) return LAUNCH_NO_READY;
         SatelliteLauncher.SatelliteLauncherBuild launcher = list.get(0);
@@ -123,6 +128,10 @@ public class SatelliteManager {
         launcher.consumeLaunchResources();
         list.remove(0);
         launched.get(team, ObjectIntMap::new).increment(type, 1);
+        // 记录卫星所属信号（全图信号层按此着色）
+        if (signalName != null && !signalName.isEmpty()) {
+            satelliteSignal.put(team, signalName);
+        }
         // 发射特效（在发射中枢位置，全图广播）：原版火箭发射喷发 + 自定义尾焰 + 冲击波/烟雾
         Call.effect(Fx.padlaunch, launcher.x, launcher.y, 0f, null);
         Call.effect(launchFx, launcher.x, launcher.y + 10f, 0f, null);
@@ -152,5 +161,10 @@ public class SatelliteManager {
     /** 信号卫星提供的全图信号强度（仅信号卫星，每颗 +1，上限 15；测试卫星无效果） */
     public static int signalStrength(Team team) {
         return Math.min(15, launchedCount(team, SatelliteConsole.TYPE_SIGNAL));
+    }
+
+    /** 卫星所属信号编码（null=无归属，全图信号层保持蓝色） */
+    public static String satelliteSignal(Team team) {
+        return satelliteSignal.get(team);
     }
 }

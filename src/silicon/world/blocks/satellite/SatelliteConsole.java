@@ -2,6 +2,7 @@ package silicon.world.blocks.satellite;
 
 import arc.Core;
 import arc.scene.ui.ButtonGroup;
+import arc.scene.ui.ScrollPane;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
 import arc.struct.Seq;
@@ -9,16 +10,18 @@ import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
 import mindustry.gen.Building;
+import mindustry.gen.Player;
+import mindustry.graphics.Pal;
 import mindustry.ui.Styles;
+import mindustry.ui.dialogs.BaseDialog;
 import mindustry.world.Block;
 import silicon.util.SatelliteManager;
 import silicon.world.blocks.signal.SignalSource;
-import silicon.world.meta.Signal;
 
 /**
  * 卫星控制台（3×3）：卫星的发射终端，仅提供发射操作。
  * 不存储燃料与电力——燃料（1000 石油）与缓冲电力（10000）均由卫星发射中枢提供；
- * 卫星种类由卫星发射中枢选择。点击方块打开界面查看状态并发射。
+ * 卫星种类由卫星发射中枢选择。点击方块打开全屏界面查看状态并发射。
  */
 public class SatelliteConsole extends Block {
     /** 卫星种类：信号卫星（与发射中枢保持一致） */
@@ -61,43 +64,68 @@ public class SatelliteConsole extends Block {
             }
         }
 
+        /** 不使用原版小配置面板：点击直接打开全屏界面 */
         @Override
-        public void buildConfiguration(Table table) {
-            rebuildConfig(table);
+        public boolean shouldShowConfigure(Player player) {
+            return false;
         }
 
-        private void rebuildConfig(Table table) {
+        /** 点击方块：打开全屏界面 */
+        @Override
+        public void tapped() {
+            BaseDialog dialog = new BaseDialog(Core.bundle.get("block.silicon-satellite-console.title"));
+            dialog.setFillParent(true);
+            dialog.cont.pane(content -> rebuildFull(content, dialog)).grow().pad(12f);
+            dialog.buttons.button(Core.bundle.get("block.silicon-satellite-console.close"), Styles.defaultt, dialog::hide)
+                    .size(160f, 44f).padTop(8f);
+            dialog.show();
+        }
+
+        /** 全屏界面内容：状态 + 卫星所属信号选择（滚轮）+ 发射按钮 */
+        void rebuildFull(Table table, BaseDialog dialog) {
             table.clearChildren();
             table.top();
-            // 状态
-            table.add(Core.bundle.format("block.silicon-satellite-console.status.ready", SatelliteManager.readyCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
+            // 标题
+            table.add(Core.bundle.get("block.silicon-satellite-console.name")).color(Pal.accent).pad(6f);
             table.row();
-            table.add(Core.bundle.format("block.silicon-satellite-console.status.orbit", SatelliteManager.launchedCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
+            // 状态（动态刷新）
+            table.label(() -> Core.bundle.format("block.silicon-satellite-console.status.ready",
+                    SatelliteManager.readyCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
             table.row();
-            // 卫星所属信号选择（本队信号源编码）
+            table.label(() -> Core.bundle.format("block.silicon-satellite-console.status.orbit",
+                    SatelliteManager.launchedCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
+            table.row();
+            // 卫星所属信号选择（本队信号源编码；滚动区限高）
             table.add(Core.bundle.get("block.silicon-satellite-console.signal")).padTop(8f).padBottom(2f);
             table.row();
+            Table srcTable = new Table();
+            srcTable.center();
             Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
             if (srcs.isEmpty()) {
-                table.add(Core.bundle.get("block.silicon-satellite-console.nosignal")).color(arc.graphics.Color.lightGray).pad(2f);
-                table.row();
+                srcTable.add(Core.bundle.get("block.silicon-satellite-console.nosignal")).color(arc.graphics.Color.lightGray).pad(2f);
             } else {
                 ButtonGroup<TextButton> group = new ButtonGroup<>();
+                int perRow = 6, count = 0;
                 for (SignalSource.SignalSourceBuild sb : srcs) {
                     String code = sb.signal == null ? "----" : sb.signal.name;
                     TextButton btn = new TextButton(code, Styles.flatTogglet);
                     btn.setChecked(code.equals(selectedSignal));
                     btn.clicked(() -> selectedSignal = code);
                     group.add(btn);
-                    table.add(btn).size(120f, 40f).pad(2f);
-                    table.row();
+                    srcTable.add(btn).size(120f, 40f).pad(2f);
+                    if (++count % perRow == 0) srcTable.row();
                 }
             }
+            ScrollPane pane = new ScrollPane(srcTable, Styles.noBarPane);
+            pane.setScrollingDisabled(true, false); // 禁水平滚动，垂直滚轮翻页
+            table.add(pane).height(200f).growX();
+            table.row();
             // 发射按钮
             table.button(Core.bundle.get("block.silicon-satellite-console.launch"), Styles.defaultt, () -> {
                 launch();
-                rebuildConfig(table);
-            }).size(220f, 48f).padTop(6f);
+                // 发射后刷新状态（保留界面）
+                rebuildFull(table, dialog);
+            }).size(280f, 56f).padTop(10f);
         }
 
         @Override

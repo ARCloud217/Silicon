@@ -336,10 +336,15 @@ public class SignalOverlay {
         // 保存字体原始颜色与比例，绘制后恢复（try-finally 保证异常时也恢复）
         Color oldFontColor = Fonts.def.getColor();
         float oldScale = Fonts.def.getData().scaleX;
-        // 字号 0.2（约 3.2px），远小于一格（8px）
-        Fonts.def.getData().setScale(0.2f);
+        // 字号按显示屏大小动态变化（非相机缩放）：以 1080p 高度为基准 0.2，随屏幕高度等比缩放，
+        // 大屏数字大、小屏数字小；clamp 防极端分辨率
+        float screenScale = Core.graphics.getHeight() / 1080f;
+        float scale = Mathf.clamp(0.2f * screenScale, 0.1f, 0.5f);
+        Fonts.def.getData().setScale(scale);
         Building[] bestSrc = new Building[1];
         try {
+            // 单字符居中偏移：相对原 0.2 字号的 1/1.6，按当前字号比例缩放
+            float k = scale / 0.2f;
             for (int gx = x0; gx <= x1; gx++) {
                 for (int gy = y0; gy <= y1; gy++) {
                     float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
@@ -354,9 +359,9 @@ public class SignalOverlay {
                         satelliteColor(team, t, Tmp.c1);
                     }
                     Tmp.c1.a((0.6f + 0.4f * t) * digitAlpha * alpha);
-                    // 复用预计算字符串避免分配；字号 0.2（约 3.2px）时单字符居中偏移
+                    // 复用预计算字符串避免分配；居中偏移随字号缩放
                     Fonts.def.setColor(Tmp.c1);
-                    Fonts.def.draw(NUMBER_STRINGS[val < 0 ? 0 : (val > 15 ? 15 : val)], wx - 1f, wy - 1.6f);
+                    Fonts.def.draw(NUMBER_STRINGS[val < 0 ? 0 : (val > 15 ? 15 : val)], wx - 1f * k, wy - 1.6f * k);
                 }
             }
         } finally {

@@ -220,6 +220,12 @@ public class SignalSource extends Block {
             Draw.reset();
         }
 
+        /** 存档版本：1 = str(signal) + i(channel)；覆写 version() 使读档时 revision 正确（否则 channel 不读取） */
+        @Override
+        public byte version() {
+            return 1;
+        }
+
         @Override
         public void write(Writes write) {
             super.write(write);

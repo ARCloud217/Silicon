@@ -295,6 +295,12 @@ public class SignalRelay extends Block {
                     selectedSource == null || selectedSource.isEmpty() ? Core.bundle.get("block.silicon-signal-relay.nobind") : selectedSource)).pad(2f);
         }
 
+        /** 存档版本：2 = bool(active) + i(channel) + str(selectedSource)；覆写 version() 使读档时绑定/信道不丢失 */
+        @Override
+        public byte version() {
+            return 2;
+        }
+
         /** 存档/网络同步 active 字段（host 上由 updateActive 重算，保证一致性） */
         @Override
         public void write(Writes write) {

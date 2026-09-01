@@ -336,9 +336,9 @@ public class SignalOverlay {
         // 保存字体原始颜色与比例，绘制后恢复（try-finally 保证异常时也恢复）
         Color oldFontColor = Fonts.def.getColor();
         float oldScale = Fonts.def.getData().scaleX;
-        // 字号按显示屏大小动态变化（非相机缩放）：以 1080p 高度为基准 0.2，随屏幕高度等比缩放，
+        // 字号按显示屏大小动态变化（非相机缩放）：以 2K（1440p 高度）为基准 0.2，随屏幕高度等比缩放，
         // 大屏数字大、小屏数字小；clamp 防极端分辨率
-        float screenScale = Core.graphics.getHeight() / 1080f;
+        float screenScale = Core.graphics.getHeight() / 1440f;
         float scale = Mathf.clamp(0.2f * screenScale, 0.1f, 0.5f);
         Fonts.def.getData().setScale(scale);
         Building[] bestSrc = new Building[1];

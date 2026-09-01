@@ -276,18 +276,6 @@ public class SignalRelay extends Block {
             return SignalSource.strengthAt(x, y, wx, wy);
         }
 
-        /** 绘制：关闭状态（enabled=false）时叠加暗色层，参考原版开关控制外观 */
-        @Override
-        public void draw() {
-            super.draw();
-            if (!enabled) {
-                Draw.z(35f);
-                Draw.color(0f, 0f, 0f, 0.45f);
-                Fill.rect(x, y, size * 8f, size * 8f);
-                Draw.reset();
-            }
-        }
-
         /** 选中时显示信号范围（激活=深蓝，未激活=灰色） */
         @Override
         public void drawSelect() {

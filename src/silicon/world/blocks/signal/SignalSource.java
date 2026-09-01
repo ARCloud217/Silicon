@@ -180,18 +180,6 @@ public class SignalSource extends Block {
             return SignalSource.strengthAt(x, y, wx, wy);
         }
 
-        /** 绘制：关闭状态（enabled=false）时叠加暗色层，参考原版开关控制外观 */
-        @Override
-        public void draw() {
-            super.draw();
-            if (!enabled) {
-                Draw.z(35f);
-                Draw.color(0f, 0f, 0f, 0.45f);
-                Fill.rect(x, y, size * 8f, size * 8f);
-                Draw.reset();
-            }
-        }
-
         /** 配置面板（选择信道界面，灰底面板）：顶部显示本信号源编号，下方选信道 */
         @Override
         public void buildConfiguration(Table table) {

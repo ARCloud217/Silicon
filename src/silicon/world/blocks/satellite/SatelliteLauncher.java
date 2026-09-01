@@ -39,8 +39,8 @@ import static mindustry.type.ItemStack.with;
 
 /**
  * 卫星发射中枢（3×3）：选择卫星种类并生产卫星，同时负责发射所需的燃料与电力储备。
- * - 生产材料（选择种类后开始生产时一次性消耗）：铜 5000、硅 5000、塑钢 1250、巨浪合金 1250、冷冻液 1000
- * - 生产阶段消耗 5000 电力/秒（电网）；每中枢同时只能生产 1 颗，完成后停止耗电并显示「可发射卫星」提示
+ * - 生产材料（选择种类后开始生产时一次性消耗）：铜 5000、硅 5000、塑钢 1250、巨浪合金 1250、冷冻液 1000（测试卫星仅需 1 硅）
+ * - 耗电 100 电力/秒（电网）；每中枢同时只能生产 1 颗，完成后显示「可发射卫星」提示
  * - 内置 10000 发射缓冲（电网供电充电）；发射燃料石油（1000）亦储存在本中枢
  * - 卫星由卫星控制台点击发射
  */
@@ -49,8 +49,8 @@ public class SatelliteLauncher extends Block {
     public static final float PRODUCE_TIME_SIGNAL = 60f * 60f;
     /** 测试卫星生产耗时（tick），1 秒 */
     public static final float PRODUCE_TIME_TEST = 60f;
-    /** 生产阶段耗电（/秒，Mindustry 按 /60 tick 计） */
-    public static final float POWER_CONSUMPTION = 5000f / 60f;
+    /** 耗电（/秒，Mindustry 按 /60 tick 计）：100 电力/秒 */
+    public static final float POWER_CONSUMPTION = 100f / 60f;
     /** 发射所需缓冲电力 */
     public static final float LAUNCH_POWER = 10000f;
     /** 缓冲充电速率（/秒）：电网供电时向缓冲充电 */
@@ -141,6 +141,16 @@ public class SatelliteLauncher extends Block {
         for (ItemStack stack : PRODUCTION_ITEMS) {
             stats.add(Stat.input, stack);
         }
+    }
+
+    /** 电力条：显示供电状态百分比与功耗（100 电力/秒），覆盖原版默认电力条 */
+    @Override
+    public void setBars() {
+        super.setBars();
+        addBar("power", entity -> new Bar(
+                () -> Core.bundle.format("block.silicon-satellite-launcher.powerbar", (int) (entity.power.status * 100)),
+                () -> Pal.power,
+                () -> entity.power.status));
     }
 
     public class SatelliteLauncherBuild extends Building {

@@ -159,6 +159,7 @@ android/libs/
 AGENTS.md
 Silicon.mod.jar
 .gradle-home/
+gradle/r8/
 
 saves/
 

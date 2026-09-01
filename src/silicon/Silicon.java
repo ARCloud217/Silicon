@@ -28,6 +28,7 @@ import silicon.util.SiliconLog;
 import silicon.util.SignalOverlay;
 import silicon.util.UpdateChecker;
 import silicon.world.blocks.distribution.ItemTransferHubNetwork;
+import silicon.world.blocks.power.PowerProtector;
 import silicon.world.blocks.production.MineConverter;
 import silicon.world.blocks.signal.SignalRelay;
 import silicon.world.blocks.signal.SignalSource;
@@ -78,7 +79,7 @@ public class Silicon extends Mod {
     public void init() {
         // Reset hub network ID counter on world load to avoid ID collisions with saved hubs.
         // 信号源/中继器按队缓存也在世界加载时失效重建（读档后建筑重新加入 Groups.build）。
-        // 卫星状态为运行时内存态，世界加载时重置。
+        // 卫星状态为运行时内存态，世界加载时重置；电力保护器全局状态也需重置。
         Events.on(EventType.WorldLoadEvent.class, e -> {
             ItemTransferHubNetwork.resetIdCounter();
             SignalSource.markDirty();
@@ -90,6 +91,7 @@ public class Silicon extends Mod {
             if (SatelliteManager.launchedCount(e.player.team()) > 0 && e.player.unit() != null) {
                 e.player.unit().apply(Statuses.satelliteBuff, 999999f);
             }
+            // PowerProtector 无全局静态状态，数据随存档保存，无需重置
         });
 
         BlockSearch.init();
@@ -139,7 +141,7 @@ public class Silicon extends Mod {
                 st.checkPref("hubDebugLog", false, v -> silicon.world.blocks.distribution.ItemTransferHub.debugFlows = v);
                 st.sliderPref("hubLinkOpacity", 100, 0, 100, 5, i -> i + "%");
                 // —— 万向交叉器界面 ——
-                st.checkPref("universaljunction.newUI", false);
+                st.checkPref("universal-junction.newUI", false);
                 // 灰色细线：与「恢复默认设置」分隔（注册为设置项，rebuild 时保留）
                 st.pref(new CustomSetting(t -> t.image(Tex.whiteui).growX().height(2f).color(Pal.gray).padTop(8f).padBottom(8f)));
 

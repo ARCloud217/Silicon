@@ -20,6 +20,7 @@ import arc.util.Align;
 import arc.util.Time;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+import mindustry.Vars;
 import mindustry.gen.BufferItem;
 import mindustry.gen.Building;
 import mindustry.gen.Icon;
@@ -34,6 +35,7 @@ import mindustry.world.DirectionalItemBuffer;
 import mindustry.world.meta.BlockGroup;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.StatUnit;
+import silicon.ui.UniversalJunctionDialog;
 
 import static mindustry.Vars.content;
 import static mindustry.Vars.ui;
@@ -68,7 +70,7 @@ public class UniversalJunction extends Block {
     /** 预加载方向名称到缓存（ClientLoadEvent 后调用） */
     public static void initDirNames() {
         dirNames = new String[4];
-        for (int i = 0; i < 4; i++) dirNames[i] = Core.bundle.get("universaljunction.dir" + i);
+        for (int i = 0; i < 4; i++) dirNames[i] = Core.bundle.get("universal-junction.dir" + i);
     }
 
     /** 方向名称（从缓存读取；缓存未初始化时回退到 bundle 直查） */
@@ -143,6 +145,7 @@ public class UniversalJunction extends Block {
         /** 连续满载多少 tick 后才降级到次高优先级 */
         public static final int BLOCK_THRESHOLD = 10;
 
+
         // 插入点 UI 状态
         Table currentInsertBox = null;
         int currentInsertPosition = -1;
@@ -161,6 +164,8 @@ public class UniversalJunction extends Block {
         {
             setAll(2);
         }
+
+
 
         @Override
         public boolean acceptItem(Building source, Item item) {
@@ -324,14 +329,14 @@ public class UniversalJunction extends Block {
 
         // ---------- 配置 ----------
 
-        void setAll(int v) {
+        public void setAll(int v) {
             for (int i = 0; i < 4; i++) {
                 for (int j = 0; j < 4; j++) weights[i][j] = v;
             }
         }
 
         /** 仅设置指定输入方向的 4 个输出优先级（快捷按钮作用域：当前选中的输入方向） */
-        void setAllFor(int in, int v) {
+        public void setAllFor(int in, int v) {
             for (int j = 0; j < 4; j++) weights[in][j] = v;
         }
 
@@ -430,8 +435,8 @@ public class UniversalJunction extends Block {
         /** 折叠文字：0 组显示"禁用"，非 0 重复组显示"与{代表}平均输出" */
         String foldText(int[] data, int d) {
             int v = data[d];
-            if (v == 0) return Core.bundle.get("universaljunction.disabled");
-            return Core.bundle.format("universaljunction.evenWith", dirName(repOf(data, d)));
+            if (v == 0) return Core.bundle.get("universal-junction.disabled");
+            return Core.bundle.format("universal-junction.evenWith", dirName(repOf(data, d)));
         }
 
         /**
@@ -554,7 +559,7 @@ public class UniversalJunction extends Block {
 
         static final String TEMPLATES_KEY = "silicon-uj-templates";
         /** 内置模板：均分 / 全右 / 主右备左 / 上下直通（20 值 = 16 矩阵 + 4 全局行，方向顺序 上右下左） */
-        static final String[] BUILTIN_TEMPLATE_KEYS = {"universaljunction.tpl.even", "universaljunction.tpl.east", "universaljunction.tpl.eastwest", "universaljunction.tpl.ns"};
+        static final String[] BUILTIN_TEMPLATE_KEYS = {"universal-junction.tpl.even", "universal-junction.tpl.east", "universal-junction.tpl.eastwest", "universal-junction.tpl.ns"};
         static final int[][] BUILTIN_TEMPLATE_ROWS = {
             {2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
             {0, 4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0},
@@ -684,22 +689,20 @@ public class UniversalJunction extends Block {
             if (str == null) return;
             String[] parts = str.split(",");
             if (parts.length != 16 && parts.length != 20) return;
-            try {
-                for (int i = 0; i < 4; i++) {
-                    for (int j = 0; j < 4; j++) {
-                        weights[i][j] = Mathf.clamp(Integer.parseInt(parts[i * 4 + j].trim()), 0, 4);
-                    }
+
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    weights[i][j] = Mathf.clamp(Integer.parseInt(parts[i * 4 + j].trim()), 0, 4);
                 }
-                if (parts.length == 20) {
-                    for (int j = 0; j < 4; j++) {
-                        defaultRow[j] = Mathf.clamp(Integer.parseInt(parts[16 + j].trim()), 0, 4);
-                    }
-                } else {
-                    defaultRow = weights[0].clone(); // 旧格式：取第一行作全局默认
-                }
-            } catch (NumberFormatException e) {
-                return; // 非法配置，忽略
             }
+            if (parts.length == 20) {
+                for (int j = 0; j < 4; j++) {
+                    defaultRow[j] = Mathf.clamp(Integer.parseInt(parts[16 + j].trim()), 0, 4);
+                }
+            } else {
+                defaultRow = weights[0].clone(); // 旧格式：取第一行作全局默认
+            }
+
             // 配置变更后重置路由瞬态状态，避免沿用旧配置的降级/轮询状态
             for (int i = 0; i < 4; i++) {
                 activePriority[i] = 0;
@@ -718,10 +721,11 @@ public class UniversalJunction extends Block {
         /** 配置面板分发器：根据设置切换新版/经典界面 */
         @Override
         public void buildConfiguration(Table table) {
-            if (Core.settings.getBool("universaljunction.newUI", false)) {
+            if (Core.settings.getBool("universal-junction.newUI", false)) {
                 // 新版：齿轮按钮打开全屏配置（参考逻辑处理器的铅笔按钮）
                 table.button(Icon.settings, Styles.cleari, () -> {
-                    showConfigDialog();
+                    UniversalJunctionDialog dialog = new UniversalJunctionDialog();
+                    dialog.show(this);
                 }).size(40f);
             } else {
                 buildConfigurationLegacy(table);
@@ -729,25 +733,36 @@ public class UniversalJunction extends Block {
         }
 
         /** 新版配置面板 v8：最简拖拽测试 */
-        void showConfigDialog() {
-            BaseDialog dialog = new BaseDialog(Core.bundle.get("universaljunction.title"));
-            dialog.addCloseButton();
+//        void showConfigDialog() {
+//            BaseDialog dialog = new BaseDialog(Core.bundle.get("universal-junction.title"));
+//            dialog.addCloseButton();
+//
+//            final String[] items = {"上", "右"};
+//            final int[] order = {0, 1};
+//            final int[] dragIdx = {-1};
+//
+//            // 浮动元素（拖拽时跟随鼠标）
+//            final Table floating = new Table();
+//            floating.background(Tex.paneSolid);
+//            floating.setColor(Color.yellow);
+//            floating.margin(8f);
+//            floating.visible = false;
+//            floating.touchable = Touchable.disabled;
+//
+//            Table content = new Table();
+//            content.background(Tex.pane2);
+//            content.margin(8f);
+//
+//            rebuildBlocks(content, items, order, dragIdx, floating);
+//
+//            // 将浮动元素添加到对话框最上层
+//            dialog.cont.addChild(floating);
+//
+//            dialog.cont.add(content).grow();
+//            dialog.show();
+//        }
 
-            final String[] items = {"上", "右"};
-            final int[] order = {0, 1};
-            final int[] dragIdx = {-1};
-
-            Table content = new Table();
-            content.background(Tex.pane2);
-            content.margin(8f);
-
-            rebuildBlocks(content, items, order, dragIdx);
-
-            dialog.cont.add(content).grow();
-            dialog.show();
-        }
-
-        void rebuildBlocks(Table content, String[] items, int[] order, int[] dragIdx) {
+        void rebuildBlocks(Table content, String[] items, int[] order, int[] dragIdx, Table floating) {
             content.clearChildren();
             for (int i = 0; i < 2; i++) {
                 final int idx = i;
@@ -768,7 +783,22 @@ public class UniversalJunction extends Block {
                     public boolean touchDown(arc.scene.event.InputEvent event, float x, float y, int pointer, arc.input.KeyCode button) {
                         dragIdx[0] = itemIdx;
                         block.setColor(Color.yellow);
+
+                        // 显示浮动元素
+                        floating.clearChildren();
+                        Label fl = new Label(items[itemIdx], Styles.defaultLabel);
+                        fl.setFontScale(1.2f);
+                        fl.setColor(Color.white);
+                        floating.add(fl).width(80f).height(40f);
+                        floating.visible = true;
+                        floating.setPosition(event.stageX - 40f, event.stageY - 20f);
                         return true;
+                    }
+
+                    @Override
+                    public void touchDragged(arc.scene.event.InputEvent event, float x, float y, int pointer) {
+                        // 浮动元素跟随鼠标
+                        floating.setPosition(event.stageX - 40f, event.stageY - 20f);
                     }
 
                     @Override
@@ -776,7 +806,9 @@ public class UniversalJunction extends Block {
                         if (dragIdx[0] < 0) return;
                         int from = dragIdx[0];
                         dragIdx[0] = -1;
+                        floating.visible = false;
 
+                        // 交换
                         for (int j = 0; j < 2; j++) {
                             if (order[j] == from) {
                                 order[j] = order[1 - j];
@@ -784,7 +816,7 @@ public class UniversalJunction extends Block {
                                 break;
                             }
                         }
-                        rebuildBlocks(content, items, order, dragIdx);
+                        rebuildBlocks(content, items, order, dragIdx, floating);
                     }
                 });
 
@@ -877,7 +909,7 @@ public class UniversalJunction extends Block {
                 }
                 if (sb.length() > 0) {
                     sb.setLength(sb.length() - 1);
-                    noteTable.add(Core.bundle.format("universaljunction.overriddenDirs", sb.toString())).color(Pal.accent).padBottom(4f).row();
+                    noteTable.add(Core.bundle.format("universal-junction.overriddenDirs", sb.toString())).color(Pal.accent).padBottom(4f).row();
                 }
                 noteTable.invalidateHierarchy(); // 局部刷新提示行
             };
@@ -901,7 +933,7 @@ public class UniversalJunction extends Block {
                 }).padBottom(6f).row();
 
                 int in = selDir[0];
-                overrideTable.add(Core.bundle.format("universaljunction.from", dirName(in))).color(Pal.accent).padBottom(4f).row();
+                overrideTable.add(Core.bundle.format("universal-junction.from", dirName(in))).color(Pal.accent).padBottom(4f).row();
                 // #12: 存储折叠文字/数值 Label 引用，per-frame lambda 自动增量更新
                 final Label[] oFoldLabels = new Label[4];
                 final Label[] oValLabels = new Label[4];
@@ -921,19 +953,19 @@ public class UniversalJunction extends Block {
                     overrideTable.add(row).growX().padBottom(2f).row();
                 }
                 overrideTable.table(quick -> {
-                    quick.button(Core.bundle.get("universaljunction.even"), () -> {
+                    quick.button(Core.bundle.get("universal-junction.even"), () -> {
                         setAllFor(selDir[0], 2);
                         r[1].run();
                         noteR.run();
                         flushConfig();
                     }).size(96f, 32f).pad(3f);
-                    quick.button(Core.bundle.get("universaljunction.clear"), () -> {
+                    quick.button(Core.bundle.get("universal-junction.clear"), () -> {
                         setAllFor(selDir[0], 0);
                         r[1].run();
                         noteR.run();
                         flushConfig();
                     }).size(96f, 32f).pad(3f);
-                    quick.button(Core.bundle.get("universaljunction.reset"), () -> {
+                    quick.button(Core.bundle.get("universal-junction.reset"), () -> {
                         resetToDefault(selDir[0]);
                         r[1].run();
                         noteR.run();
@@ -941,21 +973,13 @@ public class UniversalJunction extends Block {
                     }).size(96f, 32f).pad(3f);
                 }).padTop(4f).row();
                 // 全部恢复为全局：加确认弹窗防误触
-                overrideTable.button(Core.bundle.get("universaljunction.resetAll"), () -> {
-                    BaseDialog confirm = new BaseDialog(Core.bundle.get("universaljunction.resetAll"));
-                    confirm.cont.add(Core.bundle.get("universaljunction.resetAllConfirm")).width(300f).wrap().pad(16f).row();
-                    confirm.buttons.button(Core.bundle.get("universaljunction.confirm"), Styles.defaultt, () -> {
-                        for (int i = 0; i < 4; i++) resetToDefault(i);
-                        r[1].run();
-                        r[0].run();
-                        noteR.run();
-                        table.invalidateHierarchy();
-                        flushConfig();
-                        confirm.hide();
-                    }).size(90f, 38f).pad(6f);
-                    confirm.buttons.button(Core.bundle.get("universaljunction.cancel"), Styles.defaultt, confirm::hide).size(90f, 38f).pad(6f);
-                    confirm.closeOnBack();
-                    confirm.show();
+                overrideTable.button(Core.bundle.get("universal-junction.resetAll"), () -> {
+                    for (int i = 0; i < 4; i++) resetToDefault(i);
+                    r[1].run();
+                    r[0].run();
+                    noteR.run();
+                    table.invalidateHierarchy();
+                    flushConfig();
                 }).size(220f, 32f).padTop(4f);
                 overrideTable.invalidateHierarchy();
             };
@@ -993,34 +1017,34 @@ public class UniversalJunction extends Block {
             r[3] = () -> {
                 manageTable.clearChildren();
                 if (!manageOpen[0]) return;
-                manageTable.add(Core.bundle.get("universaljunction.customTemplates")).color(Pal.accent).padBottom(3f).row();
+                manageTable.add(Core.bundle.get("universal-junction.customTemplates")).color(Pal.accent).padBottom(3f).row();
                 java.util.Map<String, int[]> custom = loadTemplates();
                 if (custom.isEmpty()) {
-                    manageTable.add(Core.bundle.get("universaljunction.noTemplates")).color(Color.gray).padBottom(3f).row();
+                    manageTable.add(Core.bundle.get("universal-junction.noTemplates")).color(Color.gray).padBottom(3f).row();
                 }
                 for (java.util.Map.Entry<String, int[]> e : custom.entrySet()) {
                     final String name = e.getKey();
                     final int[] row = e.getValue();
                     manageTable.table(t -> {
                         t.add(clip(name, 10)).left().padRight(8f);
-                        t.button(Core.bundle.get("universaljunction.use"), () -> {
+                        t.button(Core.bundle.get("universal-junction.use"), () -> {
                             applyTemplate(row);
                             r[2].run();
                             flushConfig();
                         }).size(56f, 28f).pad(2f);
-                        t.button(Core.bundle.get("universaljunction.delete"), () -> {
+                        t.button(Core.bundle.get("universal-junction.delete"), () -> {
                             deleteTemplate(name);
                             r[3].run();
                         }).size(56f, 28f).pad(2f);
                     }).padBottom(3f).row();
                 }
-                manageTable.add(Core.bundle.get("universaljunction.builtinTemplates")).color(Pal.accent).padBottom(3f).padTop(4f).row();
+                manageTable.add(Core.bundle.get("universal-junction.builtinTemplates")).color(Pal.accent).padBottom(3f).padTop(4f).row();
                 for (int i = 0; i < BUILTIN_TEMPLATE_KEYS.length; i++) {
                     final String name = Core.bundle.get(BUILTIN_TEMPLATE_KEYS[i]);
                     final int[] row = BUILTIN_TEMPLATE_ROWS[i];
                     manageTable.table(t -> {
                         t.add(name).left().padRight(8f);
-                        t.button(Core.bundle.get("universaljunction.use"), () -> {
+                        t.button(Core.bundle.get("universal-junction.use"), () -> {
                             applyTemplate(row);
                             r[2].run();
                             flushConfig();
@@ -1040,8 +1064,8 @@ public class UniversalJunction extends Block {
 
             // 模板区：仅 [保存] [管理] 两个按钮（模板使用与删除均在管理区）
             bg.table(top -> {
-                top.button(Core.bundle.get("universaljunction.save"), () -> {
-                    ui.showTextInput("", Core.bundle.get("universaljunction.saveTitle"), 12, "", text -> {
+                top.button(Core.bundle.get("universal-junction.save"), () -> {
+                    Vars.ui.showTextInput("", Core.bundle.get("universal-junction.saveTitle"), 12, "", text -> {
                         String name = text.trim();
                         if (!name.isEmpty()) {
                             saveTemplate(name, currentTemplate()); // 保存完整 4 方向权重矩阵
@@ -1049,8 +1073,8 @@ public class UniversalJunction extends Block {
                         }
                     });
                 }).size(88f, 40f).padRight(6f);
-                TextButton manage = new TextButton(Core.bundle.get("universaljunction.manage"), Styles.defaultt);
-                manage.update(() -> manage.setText(Core.bundle.get(manageOpen[0] ? "universaljunction.manageClose" : "universaljunction.manage")));
+                TextButton manage = new TextButton(Core.bundle.get("universal-junction.manage"), Styles.defaultt);
+                manage.update(() -> manage.setText(Core.bundle.get(manageOpen[0] ? "universal-junction.manageClose" : "universal-junction.manage")));
                 manage.clicked(() -> {
                     manageOpen[0] = !manageOpen[0];
                     r[3].run();
@@ -1063,13 +1087,13 @@ public class UniversalJunction extends Block {
             bg.add(manageTable).padBottom(8f).row();
 
             // 全局输出优先级：标题与配置行同宽（growX 自适应，背景随内容自然定宽）
-            bg.add(Core.bundle.get("universaljunction.global")).color(Pal.accent).growX().padBottom(4f).row();
+            bg.add(Core.bundle.get("universal-junction.global")).color(Pal.accent).growX().padBottom(4f).row();
             bg.add(noteTable).padBottom(2f).row();
             bg.add(globalTable).growX().padBottom(6f).row();
 
             // 按方向覆盖（折叠开关）
             TextButton fold = new TextButton("", Styles.defaultt);
-            fold.update(() -> fold.setText(Core.bundle.get(expanded[0] ? "universaljunction.collapse" : "universaljunction.expand")));
+            fold.update(() -> fold.setText(Core.bundle.get(expanded[0] ? "universal-junction.collapse" : "universal-junction.expand")));
             fold.clicked(() -> {
                 expanded[0] = !expanded[0];
                 r[2].run();

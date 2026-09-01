@@ -87,6 +87,8 @@ public class SignalRelay extends Block {
         public String selectedSource = null;
         /** 中继信道（兼容字段：未绑定时用；绑定后信道跟随所选信号源） */
         public int channel = 1;
+        /** 上次渲染的信号源列表签名（配置面板实时刷新用） */
+        private String lastSrcSignature = "";
         private int timer = 0;
 
         @Override
@@ -210,6 +212,17 @@ public class SignalRelay extends Block {
             }
         }
 
+        /** 信号源列表签名（数量 + 编号集合），用于检测列表变化 */
+        String sourceSignature() {
+            StringBuilder sb = new StringBuilder();
+            Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
+            sb.append(srcs.size).append(':');
+            for (SignalSource.SignalSourceBuild s : srcs) {
+                sb.append(s.signal == null ? "----" : s.signal.name).append(',');
+            }
+            return sb.toString();
+        }
+
         /** 配置面板（与信号源面板风格一致：顶部当前编号 + 居中黄色标题 + 搜索 + 按钮行；多信号源时按钮区限高滚轮翻页） */
         @Override
         public void buildConfiguration(Table table) {
@@ -242,6 +255,15 @@ public class SignalRelay extends Block {
                 // 清除按钮（跨满整行居中，与标题/按钮对齐）
                 t.button(Core.bundle.get("block.silicon-signal-relay.source.clear"), Styles.defaultt,
                         () -> configure("")).colspan(SignalJammer.CHANNEL_MAX).center().size(88f, 40f).padTop(2f);
+                // 实时刷新：信号源列表变化（增删/编号变更）时重建按钮区（保持搜索过滤；点击不受影响）
+                lastSrcSignature = "";
+                pane.update(() -> {
+                    String sig = sourceSignature();
+                    if (!sig.equals(lastSrcSignature)) {
+                        lastSrcSignature = sig;
+                        rebuildSourceButtons(srcTable, search.getText().trim());
+                    }
+                });
                 // 初始填充全部信号源
                 rebuildSourceButtons(srcTable, "");
             }).pad(4f);

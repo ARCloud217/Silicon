@@ -53,7 +53,8 @@ public class SignalChannel {
     public static Result effective(Team team, int ch, float wx, float wy) {
         float best = 0f;
         Building bestSrc = null;
-        float otherSum = 0f; // 同信道其他源（CCI）
+        String bestId = null; // 最强信号的来源身份（同身份不互扰：信号源与绑定它的中继器视为同一信号）
+        float otherSum = 0f; // 同信道其他源（CCI，仅不同身份之间）
         float aciSum = 0f;   // 邻信道泄漏
         // 信号源
         for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
@@ -61,9 +62,17 @@ public class SignalChannel {
             if (s <= 0f) continue;
             int dch = Math.abs(sb.channel - ch);
             if (dch == 0) {
-                if (s > best) {
+                String id = "S" + sb.signal.name; // 信号源身份 = 自身编码
+                if (id.equals(bestId)) {
+                    // 同一信号身份（如本源的级联中继器）：取最强，不互相干扰
+                    if (s > best) {
+                        best = s;
+                        bestSrc = sb;
+                    }
+                } else if (s > best) {
                     otherSum += best;
                     best = s;
+                    bestId = id;
                     bestSrc = sb;
                 } else {
                     otherSum += s;
@@ -79,9 +88,18 @@ public class SignalChannel {
             if (s <= 0f) continue;
             int dch = Math.abs(rb.signalChannel() - ch);
             if (dch == 0) {
-                if (s > best) {
+                // 中继器身份 = 所选信号源编码（绑定）；未绑定用自身坐标
+                String id = (rb.selectedSource != null && !rb.selectedSource.isEmpty()) ? "S" + rb.selectedSource : "R" + ((int) rb.x * 7 + (int) rb.y * 13);
+                if (id.equals(bestId)) {
+                    // 同身份（信号源或其级联中继器）：取最强，不互相干扰
+                    if (s > best) {
+                        best = s;
+                        bestSrc = rb;
+                    }
+                } else if (s > best) {
                     otherSum += best;
                     best = s;
+                    bestId = id;
                     bestSrc = rb;
                 } else {
                     otherSum += s;

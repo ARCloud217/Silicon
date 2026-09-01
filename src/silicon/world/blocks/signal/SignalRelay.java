@@ -2,6 +2,7 @@ package silicon.world.blocks.signal;
 
 import arc.Core;
 import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.Fill;
 import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
 import arc.scene.ui.layout.Table;
@@ -273,6 +274,18 @@ public class SignalRelay extends Block {
         public float strengthAt(float wx, float wy) {
             if (!active) return 0f;
             return SignalSource.strengthAt(x, y, wx, wy);
+        }
+
+        /** 绘制：关闭状态（enabled=false）时叠加暗色层，参考原版开关控制外观 */
+        @Override
+        public void draw() {
+            super.draw();
+            if (!enabled) {
+                Draw.z(35f);
+                Draw.color(0f, 0f, 0f, 0.45f);
+                Fill.rect(x, y, size * 8f, size * 8f);
+                Draw.reset();
+            }
         }
 
         /** 选中时显示信号范围（激活=深蓝，未激活=灰色） */

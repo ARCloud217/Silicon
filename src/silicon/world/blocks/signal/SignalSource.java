@@ -174,10 +174,22 @@ public class SignalSource extends Block {
             return power != null && power.status > 0.001f;
         }
 
-        /** 本源在指定世界坐标处的原始信号强度（0~15；无信号或断电时为 0；干扰由 SignalChannel 统一计算） */
+        /** 本源在指定世界坐标处的原始信号强度（0~15；无信号、断电或被关闭（enabled=false）时为 0；干扰由 SignalChannel 统一计算） */
         public float strengthAt(float wx, float wy) {
-            if (signal == null || !hasPower()) return 0f;
+            if (signal == null || !hasPower() || !enabled) return 0f;
             return SignalSource.strengthAt(x, y, wx, wy);
+        }
+
+        /** 绘制：关闭状态（enabled=false）时叠加暗色层，参考原版开关控制外观 */
+        @Override
+        public void draw() {
+            super.draw();
+            if (!enabled) {
+                Draw.z(35f);
+                Draw.color(0f, 0f, 0f, 0.45f);
+                Fill.rect(x, y, size * 8f, size * 8f);
+                Draw.reset();
+            }
         }
 
         /** 配置面板（选择信道界面，灰底面板）：顶部显示本信号源编号，下方选信道 */

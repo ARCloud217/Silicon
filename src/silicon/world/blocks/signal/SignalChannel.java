@@ -3,6 +3,7 @@ package silicon.world.blocks.signal;
 import arc.math.Mathf;
 import mindustry.game.Team;
 import mindustry.gen.Building;
+import silicon.util.SatelliteManager;
 
 /**
  * 信道信号统一计算（干扰模型 1~7、13）：
@@ -32,6 +33,16 @@ public class SignalChannel {
         if (d == 1) return 0.4f;
         if (d == 2) return 0.12f;
         return 0f;
+    }
+
+    /** 卫星归属信号所在信道（按归属信号编码找信号源；无归属或源不存在返回 -1） */
+    public static int satelliteChannel(Team team) {
+        String sig = SatelliteManager.satelliteSignal(team);
+        if (sig == null) return -1;
+        for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
+            if (sb.signal != null && sig.equals(sb.signal.name)) return sb.channel;
+        }
+        return -1;
     }
 
     /** 计算结果：有效强度 + 最强同信道源（用于显示颜色） */

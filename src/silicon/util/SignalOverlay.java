@@ -262,24 +262,31 @@ public class SignalOverlay {
         Draw.reset();
     }
 
-    /** 卫星全图信号层（范围模式）：可见区域内每格按卫星信号强度填充色块；颜色取卫星所属信号编码的专属色（无归属时蓝色渐变） */
+    /** 卫星全图信号层（范围模式）：可见区域内每格按卫星信号强度填充色块；卫星信号受归属信道干扰器压制（被压制格不画）；
+     *  颜色取卫星所属信号编码的专属色（无归属时蓝色渐变） */
     static void drawSatelliteRange(Team team, int satStrength, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
-        float t = satStrength / SignalSource.MAX_STRENGTH;
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
+        int sch = SignalChannel.satelliteChannel(team);
         // 颜色：卫星所属信号的专属色（按编码生成，不限数量，不限制背景）；无归属时浅蓝→深蓝渐变
         String sig = SatelliteManager.satelliteSignal(team);
-        if (sig != null) {
-            Tmp.c1.set(signalColor(sig, -1f));
-        } else {
-            Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
-        }
-        Draw.color(Tmp.c1, (0.45f + 0.35f * t) * rangeAlpha * alpha);
+        // 逐格：卫星有效 = 卫星强度 − 归属信道干扰强度（被完全压制不画）
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {
-                Fill.rect(gx * 8f, gy * 8f, 8f, 8f);
+                float wx = gx * 8f, wy = gy * 8f;
+                float satJam = sch >= 0 ? SignalJammer.strengthAt(team, sch, wx, wy) : 0f;
+                float s = Math.max(0f, satStrength - satJam);
+                if (s <= 0f) continue;
+                float t = s / SignalSource.MAX_STRENGTH;
+                if (sig != null) {
+                    Tmp.c1.set(signalColor(sig, -1f));
+                } else {
+                    Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+                }
+                Draw.color(Tmp.c1, (0.45f + 0.35f * t) * rangeAlpha * alpha);
+                Fill.rect(wx, wy, 8f, 8f);
             }
         }
     }
@@ -288,7 +295,7 @@ public class SignalOverlay {
     private static final float[] effBuf = new float[SignalJammer.CHANNEL_MAX + 1];
     private static final Building[] srcBuf = new Building[SignalJammer.CHANNEL_MAX + 1];
 
-    /** 每格最大有效信号（一次遍历所有信道，与卫星层取 max）；返回有效强度与最强来源（null=仅卫星） */
+    /** 每格最大有效信号（一次遍历所有信道，与卫星层取 max）；卫星信号也受归属信道干扰；返回有效强度与最强来源（null=仅卫星） */
     static float bestSignal(Team team, int satStrength, float wx, float wy, Building[] bestSrcOut) {
         // 批量计算所有信道（一次遍历全部源，按信道分摊——比逐信道调用快约 5 倍）
         SignalChannel.effectiveAll(team, wx, wy, effBuf, srcBuf);
@@ -300,9 +307,15 @@ public class SignalOverlay {
                 bestSrc = srcBuf[ch];
             }
         }
-        if (satStrength > bestStr) {
-            bestStr = satStrength;
-            bestSrc = null; // 卫星层
+        // 卫星全图信号：受归属信道干扰器压制
+        if (satStrength > 0f) {
+            int sch = SignalChannel.satelliteChannel(team);
+            float satJam = sch >= 0 ? SignalJammer.strengthAt(team, sch, wx, wy) : 0f;
+            float satEff = Math.max(0f, satStrength - satJam);
+            if (satEff > bestStr) {
+                bestStr = satEff;
+                bestSrc = null; // 卫星层
+            }
         }
         bestSrcOut[0] = bestSrc;
         return bestStr;

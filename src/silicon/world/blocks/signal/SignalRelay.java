@@ -125,10 +125,17 @@ public class SignalRelay extends Block {
             return null;
         }
 
-        /** 发射信道：绑定信号源后与其保持一致；未绑定用自身 channel */
+        /** 发射信道：绑定信号源后与其保持一致；绑定卫星归属信号时用其信道；未绑定用自身 channel */
         public int signalChannel() {
             SignalSource.SignalSourceBuild src = findSource();
-            return src != null ? src.channel : channel;
+            if (src != null) return src.channel;
+            // 卫星中继：绑定编号 == 卫星归属编号 → 卫星归属信道
+            String sat = silicon.util.SatelliteManager.satelliteSignal(team);
+            if (selectedSource != null && selectedSource.equals(sat)) {
+                int sch = SignalChannel.satelliteChannel(team);
+                if (sch >= 0) return sch;
+            }
+            return channel;
         }
 
         void updateActive() {
@@ -151,6 +158,16 @@ public class SignalRelay extends Block {
                                 break;
                             }
                         }
+                    }
+                }
+                // 卫星中继：绑定编号 == 卫星归属编号，且卫星信号有效（归属信道未被完全压制）
+                if (!newActive) {
+                    String sat = silicon.util.SatelliteManager.satelliteSignal(team);
+                    if (selectedSource != null && selectedSource.equals(sat)) {
+                        int sch = SignalChannel.satelliteChannel(team);
+                        float satJam = sch >= 0 ? SignalJammer.strengthAt(team, sch, x, y) : 0f;
+                        float satEff = Math.max(0f, silicon.util.SatelliteManager.signalStrength(team) - satJam);
+                        if (satEff > 0.5f) newActive = true;
                     }
                 }
             }

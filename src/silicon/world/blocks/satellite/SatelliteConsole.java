@@ -70,18 +70,20 @@ public class SatelliteConsole extends Block {
             return false;
         }
 
-        /** 点击方块：打开全屏界面 */
+        /** 点击方块：打开可拖动窗口 */
         @Override
         public void tapped() {
             BaseDialog dialog = new BaseDialog(Core.bundle.get("block.silicon-satellite-console.title"));
-            dialog.setFillParent(true);
-            dialog.cont.pane(content -> rebuildFull(content, dialog)).grow().pad(12f);
+            // 可拖动式窗口（原版对话框默认可拖标题栏移动）；不铺满全屏，保持固定大小
+            dialog.setFillParent(false);
+            dialog.setMovable(true);
+            dialog.cont.pane(content -> rebuildFull(content, dialog)).width(600f).height(400f).pad(10f);
             dialog.buttons.button(Core.bundle.get("block.silicon-satellite-console.close"), Styles.defaultt, dialog::hide)
-                    .size(160f, 44f).padTop(8f);
+                    .size(120f, 40f).padTop(6f);
             dialog.show();
         }
 
-        /** 全屏界面内容：状态 + 卫星所属信号选择（滚轮）+ 发射按钮 */
+        /** 窗口内容：状态 + 卫星所属信号选择（滚轮）+ 发射按钮 */
         void rebuildFull(Table table, BaseDialog dialog) {
             table.clearChildren();
             table.top();
@@ -105,7 +107,7 @@ public class SatelliteConsole extends Block {
                 srcTable.add(Core.bundle.get("block.silicon-satellite-console.nosignal")).color(arc.graphics.Color.lightGray).pad(2f);
             } else {
                 ButtonGroup<TextButton> group = new ButtonGroup<>();
-                int perRow = 6, count = 0;
+                int perRow = 4, count = 0; // 窗口 600f 宽：4 列
                 for (SignalSource.SignalSourceBuild sb : srcs) {
                     String code = sb.signal == null ? "----" : sb.signal.name;
                     TextButton btn = new TextButton(code, Styles.flatTogglet);

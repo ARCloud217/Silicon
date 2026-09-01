@@ -176,7 +176,32 @@ public class SignalRelay extends Block {
             }
         }
 
-        /** 配置面板（与信号源面板风格一致：顶部当前编号 + 居中黄色标题 + 按钮行；多信号源时按钮区限高滚轮翻页） */
+        /** 重建源按钮区（按搜索过滤；无匹配显示提示） */
+        void rebuildSourceButtons(Table srcTable, String filter) {
+            srcTable.clearChildren();
+            srcTable.center();
+            Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
+            boolean any = false;
+            arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
+            int perRow = 5, count = 0;
+            for (SignalSource.SignalSourceBuild sb : srcs) {
+                String code = sb.signal == null ? "----" : sb.signal.name;
+                if (!filter.isEmpty() && !code.contains(filter.toUpperCase())) continue;
+                any = true;
+                arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(code, Styles.flatTogglet);
+                btn.setChecked(code.equals(selectedSource));
+                btn.clicked(() -> configure(code));
+                group.add(btn);
+                srcTable.add(btn).size(88f, 40f).pad(1f);
+                if (++count % perRow == 0) srcTable.row();
+            }
+            if (!any) {
+                srcTable.add(Core.bundle.get("block.silicon-signal-relay.search.none"))
+                        .color(arc.graphics.Color.lightGray).pad(2f);
+            }
+        }
+
+        /** 配置面板（与信号源面板风格一致：顶部当前编号 + 居中黄色标题 + 搜索 + 按钮行；多信号源时按钮区限高滚轮翻页） */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
@@ -192,25 +217,14 @@ public class SignalRelay extends Block {
                 t.add(Core.bundle.get("block.silicon-signal-relay.source")).colspan(SignalJammer.CHANNEL_MAX).center()
                         .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
+                // 搜索框（标题下方）：按编号过滤信号源
+                arc.scene.ui.TextField search = t.field("", text -> rebuildSourceButtons(srcTable, text.trim()))
+                        .colspan(SignalJammer.CHANNEL_MAX).width(280f).padTop(2f).get();
+                search.setMessageText(Core.bundle.get("block.silicon-signal-relay.search"));
+                search.setMaxLength(4);
+                t.row();
                 // 源按钮区：ScrollPane 限制高度（多信号源时滚轮翻页），每行 5 个换行，按钮网格居中
                 Table srcTable = new Table();
-                srcTable.center();
-                Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
-                if (srcs.isEmpty()) {
-                    srcTable.add(Core.bundle.get("block.silicon-signal-relay.nosource")).color(arc.graphics.Color.lightGray).pad(2f);
-                } else {
-                    arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
-                    int perRow = 5, count = 0;
-                    for (SignalSource.SignalSourceBuild sb : srcs) {
-                        String code = sb.signal == null ? "----" : sb.signal.name;
-                        arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(code, Styles.flatTogglet);
-                        btn.setChecked(code.equals(selectedSource));
-                        btn.clicked(() -> configure(code));
-                        group.add(btn);
-                        srcTable.add(btn).size(88f, 40f).pad(1f);
-                        if (++count % perRow == 0) srcTable.row();
-                    }
-                }
                 arc.scene.ui.ScrollPane pane = new arc.scene.ui.ScrollPane(srcTable, Styles.noBarPane);
                 pane.setScrollingDisabled(true, false); // 禁水平滚动，允许垂直滚轮翻页
                 // 跨满整行（与标题同宽），限高
@@ -219,6 +233,8 @@ public class SignalRelay extends Block {
                 // 清除按钮（跨满整行居中，与标题/按钮对齐）
                 t.button(Core.bundle.get("block.silicon-signal-relay.source.clear"), Styles.defaultt,
                         () -> configure("")).colspan(SignalJammer.CHANNEL_MAX).center().size(88f, 40f).padTop(2f);
+                // 初始填充全部信号源
+                rebuildSourceButtons(srcTable, "");
             }).pad(4f);
         }
 

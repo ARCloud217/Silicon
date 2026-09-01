@@ -176,7 +176,7 @@ public class SignalRelay extends Block {
             }
         }
 
-        /** 配置面板（与信号源面板风格一致：顶部当前编号 + 居中黄色标题 + 按钮行；灰底面板） */
+        /** 配置面板（与信号源面板风格一致：顶部当前编号 + 居中黄色标题 + 按钮行；多信号源时按钮区限高滚轮翻页） */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
@@ -192,20 +192,28 @@ public class SignalRelay extends Block {
                 t.add(Core.bundle.get("block.silicon-signal-relay.source")).colspan(SignalJammer.CHANNEL_MAX).center()
                         .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
+                // 源按钮区：ScrollPane 限制高度（多信号源时滚轮翻页），每行 5 个换行
+                Table srcTable = new Table();
+                srcTable.top();
                 Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
                 if (srcs.isEmpty()) {
-                    t.add(Core.bundle.get("block.silicon-signal-relay.nosource")).color(arc.graphics.Color.lightGray).pad(2f);
+                    srcTable.add(Core.bundle.get("block.silicon-signal-relay.nosource")).color(arc.graphics.Color.lightGray).pad(2f);
                 } else {
                     arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
+                    int perRow = 5, count = 0;
                     for (SignalSource.SignalSourceBuild sb : srcs) {
                         String code = sb.signal == null ? "----" : sb.signal.name;
                         arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(code, Styles.flatTogglet);
                         btn.setChecked(code.equals(selectedSource));
                         btn.clicked(() -> configure(code));
                         group.add(btn);
-                        t.add(btn).size(88f, 40f).pad(1f);
+                        srcTable.add(btn).size(88f, 40f).pad(1f);
+                        if (++count % perRow == 0) srcTable.row();
                     }
                 }
+                arc.scene.ui.ScrollPane pane = new arc.scene.ui.ScrollPane(srcTable, Styles.noBarPane);
+                pane.setScrollingDisabled(true, false); // 禁水平滚动，允许垂直滚轮翻页
+                t.add(pane).height(160f).growX().padTop(2f);
                 t.row();
                 // 清除按钮（与按钮行同高，风格统一）
                 t.button(Core.bundle.get("block.silicon-signal-relay.source.clear"), Styles.defaultt,

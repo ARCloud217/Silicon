@@ -561,27 +561,33 @@ public class PowerProtector extends PowerGenerator {
         /** 当前显示模式文案（与方块进度条共用） */
         public String modeText() {
             Mode m = shared != null ? shared.mode : Mode.Normal;
-            return switch (m) {
-                case Protecting -> Core.bundle.get("block.silicon-power-protector.protection");
-                case Recovering -> Core.bundle.get("block.silicon-power-protector.recovery");
-                case Blocked -> Core.bundle.get("block.silicon-power-protector.blocked");
-                case Error -> Core.bundle.get("block.silicon-power-protector.error");
-                case Stopped -> Core.bundle.get("block.silicon-power-protector.stopped");
-                default -> Core.bundle.get("block.silicon-power-protector.normal");
-            };
+            // 传统 switch（箭头 switch 会生成 SwitchBootstraps，Android DEX 不兼容）
+            String key;
+            switch (m) {
+                case Protecting: key = "block.silicon-power-protector.protection"; break;
+                case Recovering: key = "block.silicon-power-protector.recovery"; break;
+                case Blocked: key = "block.silicon-power-protector.blocked"; break;
+                case Error: key = "block.silicon-power-protector.error"; break;
+                case Stopped: key = "block.silicon-power-protector.stopped"; break;
+                default: key = "block.silicon-power-protector.normal"; break;
+            }
+            return Core.bundle.get(key);
         }
 
         /** 当前显示模式颜色（恢复模式与剩余时间保持一致青色） */
         public Color modeColor() {
             Mode m = shared != null ? shared.mode : Mode.Normal;
-            return switch (m) {
-                case Protecting -> Color.green;
-                case Recovering -> Color.cyan;
-                case Blocked -> Color.red;
-                case Error -> Color.red;
-                case Stopped -> Color.gray;
-                default -> Color.white;
-            };
+            // 传统 switch（箭头 switch 会生成 SwitchBootstraps，Android DEX 不兼容）
+            Color c;
+            switch (m) {
+                case Protecting: c = Color.green; break;
+                case Recovering: c = Color.cyan; break;
+                case Blocked: c = Color.red; break;
+                case Error: c = Color.red; break;
+                case Stopped: c = Color.gray; break;
+                default: c = Color.white; break;
+            }
+            return c;
         }
 
         @Override

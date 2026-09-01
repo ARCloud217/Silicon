@@ -176,7 +176,16 @@ public class SignalRelay extends Block {
             }
         }
 
-        /** 重建源按钮区（按搜索过滤；无匹配显示提示） */
+        /** 模糊匹配：query 的字符按顺序出现在 code 中（子序列匹配，忽略大小写）；空 query 匹配一切 */
+        static boolean fuzzyMatch(String code, String query) {
+            int qi = 0;
+            for (int i = 0; i < code.length() && qi < query.length(); i++) {
+                if (Character.toUpperCase(code.charAt(i)) == Character.toUpperCase(query.charAt(qi))) qi++;
+            }
+            return qi == query.length();
+        }
+
+        /** 重建源按钮区（按搜索模糊过滤；无匹配显示提示） */
         void rebuildSourceButtons(Table srcTable, String filter) {
             srcTable.clearChildren();
             srcTable.center();
@@ -186,7 +195,7 @@ public class SignalRelay extends Block {
             int perRow = 5, count = 0;
             for (SignalSource.SignalSourceBuild sb : srcs) {
                 String code = sb.signal == null ? "----" : sb.signal.name;
-                if (!filter.isEmpty() && !code.contains(filter.toUpperCase())) continue;
+                if (!filter.isEmpty() && !fuzzyMatch(code, filter)) continue;
                 any = true;
                 arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(code, Styles.flatTogglet);
                 btn.setChecked(code.equals(selectedSource));

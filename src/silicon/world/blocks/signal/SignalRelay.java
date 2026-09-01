@@ -217,14 +217,14 @@ public class SignalRelay extends Block {
                 t.add(Core.bundle.get("block.silicon-signal-relay.source")).colspan(SignalJammer.CHANNEL_MAX).center()
                         .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
+                // 源按钮区（先声明，供搜索框回调引用）：ScrollPane 限制高度，每行 5 个换行，按钮网格居中
+                Table srcTable = new Table();
                 // 搜索框（标题下方）：按编号过滤信号源
                 arc.scene.ui.TextField search = t.field("", text -> rebuildSourceButtons(srcTable, text.trim()))
                         .colspan(SignalJammer.CHANNEL_MAX).width(280f).padTop(2f).get();
                 search.setMessageText(Core.bundle.get("block.silicon-signal-relay.search"));
                 search.setMaxLength(4);
                 t.row();
-                // 源按钮区：ScrollPane 限制高度（多信号源时滚轮翻页），每行 5 个换行，按钮网格居中
-                Table srcTable = new Table();
                 arc.scene.ui.ScrollPane pane = new arc.scene.ui.ScrollPane(srcTable, Styles.noBarPane);
                 pane.setScrollingDisabled(true, false); // 禁水平滚动，允许垂直滚轮翻页
                 // 跨满整行（与标题同宽），限高

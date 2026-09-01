@@ -86,10 +86,13 @@ public class SatelliteConsole extends Block {
         /** 打开可拖动窗口 */
         void openDialog() {
             BaseDialog dialog = new BaseDialog(Core.bundle.get("block.silicon-satellite-console.title"));
-            // 可拖动式窗口（原版对话框默认可拖标题栏移动）；不铺满全屏，保持固定大小
+            // 可拖动式窗口（原版对话框默认可拖标题栏移动）；不铺满全屏
             dialog.setFillParent(false);
             dialog.setMovable(true);
-            dialog.cont.pane(content -> rebuildFull(content, dialog)).width(600f).height(480f).pad(10f);
+            // 尺寸按屏幕比例动态计算（大屏封顶 620×500，小屏按比例缩小）
+            float w = Math.min(620f, Core.graphics.getWidth() * 0.6f);
+            float h = Math.min(500f, Core.graphics.getHeight() * 0.72f);
+            dialog.cont.pane(content -> rebuildFull(content, dialog)).width(w).height(h).pad(10f);
             dialog.buttons.button(Core.bundle.get("block.silicon-satellite-console.close"), Styles.defaultt, dialog::hide)
                     .size(120f, 40f).padTop(6f);
             dialog.show();

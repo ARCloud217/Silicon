@@ -239,18 +239,25 @@ public class UpdateChecker {
 
     /** 更新弹窗是否已显示（本次会话只弹一次） */
     public static boolean dialogShown = false;
+    /** 弹窗是否被玩家手动关闭（手动关闭后不再自动重挂） */
+    public static boolean dialogDismissed = false;
     /** 自定义浮动窗口（更新弹窗，只维持一个） */
     public static Table popupTable;
     /** 信息弹窗（如"已是最新版本"，只维持一个，保持在最上层） */
     public static Table infoPopup;
 
     public static void setupBanner() {
-        // 状态变化（含进入主界面）时检查是否弹窗
+        // 状态变化（含进入主界面/进入游戏）时检查弹窗
         Events.on(EventType.StateChangeEvent.class, e -> refreshBanner());
     }
 
-    /** 有更新且在主界面时弹出更新提示（自定义浮动窗口，只弹一次） */
+    /** 有更新且在主界面时弹出更新提示（自定义浮动窗口，只弹一次）；进入游戏场景切换清除弹窗时自动重新挂载（未手动关闭） */
     public static void refreshBanner() {
+        // 弹窗被场景切换清除（parent 为空）但玩家未手动关闭 → 重新挂载到当前场景
+        if (hasUpdate && popupTable != null && popupTable.parent == null && !dialogDismissed) {
+            Core.scene.root.addChild(popupTable);
+            return;
+        }
         if (hasUpdate && Vars.state.isMenu() && !dialogShown) {
             showUpdateDialog();
         }
@@ -338,8 +345,9 @@ public class UpdateChecker {
         });
     }
 
-    /** 关闭弹窗 */
+    /** 关闭弹窗（手动关闭标记：不再自动重挂） */
     public static void hidePopup() {
+        dialogDismissed = true;
         if (popupTable != null) {
             popupTable.remove();
             popupTable = null;

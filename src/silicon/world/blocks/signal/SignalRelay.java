@@ -206,26 +206,29 @@ public class SignalRelay extends Block {
             Draw.reset();
         }
 
-        /** 选中显示：绑定源编号、发射信道、信号强度（原版 Bar）、状态 */
+        /** 选中显示：绑定源编号、发射信道、信号强度（原版 Bar）、状态（嵌套 table，与卫星中枢同结构） */
         @Override
         public void display(Table table) {
             super.display(table);
             table.row();
-            table.label(() -> Core.bundle.format("block.silicon-signal-relay.source.current",
-                    selectedSource == null || selectedSource.isEmpty() ? Core.bundle.get("block.silicon-signal-relay.nobind") : selectedSource)).pad(2f);
-            table.row();
-            table.label(() -> Core.bundle.format("block.silicon-signal-relay.channel.current",
-                    selectedSource == null || selectedSource.isEmpty() ? "—" : String.valueOf(signalChannel()))).pad(2f);
-            table.row();
-            // 转发信号强度（原版 Bar 样式，激活时强调色、未激活灰色）
-            table.add(new Bar(
-                    () -> active ? Core.bundle.get("block.silicon-signal-relay.signal") : Core.bundle.get("block.silicon-signal-relay.inactive"),
-                    () -> active ? mindustry.graphics.Pal.accent : mindustry.graphics.Pal.gray,
-                    () -> active ? Math.min(1f, SignalSource.strengthAt(x, y, x, y) / SignalSource.MAX_STRENGTH) : 0f))
-                    .height(16f).growX();
-            table.row();
-            table.label(() -> Core.bundle.get(active ? "block.silicon-signal-relay.active" : "block.silicon-signal-relay.inactive"))
-                    .color(active ? arc.graphics.Color.lime : arc.graphics.Color.lightGray).pad(2f);
+            table.table(info -> {
+                info.left();
+                info.label(() -> Core.bundle.format("block.silicon-signal-relay.source.current",
+                        selectedSource == null || selectedSource.isEmpty() ? Core.bundle.get("block.silicon-signal-relay.nobind") : selectedSource)).pad(2f);
+                info.row();
+                info.label(() -> Core.bundle.format("block.silicon-signal-relay.channel.current",
+                        selectedSource == null || selectedSource.isEmpty() ? "—" : String.valueOf(signalChannel()))).pad(2f);
+                info.row();
+                // 转发信号强度（原版 Bar 样式，激活时强调色、未激活灰色）
+                info.add(new Bar(
+                        () -> active ? Core.bundle.get("block.silicon-signal-relay.signal") : Core.bundle.get("block.silicon-signal-relay.inactive"),
+                        () -> active ? mindustry.graphics.Pal.accent : mindustry.graphics.Pal.gray,
+                        () -> active ? Math.min(1f, SignalSource.strengthAt(x, y, x, y) / SignalSource.MAX_STRENGTH) : 0f))
+                        .height(16f).growX();
+                info.row();
+                info.label(() -> Core.bundle.get(active ? "block.silicon-signal-relay.active" : "block.silicon-signal-relay.inactive"))
+                        .color(active ? arc.graphics.Color.lime : arc.graphics.Color.lightGray).pad(2f);
+            }).left().growX();
         }
 
         /** 存档/网络同步 active 字段（host 上由 updateActive 重算，保证一致性） */

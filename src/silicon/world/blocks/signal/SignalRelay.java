@@ -176,14 +176,20 @@ public class SignalRelay extends Block {
             }
         }
 
-        /** 配置面板：选择信号源编号（信道随所选源保持一致；灰底面板） */
+        /** 配置面板（与信号源面板风格一致：顶部当前编号 + 居中黄色标题 + 按钮行；灰底面板） */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
             table.top();
             table.table(Styles.grayPanel, t -> {
                 t.top();
-                t.add(Core.bundle.get("block.silicon-signal-relay.source")).colspan(4).center()
+                // 顶部：当前转发编号（跨满整行居中，与信号源编号显示风格一致）
+                t.label(() -> Core.bundle.format("block.silicon-signal-relay.source.current",
+                        selectedSource == null || selectedSource.isEmpty() ? Core.bundle.get("block.silicon-signal-relay.nobind") : selectedSource))
+                        .colspan(SignalJammer.CHANNEL_MAX).center().pad(2f);
+                t.row();
+                // 标题居中，原版黄色（跨满整行，避免挤占首列导致按钮间距不均）
+                t.add(Core.bundle.get("block.silicon-signal-relay.source")).colspan(SignalJammer.CHANNEL_MAX).center()
                         .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
                 Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
@@ -201,8 +207,9 @@ public class SignalRelay extends Block {
                     }
                 }
                 t.row();
+                // 清除按钮（与按钮行同高，风格统一）
                 t.button(Core.bundle.get("block.silicon-signal-relay.source.clear"), Styles.defaultt,
-                        () -> configure("")).size(88f, 36f).padTop(4f);
+                        () -> configure("")).size(88f, 40f).padTop(2f);
             }).pad(4f);
         }
 

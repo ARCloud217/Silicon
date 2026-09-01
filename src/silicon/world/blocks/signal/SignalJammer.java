@@ -69,10 +69,11 @@ public class SignalJammer extends Block {
         return jammerCache.get(team, new Seq<>());
     }
 
-    /** 位置 (wx,wy) 处的同信道（或全信道）干扰强度（0~15，与信号强度同模型衰减） */
+    /** 位置 (wx,wy) 处的同信道（或全信道）干扰强度（0~15，与信号强度同模型衰减；关闭的干扰器不干扰） */
     public static float strengthAt(Team team, int channel, float wx, float wy) {
         float best = 0f;
         for (SignalJammerBuild jb : allJammers(team)) {
+            if (!jb.enabled) continue; // 关闭（enabled=false）不发射干扰
             if (jb.jamChannel != ALL && jb.jamChannel != channel) continue;
             float s = SignalSource.strengthAt(jb.x, jb.y, wx, wy);
             if (s > best) best = s;

@@ -168,6 +168,8 @@ public class SatelliteLauncher extends Block {
                 lastShownType = selectedType;
                 rebuildMaterialTable();
             }
+            // 关闭（enabled=false，逻辑门/开关控制）：不充电、不生产（进度与已生产状态保留）
+            if (!enabled) return;
             // 电网有电时向发射缓冲充电（发射储备）
             if (power != null && power.status > 0.001f && battery < LAUNCH_POWER) {
                 battery = Math.min(LAUNCH_POWER, battery + CHARGE_RATE * delta());

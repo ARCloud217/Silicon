@@ -40,14 +40,20 @@ public class SatelliteConsole extends Block {
 
         /** 发射卫星：由 SatelliteManager 检查/扣减中枢的燃料与缓冲电力，并记录卫星所属信号 */
         public void launch() {
+            // 关闭（enabled=false，逻辑门/开关控制）：不能发射
+            if (!enabled) {
+                Vars.ui.showInfoToast(Core.bundle.get("block.silicon-satellite-console.disabled"), 3f);
+                return;
+            }
             int result = SatelliteManager.launch(team, selectedSignal);
-            String key = switch (result) {
-                case SatelliteManager.LAUNCH_OK -> "block.silicon-satellite-console.success";
-                case SatelliteManager.LAUNCH_NO_READY -> "block.silicon-satellite-console.noready";
-                case SatelliteManager.LAUNCH_NO_FUEL -> "block.silicon-satellite-console.nofuel";
-                case SatelliteManager.LAUNCH_NO_POWER -> "block.silicon-satellite-console.nopower";
-                default -> "block.silicon-satellite-console.fail";
-            };
+            String key;
+            switch (result) {
+                case SatelliteManager.LAUNCH_OK: key = "block.silicon-satellite-console.success"; break;
+                case SatelliteManager.LAUNCH_NO_READY: key = "block.silicon-satellite-console.noready"; break;
+                case SatelliteManager.LAUNCH_NO_FUEL: key = "block.silicon-satellite-console.nofuel"; break;
+                case SatelliteManager.LAUNCH_NO_POWER: key = "block.silicon-satellite-console.nopower"; break;
+                default: key = "block.silicon-satellite-console.fail"; break;
+            }
             if (result == SatelliteManager.LAUNCH_OK) {
                 Vars.ui.showInfoToast(Core.bundle.format(key, SatelliteManager.launchedCount(team)), 3f);
             } else {

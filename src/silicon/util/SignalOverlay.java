@@ -284,15 +284,20 @@ public class SignalOverlay {
         }
     }
 
-    /** 每格最大有效信号（各信道有效强度取最大，与卫星层取 max）；返回有效强度与最强来源（null=仅卫星） */
+    /** 每信道有效强度/最强源缓冲（静态复用） */
+    private static final float[] effBuf = new float[SignalJammer.CHANNEL_MAX + 1];
+    private static final Building[] srcBuf = new Building[SignalJammer.CHANNEL_MAX + 1];
+
+    /** 每格最大有效信号（一次遍历所有信道，与卫星层取 max）；返回有效强度与最强来源（null=仅卫星） */
     static float bestSignal(Team team, int satStrength, float wx, float wy, Building[] bestSrcOut) {
+        // 批量计算所有信道（一次遍历全部源，按信道分摊——比逐信道调用快约 5 倍）
+        SignalChannel.effectiveAll(team, wx, wy, effBuf, srcBuf);
         float bestStr = 0f;
         Building bestSrc = null;
         for (int ch = 1; ch <= SignalJammer.CHANNEL_MAX; ch++) {
-            SignalChannel.Result r = SignalChannel.effective(team, ch, wx, wy);
-            if (r.strength > bestStr) {
-                bestStr = r.strength;
-                bestSrc = r.bestSource;
+            if (effBuf[ch] > bestStr) {
+                bestStr = effBuf[ch];
+                bestSrc = srcBuf[ch];
             }
         }
         if (satStrength > bestStr) {

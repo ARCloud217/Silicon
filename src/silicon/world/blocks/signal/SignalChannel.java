@@ -43,6 +43,88 @@ public class SignalChannel {
     /** 计算结果（静态复用，避免每格分配；调用方立即读取字段） */
     private static final Result tmp = new Result();
 
+    // —— 每信道批量计算（覆盖绘制用）：静态缓冲，一次遍历全部源按信道分摊 ——
+    private static final float[] bestA = new float[SignalJammer.CHANNEL_MAX + 1];
+    private static final Building[] bestSrcA = new Building[SignalJammer.CHANNEL_MAX + 1];
+    private static final String[] bestIdA = new String[SignalJammer.CHANNEL_MAX + 1];
+    private static final float[] otherA = new float[SignalJammer.CHANNEL_MAX + 1];
+    private static final float[] aciA = new float[SignalJammer.CHANNEL_MAX + 1];
+    private static final float[] jamA = new float[SignalJammer.CHANNEL_MAX + 1];
+
+    /** 将某源信号按信道分摊：本信道按身份计入 best/other，邻信道计入 ACI */
+    private static void addSource(int ch, float s, String id, Building src) {
+        if (ch < 1 || ch > SignalJammer.CHANNEL_MAX) return;
+        if (ch > 1) aciA[ch - 1] += s * acir(1);
+        if (ch < SignalJammer.CHANNEL_MAX) aciA[ch + 1] += s * acir(1);
+        if (ch > 2) aciA[ch - 2] += s * acir(2);
+        if (ch < SignalJammer.CHANNEL_MAX - 1) aciA[ch + 2] += s * acir(2);
+        // 本信道：同身份取最强不互扰，不同身份计 CCI
+        if (id.equals(bestIdA[ch])) {
+            if (s > bestA[ch]) {
+                bestA[ch] = s;
+                bestSrcA[ch] = src;
+            }
+        } else if (s > bestA[ch]) {
+            otherA[ch] += bestA[ch];
+            bestA[ch] = s;
+            bestIdA[ch] = id;
+            bestSrcA[ch] = src;
+        } else {
+            otherA[ch] += s;
+        }
+    }
+
+    /**
+     * 批量计算位置 (wx,wy) 所有信道（1~5）的有效信号强度。
+     * 一次遍历全部信号源/中继器/干扰器，按信道分摊（含底噪/CCI/ACI/干扰器），
+     * 结果写入 effOut[1..5] 与 srcOut[1..5]（最强同信道源，用于颜色）。
+     * 比逐信道调用 effective 快约 5 倍（覆盖绘制用）。
+     */
+    public static void effectiveAll(Team team, float wx, float wy, float[] effOut, Building[] srcOut) {
+        for (int ch = 1; ch <= SignalJammer.CHANNEL_MAX; ch++) {
+            bestA[ch] = 0f;
+            bestSrcA[ch] = null;
+            bestIdA[ch] = null;
+            otherA[ch] = 0f;
+            aciA[ch] = 0f;
+            jamA[ch] = 0f;
+        }
+        // 信号源
+        for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
+            float s = sb.strengthAt(wx, wy);
+            if (s <= 0f) continue;
+            addSource(sb.channel, s, "S" + sb.signal.name, sb);
+        }
+        // 激活中继器（级联源；发射信道与所选信号源一致）
+        for (SignalRelay.SignalRelayBuild rb : SignalRelay.allRelays(team)) {
+            if (!rb.active) continue;
+            float s = rb.strengthAt(wx, wy);
+            if (s <= 0f) continue;
+            String id = (rb.selectedSource != null && !rb.selectedSource.isEmpty())
+                    ? "S" + rb.selectedSource : "R" + ((int) rb.x * 7 + (int) rb.y * 13);
+            addSource(rb.signalChannel(), s, id, rb);
+        }
+        // 干扰器：同信道 + 邻信道泄漏
+        for (SignalJammer.SignalJammerBuild jb : SignalJammer.allJammers(team)) {
+            float j = SignalSource.strengthAt(jb.x, jb.y, wx, wy);
+            if (jb.jamChannel == SignalJammer.ALL) {
+                for (int ch = 1; ch <= SignalJammer.CHANNEL_MAX; ch++) jamA[ch] += j;
+            } else {
+                int c = jb.jamChannel;
+                jamA[c] += j;
+                if (c > 1) jamA[c - 1] += j * acirJam(1);
+                if (c < SignalJammer.CHANNEL_MAX) jamA[c + 1] += j * acirJam(1);
+                if (c > 2) jamA[c - 2] += j * acirJam(2);
+                if (c < SignalJammer.CHANNEL_MAX - 1) jamA[c + 2] += j * acirJam(2);
+            }
+        }
+        // 每信道有效信号 = 最强 − (底噪 + CCI + ACI + 干扰器)
+        for (int ch = 1; ch <= SignalJammer.CHANNEL_MAX; ch++) {
+            effOut[ch] = Math.max(0f, bestA[ch] - (NOISE_FLOOR + otherA[ch] + aciA[ch] + jamA[ch]));
+            srcOut[ch] = bestSrcA[ch];
+        }
+    }
+
     /**
      * 计算位置 (wx,wy) 在信道 ch 的有效信号强度（0~15）。
      * 遍历本队信号源与激活中继器：

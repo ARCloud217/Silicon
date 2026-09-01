@@ -13,6 +13,7 @@ import mindustry.game.Team;
 import mindustry.gen.Building;
 import mindustry.gen.Groups;
 import mindustry.graphics.Drawf;
+import mindustry.ui.Bar;
 import mindustry.ui.Styles;
 import mindustry.world.Block;
 import silicon.util.SignalOverlay;
@@ -116,7 +117,7 @@ public class SignalRelay extends Block {
         }
 
         /** 查找绑定的信号源（按编号） */
-        SignalSource.SignalSourceBuild findSource() {
+        public SignalSource.SignalSourceBuild findSource() {
             if (selectedSource == null || selectedSource.isEmpty()) return null;
             for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
                 if (sb.signal != null && selectedSource.equals(sb.signal.name)) return sb;
@@ -205,7 +206,7 @@ public class SignalRelay extends Block {
             Draw.reset();
         }
 
-        /** 选中显示：绑定源编号、发射信道、状态 */
+        /** 选中显示：绑定源编号、发射信道、信号强度（原版 Bar）、状态 */
         @Override
         public void display(Table table) {
             super.display(table);
@@ -213,7 +214,15 @@ public class SignalRelay extends Block {
             table.label(() -> Core.bundle.format("block.silicon-signal-relay.source.current",
                     selectedSource == null || selectedSource.isEmpty() ? Core.bundle.get("block.silicon-signal-relay.nobind") : selectedSource)).pad(2f);
             table.row();
-            table.label(() -> Core.bundle.format("block.silicon-signal-relay.channel.current", signalChannel())).pad(2f);
+            table.label(() -> Core.bundle.format("block.silicon-signal-relay.channel.current",
+                    selectedSource == null || selectedSource.isEmpty() ? "—" : String.valueOf(signalChannel()))).pad(2f);
+            table.row();
+            // 转发信号强度（原版 Bar 样式，激活时强调色、未激活灰色）
+            table.add(new Bar(
+                    () -> active ? Core.bundle.get("block.silicon-signal-relay.signal") : Core.bundle.get("block.silicon-signal-relay.inactive"),
+                    () -> active ? mindustry.graphics.Pal.accent : mindustry.graphics.Pal.gray,
+                    () -> active ? Math.min(1f, SignalSource.strengthAt(x, y, x, y) / SignalSource.MAX_STRENGTH) : 0f))
+                    .height(16f).growX();
             table.row();
             table.label(() -> Core.bundle.get(active ? "block.silicon-signal-relay.active" : "block.silicon-signal-relay.inactive"))
                     .color(active ? arc.graphics.Color.lime : arc.graphics.Color.lightGray).pad(2f);

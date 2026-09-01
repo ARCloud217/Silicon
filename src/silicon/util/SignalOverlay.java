@@ -163,10 +163,13 @@ public class SignalOverlay {
         return signalColor("R" + ((int) rb.x * 7 + (int) rb.y * 13), groundHue(rb.x, rb.y));
     }
 
-    /** 覆盖中某建筑的信号颜色（信号源/中继器用各自颜色，其余用浅蓝） */
+    /** 覆盖中某建筑的信号颜色：中继器绑定信号源后与所选源同色（信号身份一致），未绑定用自身色 */
     static Color buildingColor(Building b) {
         if (b instanceof SignalSourceBuild sb) return sourceColor(sb);
-        if (b instanceof SignalRelayBuild rb) return relayColor(rb);
+        if (b instanceof SignalRelayBuild rb) {
+            SignalSource.SignalSourceBuild src = rb.findSource();
+            return src != null ? sourceColor(src) : relayColor(rb);
+        }
         return LIGHT_BLUE;
     }
 

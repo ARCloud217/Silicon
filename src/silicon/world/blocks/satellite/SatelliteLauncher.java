@@ -69,11 +69,11 @@ public class SatelliteLauncher extends Block {
 
     /** 卫星种类：信号卫星 */
     public static final int TYPE_SIGNAL = 0;
-    /** 卫星种类：测试卫星（材料 1 铜，无实际效果，仅用于测试） */
+    /** 卫星种类：测试卫星（材料 1 硅，效果同信号卫星：全图信号 +1；低成本快速生产，仅用于测试） */
     public static final int TYPE_TEST = 1;
 
-    /** 测试卫星的生产材料（1 铜，无冷冻液） */
-    public static final ItemStack[] TEST_PRODUCTION_ITEMS = with(Items.copper, 1);
+    /** 测试卫星的生产材料（1 硅，无冷冻液） */
+    public static final ItemStack[] TEST_PRODUCTION_ITEMS = with(Items.silicon, 1);
 
     /** 按种类返回生产所需物品材料 */
     public static ItemStack[] productionItems(int type) {

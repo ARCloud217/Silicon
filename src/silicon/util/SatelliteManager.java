@@ -25,7 +25,7 @@ import silicon.world.blocks.satellite.SatelliteLauncher;
 /**
  * 卫星系统全局状态（按队伍）：
  * - 待发射卫星：由卫星发射中枢生产（每中枢同时 1 颗），生产完成后登记；燃料（石油）与缓冲电力（10000）均存储于中枢
- * - 在轨卫星：由卫星控制台发射，每颗信号卫星提供全图信号强度 +1（可叠加，上限 15）
+ * - 在轨卫星：由卫星控制台发射，每颗信号/测试卫星提供全图信号强度 +1（可叠加，上限 15）
  * 状态为运行时内存态，世界加载时重置（重启后需重新发射）。
  */
 public class SatelliteManager {
@@ -158,9 +158,10 @@ public class SatelliteManager {
         return LAUNCH_OK;
     }
 
-    /** 信号卫星提供的全图信号强度（仅信号卫星，每颗 +1，上限 15；测试卫星无效果） */
+    /** 卫星提供的全图信号强度（信号/测试卫星均提供，每颗 +1，上限 15） */
     public static int signalStrength(Team team) {
-        return Math.min(15, launchedCount(team, SatelliteConsole.TYPE_SIGNAL));
+        return Math.min(15,
+                launchedCount(team, SatelliteConsole.TYPE_SIGNAL) + launchedCount(team, SatelliteLauncher.TYPE_TEST));
     }
 
     /** 卫星所属信号编码（null=无归属，全图信号层保持蓝色） */

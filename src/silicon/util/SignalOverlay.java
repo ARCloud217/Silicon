@@ -163,6 +163,17 @@ public class SignalOverlay {
         return signalColor("R" + ((int) rb.x * 7 + (int) rb.y * 13), groundHue(rb.x, rb.y));
     }
 
+    /** 卫星全图信号颜色：有归属 → 卫星所属信号的专属色（与所选信号源同色，编码相同命中同一缓存）；无归属 → 浅蓝→深蓝强度渐变 */
+    static Color satelliteColor(Team team, float t, Color out) {
+        String sig = SatelliteManager.satelliteSignal(team);
+        if (sig != null) {
+            out.set(signalColor(sig, -1f));
+        } else {
+            out.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+        }
+        return out;
+    }
+
     /** 覆盖中某建筑的信号颜色：中继器绑定信号源后与所选源同色（信号身份一致），未绑定用自身色 */
     static Color buildingColor(Building b) {
         if (b instanceof SignalSourceBuild sb) return sourceColor(sb);
@@ -270,8 +281,6 @@ public class SignalOverlay {
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
         int sch = SignalChannel.satelliteChannel(team);
-        // 颜色：卫星所属信号的专属色（按编码生成，不限数量，不限制背景）；无归属时浅蓝→深蓝渐变
-        String sig = SatelliteManager.satelliteSignal(team);
         // 逐格：卫星有效 = 卫星强度 − 归属信道干扰强度（被完全压制不画）
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {
@@ -280,11 +289,8 @@ public class SignalOverlay {
                 float s = Math.max(0f, satStrength - satJam);
                 if (s <= 0f) continue;
                 float t = s / SignalSource.MAX_STRENGTH;
-                if (sig != null) {
-                    Tmp.c1.set(signalColor(sig, -1f));
-                } else {
-                    Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
-                }
+                // 颜色：卫星所属信号的专属色（与信号源同色）；无归属时浅蓝→深蓝渐变
+                satelliteColor(team, t, Tmp.c1);
                 Draw.color(Tmp.c1, (0.45f + 0.35f * t) * rangeAlpha * alpha);
                 Fill.rect(wx, wy, 8f, 8f);
             }
@@ -341,11 +347,11 @@ public class SignalOverlay {
                     if (s <= 0f) continue;
                     int val = Mathf.round(s);
                     float t = s / SignalSource.MAX_STRENGTH;
-                    // 颜色：最强来源的专属色（信号源/中继器不同色）；仅卫星信号时为蓝色渐变
+                    // 颜色：最强来源的专属色（信号源/中继器不同色）；仅卫星信号时为卫星所属信号色（无归属浅蓝→深蓝渐变）
                     if (bestSrc[0] != null) {
                         Tmp.c1.set(buildingColor(bestSrc[0]));
                     } else {
-                        Tmp.c1.set(LIGHT_BLUE).lerp(DEEP_BLUE, t);
+                        satelliteColor(team, t, Tmp.c1);
                     }
                     Tmp.c1.a((0.6f + 0.4f * t) * digitAlpha * alpha);
                     // 复用预计算字符串避免分配；字号 0.2（约 3.2px）时单字符居中偏移
@@ -376,8 +382,13 @@ public class SignalOverlay {
                 float s = bestSignal(team, satStrength, wx, wy, bestSrc);
                 if (s <= 0f) continue;
                 float t = s / SignalSource.MAX_STRENGTH;
-                // 最强来源的专属颜色（仅卫星时为浅蓝），不透明度随强度
-                Draw.color(bestSrc[0] != null ? buildingColor(bestSrc[0]) : LIGHT_BLUE, (0.45f + 0.35f * t) * rangeAlpha * alpha);
+                // 最强来源的专属颜色（仅卫星时为卫星所属信号色，无归属浅蓝），不透明度随强度
+                if (bestSrc[0] != null) {
+                    Draw.color(buildingColor(bestSrc[0]), (0.45f + 0.35f * t) * rangeAlpha * alpha);
+                } else {
+                    satelliteColor(team, t, Tmp.c2);
+                    Draw.color(Tmp.c2, (0.45f + 0.35f * t) * rangeAlpha * alpha);
+                }
                 Fill.rect(wx, wy, 8f, 8f);
             }
         }

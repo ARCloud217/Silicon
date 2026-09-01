@@ -26,6 +26,8 @@ import silicon.world.blocks.signal.SignalSource;
 public class SatelliteConsole extends Block {
     /** 卫星种类：信号卫星（与发射中枢保持一致） */
     public static final int TYPE_SIGNAL = 0;
+    /** 耗电（/秒，Mindustry 按 /60 tick 计）：100 电力/秒 */
+    public static final float POWER_CONSUMPTION = 100f / 60f;
 
     public SatelliteConsole(String name) {
         super(name);
@@ -35,6 +37,8 @@ public class SatelliteConsole extends Block {
         destructible = true;
         update = true;
         configurable = true;
+        // 需要供电：100 电力/秒（选中面板显示原版电力条）
+        consumePower(POWER_CONSUMPTION);
     }
 
     public class SatelliteConsoleBuild extends Building {

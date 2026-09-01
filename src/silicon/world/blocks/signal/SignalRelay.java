@@ -192,9 +192,9 @@ public class SignalRelay extends Block {
                 t.add(Core.bundle.get("block.silicon-signal-relay.source")).colspan(SignalJammer.CHANNEL_MAX).center()
                         .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
-                // 源按钮区：ScrollPane 限制高度（多信号源时滚轮翻页），每行 5 个换行
+                // 源按钮区：ScrollPane 限制高度（多信号源时滚轮翻页），每行 5 个换行，按钮网格居中
                 Table srcTable = new Table();
-                srcTable.top();
+                srcTable.center();
                 Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
                 if (srcs.isEmpty()) {
                     srcTable.add(Core.bundle.get("block.silicon-signal-relay.nosource")).color(arc.graphics.Color.lightGray).pad(2f);
@@ -213,11 +213,12 @@ public class SignalRelay extends Block {
                 }
                 arc.scene.ui.ScrollPane pane = new arc.scene.ui.ScrollPane(srcTable, Styles.noBarPane);
                 pane.setScrollingDisabled(true, false); // 禁水平滚动，允许垂直滚轮翻页
-                t.add(pane).height(160f).growX().padTop(2f);
+                // 跨满整行（与标题同宽），限高
+                t.add(pane).height(160f).colspan(SignalJammer.CHANNEL_MAX).growX().padTop(2f);
                 t.row();
-                // 清除按钮（与按钮行同高，风格统一）
+                // 清除按钮（跨满整行居中，与标题/按钮对齐）
                 t.button(Core.bundle.get("block.silicon-signal-relay.source.clear"), Styles.defaultt,
-                        () -> configure("")).size(88f, 40f).padTop(2f);
+                        () -> configure("")).colspan(SignalJammer.CHANNEL_MAX).center().size(88f, 40f).padTop(2f);
             }).pad(4f);
         }
 

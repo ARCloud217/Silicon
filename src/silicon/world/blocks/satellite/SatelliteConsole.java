@@ -11,7 +11,6 @@ import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
 import mindustry.gen.Building;
-import mindustry.graphics.Pal;
 import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
 import mindustry.world.Block;
@@ -100,9 +99,6 @@ public class SatelliteConsole extends Block {
         void rebuildFull(Table table, BaseDialog dialog) {
             table.clearChildren();
             table.top();
-            // 标题
-            table.add(Core.bundle.get("block.silicon-satellite-console.name")).color(Pal.accent).pad(6f);
-            table.row();
             // 状态（动态刷新）
             table.label(() -> Core.bundle.format("block.silicon-satellite-console.status.ready",
                     SatelliteManager.readyCount(team))).color(arc.graphics.Color.lightGray).pad(2f);

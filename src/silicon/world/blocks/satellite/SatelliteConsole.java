@@ -4,13 +4,13 @@ import arc.Core;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.ScrollPane;
 import arc.scene.ui.TextButton;
+import arc.scene.ui.TextField;
 import arc.scene.ui.layout.Table;
 import arc.struct.Seq;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
 import mindustry.gen.Building;
-import mindustry.gen.Player;
 import mindustry.graphics.Pal;
 import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
@@ -40,6 +40,8 @@ public class SatelliteConsole extends Block {
     public class SatelliteConsoleBuild extends Building {
         /** 卫星所属信号编码（4 位；null=无归属，全图信号保持蓝色） */
         public String selectedSignal = null;
+        /** 上次渲染的信号源列表签名（窗口实时刷新用） */
+        private String lastSrcSignature = "";
 
         /** 发射卫星：由 SatelliteManager 检查/扣减中枢的燃料与缓冲电力，并记录卫星所属信号 */
         public void launch() {
@@ -64,26 +66,33 @@ public class SatelliteConsole extends Block {
             }
         }
 
-        /** 不使用原版小配置面板：点击直接打开全屏界面 */
+        /** 选中时的小面板：仅一个"打开界面"按钮，点击后打开可拖动窗口 */
         @Override
-        public boolean shouldShowConfigure(Player player) {
-            return false;
+        public void buildConfiguration(Table table) {
+            table.clearChildren();
+            table.top();
+            table.button(Core.bundle.get("block.silicon-satellite-console.open"), Styles.defaultt, () -> {
+                // 隐藏原版小面板（此时 showConfig 已完成，hide 动画正常生效），再打开可拖动窗口
+                if (Vars.control != null && Vars.control.input != null) {
+                    Vars.control.input.config.hideConfig();
+                }
+                openDialog();
+            }).size(160f, 48f).pad(4f);
         }
 
-        /** 点击方块：打开可拖动窗口 */
-        @Override
-        public void tapped() {
+        /** 打开可拖动窗口 */
+        void openDialog() {
             BaseDialog dialog = new BaseDialog(Core.bundle.get("block.silicon-satellite-console.title"));
             // 可拖动式窗口（原版对话框默认可拖标题栏移动）；不铺满全屏，保持固定大小
             dialog.setFillParent(false);
             dialog.setMovable(true);
-            dialog.cont.pane(content -> rebuildFull(content, dialog)).width(600f).height(400f).pad(10f);
+            dialog.cont.pane(content -> rebuildFull(content, dialog)).width(600f).height(480f).pad(10f);
             dialog.buttons.button(Core.bundle.get("block.silicon-satellite-console.close"), Styles.defaultt, dialog::hide)
                     .size(120f, 40f).padTop(6f);
             dialog.show();
         }
 
-        /** 窗口内容：状态 + 卫星所属信号选择（滚轮）+ 发射按钮 */
+        /** 窗口内容：状态 + 当前信号 + 信号选择（搜索/滚轮，参考信号中继器）+ 发射按钮 */
         void rebuildFull(Table table, BaseDialog dialog) {
             table.clearChildren();
             table.top();
@@ -97,37 +106,88 @@ public class SatelliteConsole extends Block {
             table.label(() -> Core.bundle.format("block.silicon-satellite-console.status.orbit",
                     SatelliteManager.launchedCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
             table.row();
-            // 卫星所属信号选择（本队信号源编码；滚动区限高）
-            table.add(Core.bundle.get("block.silicon-satellite-console.signal")).padTop(8f).padBottom(2f);
+            // 当前卫星所属信号（顶部居中，与中继器"当前编号"风格一致）
+            table.label(() -> Core.bundle.format("block.silicon-satellite-console.signal.current",
+                    selectedSignal == null || selectedSignal.isEmpty()
+                            ? Core.bundle.get("block.silicon-satellite-console.nobind") : selectedSignal))
+                    .pad(2f);
             table.row();
+            // 信号选择区（参考信号中继器：搜索框模糊过滤 + 滚轮按钮网格 + 清除）
             Table srcTable = new Table();
-            srcTable.center();
-            Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
-            if (srcs.isEmpty()) {
-                srcTable.add(Core.bundle.get("block.silicon-satellite-console.nosignal")).color(arc.graphics.Color.lightGray).pad(2f);
-            } else {
-                ButtonGroup<TextButton> group = new ButtonGroup<>();
-                int perRow = 4, count = 0; // 窗口 600f 宽：4 列
-                for (SignalSource.SignalSourceBuild sb : srcs) {
-                    String code = sb.signal == null ? "----" : sb.signal.name;
-                    TextButton btn = new TextButton(code, Styles.flatTogglet);
-                    btn.setChecked(code.equals(selectedSignal));
-                    btn.clicked(() -> selectedSignal = code);
-                    group.add(btn);
-                    srcTable.add(btn).size(120f, 40f).pad(2f);
-                    if (++count % perRow == 0) srcTable.row();
-                }
-            }
+            arc.scene.ui.TextField search = table.field("", text -> rebuildSourceButtons(srcTable, text.trim()))
+                    .width(280f).padTop(2f).get();
+            search.setMessageText(Core.bundle.get("block.silicon-satellite-console.signal.search"));
+            search.setMaxLength(4);
+            table.row();
             ScrollPane pane = new ScrollPane(srcTable, Styles.noBarPane);
             pane.setScrollingDisabled(true, false); // 禁水平滚动，垂直滚轮翻页
-            table.add(pane).height(200f).growX();
+            table.add(pane).height(160f).growX().padTop(2f);
             table.row();
-            // 发射按钮
-            table.button(Core.bundle.get("block.silicon-satellite-console.launch"), Styles.defaultt, () -> {
-                launch();
-                // 发射后刷新状态（保留界面）
-                rebuildFull(table, dialog);
-            }).size(280f, 56f).padTop(10f);
+            // 清除按钮
+            table.button(Core.bundle.get("block.silicon-satellite-console.signal.clear"), Styles.defaultt, () -> {
+                selectedSignal = null;
+                rebuildSourceButtons(srcTable, search.getText().trim());
+            }).size(88f, 40f).padTop(2f);
+            table.row();
+            // 发射按钮（状态为动态 label，发射后自动刷新，无需重建窗口）
+            table.button(Core.bundle.get("block.silicon-satellite-console.launch"), Styles.defaultt, this::launch)
+                    .size(280f, 56f).padTop(10f);
+            // 实时刷新：信号源列表变化（增删/编号变更）时重建按钮区（保持搜索过滤）
+            lastSrcSignature = "";
+            pane.update(() -> {
+                String sig = sourceSignature();
+                if (!sig.equals(lastSrcSignature)) {
+                    lastSrcSignature = sig;
+                    rebuildSourceButtons(srcTable, search.getText().trim());
+                }
+            });
+            // 初始填充全部信号源
+            rebuildSourceButtons(srcTable, "");
+        }
+
+        /** 模糊匹配：query 的字符按顺序出现在 code 中（子序列匹配，忽略大小写）；空 query 匹配一切（与中继器一致） */
+        static boolean fuzzyMatch(String code, String query) {
+            int qi = 0;
+            for (int i = 0; i < code.length() && qi < query.length(); i++) {
+                if (Character.toUpperCase(code.charAt(i)) == Character.toUpperCase(query.charAt(qi))) qi++;
+            }
+            return qi == query.length();
+        }
+
+        /** 重建源按钮区（按搜索模糊过滤；无匹配显示提示） */
+        void rebuildSourceButtons(Table srcTable, String filter) {
+            srcTable.clearChildren();
+            srcTable.center();
+            Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
+            boolean any = false;
+            ButtonGroup<TextButton> group = new ButtonGroup<>();
+            int perRow = 5, count = 0;
+            for (SignalSource.SignalSourceBuild sb : srcs) {
+                String code = sb.signal == null ? "----" : sb.signal.name;
+                if (!filter.isEmpty() && !fuzzyMatch(code, filter)) continue;
+                any = true;
+                TextButton btn = new TextButton(code, Styles.flatTogglet);
+                btn.setChecked(code.equals(selectedSignal));
+                btn.clicked(() -> selectedSignal = code);
+                group.add(btn);
+                srcTable.add(btn).size(88f, 40f).pad(1f);
+                if (++count % perRow == 0) srcTable.row();
+            }
+            if (!any) {
+                srcTable.add(Core.bundle.get("block.silicon-satellite-console.signal.none"))
+                        .color(arc.graphics.Color.lightGray).pad(2f);
+            }
+        }
+
+        /** 信号源列表签名（数量 + 编号集合），用于检测列表变化 */
+        String sourceSignature() {
+            StringBuilder sb = new StringBuilder();
+            Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
+            sb.append(srcs.size).append(':');
+            for (SignalSource.SignalSourceBuild s : srcs) {
+                sb.append(s.signal == null ? "----" : s.signal.name).append(',');
+            }
+            return sb.toString();
         }
 
         @Override

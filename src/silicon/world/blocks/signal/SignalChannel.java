@@ -72,12 +72,12 @@ public class SignalChannel {
                 aciSum += s * acir(dch);
             }
         }
-        // 激活中继器（级联源）
+        // 激活中继器（级联源；发射信道与所选信号源一致）
         for (SignalRelay.SignalRelayBuild rb : SignalRelay.allRelays(team)) {
             if (!rb.active) continue;
             float s = rb.strengthAt(wx, wy);
             if (s <= 0f) continue;
-            int dch = Math.abs(rb.channel - ch);
+            int dch = Math.abs(rb.signalChannel() - ch);
             if (dch == 0) {
                 if (s > best) {
                     otherSum += best;

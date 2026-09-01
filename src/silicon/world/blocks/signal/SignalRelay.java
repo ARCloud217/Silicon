@@ -37,6 +37,10 @@ public class SignalRelay extends Block {
         update = true;
         // 需要供电才能工作：50 电力/秒（Mindustry 功耗按 /60 tick 计）
         consumePower(50f / 60f);
+        // 可配置：绑定信号源编号（空串=清除绑定）
+        configurable = true;
+        config(String.class, (SignalRelayBuild b, String value) ->
+                b.selectedSource = (value == null || value.isEmpty()) ? null : value);
     }
 
     /**
@@ -77,9 +81,11 @@ public class SignalRelay extends Block {
     }
 
     public class SignalRelayBuild extends Building {
-        /** 是否已激活（在信号覆盖范围内） */
+        /** 是否已激活（在所选信号源覆盖范围内） */
         public boolean active = false;
-        /** 中继信道（1~5，默认 1）：只转发同信道信号 */
+        /** 绑定的信号源编号（4 位；null/空=未绑定，不发射） */
+        public String selectedSource = null;
+        /** 中继信道（兼容字段：未绑定时用；绑定后信道跟随所选信号源） */
         public int channel = 1;
         private int timer = 0;
 
@@ -109,40 +115,77 @@ public class SignalRelay extends Block {
             return power != null && power.status > 0.001f;
         }
 
-        void updateActive() {
-            // 被禁用（如开关控制）或断电时不激活
-            if (!enabled || !hasPower()) {
-                active = false;
-                return;
+        /** 查找绑定的信号源（按编号） */
+        SignalSource.SignalSourceBuild findSource() {
+            if (selectedSource == null || selectedSource.isEmpty()) return null;
+            for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
+                if (sb.signal != null && selectedSource.equals(sb.signal.name)) return sb;
             }
-            // 统一信号模型：同信道有效强度（含底噪/CCI/ACI/干扰器）> 阈值才激活（级联源也包含在内）
-            boolean newActive = SignalChannel.effective(team, channel, x, y).strength > 0.5f;
+            return null;
+        }
+
+        /** 发射信道：绑定信号源后与其保持一致；未绑定用自身 channel */
+        public int signalChannel() {
+            SignalSource.SignalSourceBuild src = findSource();
+            return src != null ? src.channel : channel;
+        }
+
+        void updateActive() {
+            boolean newActive = false;
+            // 被禁用（如开关控制）或断电时不激活
+            if (enabled && hasPower()) {
+                // 必须绑定信号源，且该源存在并供电
+                SignalSource.SignalSourceBuild src = findSource();
+                if (src != null && src.power != null && src.power.status > 0.001f) {
+                    // 在所选信号源覆盖范围内（或其同源级联转发范围内）才能发射
+                    if (Mathf.dst(x, y, src.x, src.y) <= RADIUS * 8f) {
+                        newActive = true;
+                    } else {
+                        // 级联：其他绑定同一信号源且已激活的中继器
+                        for (SignalRelayBuild rb : SignalRelay.allRelays(team)) {
+                            if (rb == this || !rb.active) continue;
+                            if (selectedSource != null && selectedSource.equals(rb.selectedSource)
+                                    && Mathf.dst(x, y, rb.x, rb.y) <= RADIUS * 8f) {
+                                newActive = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             if (newActive != active) {
                 active = newActive;
                 SignalRelay.markDirty();
             }
         }
 
-        /** 配置面板：信道选择（1~5，灰底面板） */
+        /** 配置面板：选择信号源编号（信道随所选源保持一致；灰底面板） */
         @Override
         public void buildConfiguration(Table table) {
             table.clearChildren();
             table.top();
             table.table(Styles.grayPanel, t -> {
                 t.top();
-                // 标题跨满整行、居中、原版黄色（避免挤占首列导致按钮间距不均）
-                t.add(Core.bundle.get("block.silicon-signal-relay.channel")).colspan(SignalJammer.CHANNEL_MAX).center()
+                t.add(Core.bundle.get("block.silicon-signal-relay.source")).colspan(4).center()
                         .color(mindustry.graphics.Pal.accent).pad(2f);
                 t.row();
-                arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
-                for (int i = 1; i <= SignalJammer.CHANNEL_MAX; i++) {
-                    arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(String.valueOf(i), Styles.flatTogglet);
-                    btn.setChecked(channel == i);
-                    int ch = i;
-                    btn.clicked(() -> configure(ch));
-                    group.add(btn);
-                    t.add(btn).size(44f, 40f).pad(1f);
+                Seq<SignalSource.SignalSourceBuild> srcs = SignalSource.allSources(team);
+                if (srcs.isEmpty()) {
+                    t.add(Core.bundle.get("block.silicon-signal-relay.nosource")).color(arc.graphics.Color.lightGray).pad(2f);
+                } else {
+                    arc.scene.ui.ButtonGroup<arc.scene.ui.TextButton> group = new arc.scene.ui.ButtonGroup<>();
+                    for (SignalSource.SignalSourceBuild sb : srcs) {
+                        String code = sb.signal == null ? "----" : sb.signal.name;
+                        arc.scene.ui.TextButton btn = new arc.scene.ui.TextButton(code, Styles.flatTogglet);
+                        btn.setChecked(code.equals(selectedSource));
+                        btn.clicked(() -> configure(code));
+                        group.add(btn);
+                        t.add(btn).size(88f, 40f).pad(1f);
+                    }
                 }
+                t.row();
+                t.button(Core.bundle.get("block.silicon-signal-relay.source.clear"), Styles.defaultt,
+                        () -> configure("")).size(88f, 36f).padTop(4f);
             }).pad(4f);
         }
 
@@ -162,12 +205,27 @@ public class SignalRelay extends Block {
             Draw.reset();
         }
 
+        /** 选中显示：绑定源编号、发射信道、状态 */
+        @Override
+        public void display(Table table) {
+            super.display(table);
+            table.row();
+            table.label(() -> Core.bundle.format("block.silicon-signal-relay.source.current",
+                    selectedSource == null || selectedSource.isEmpty() ? Core.bundle.get("block.silicon-signal-relay.nobind") : selectedSource)).pad(2f);
+            table.row();
+            table.label(() -> Core.bundle.format("block.silicon-signal-relay.channel.current", signalChannel())).pad(2f);
+            table.row();
+            table.label(() -> Core.bundle.get(active ? "block.silicon-signal-relay.active" : "block.silicon-signal-relay.inactive"))
+                    .color(active ? arc.graphics.Color.lime : arc.graphics.Color.lightGray).pad(2f);
+        }
+
         /** 存档/网络同步 active 字段（host 上由 updateActive 重算，保证一致性） */
         @Override
         public void write(Writes write) {
             super.write(write);
             write.bool(active);
             write.i(channel);
+            write.str(selectedSource == null ? "" : selectedSource);
         }
 
         @Override
@@ -176,6 +234,10 @@ public class SignalRelay extends Block {
             active = read.bool();
             if (revision >= 1) {
                 channel = read.i();
+            }
+            if (revision >= 2) {
+                String s = read.str();
+                selectedSource = s.isEmpty() ? null : s;
             }
         }
     }

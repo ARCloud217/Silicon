@@ -210,6 +210,18 @@ public class SignalOverlay {
         });
     }
 
+    /** 世界加载时重置：清空颜色缓存/色相分配，避免跨世界累积（新地图重新分配颜色、缓存不泄漏） */
+    public static void reset() {
+        colorCache.clear();
+        usedHues.clear();
+        hueCount.clear();
+        // 重置显示状态，避免上一个世界的 H 键切换状态残留
+        visible = false;
+        toggleVisible = false;
+        prevDown = false;
+        displayAlpha = 0f;
+    }
+
     static void update() {
         // 先取局部引用再判空，避免 null 检查与 team() 调用之间玩家断线导致的空指针
         Player player = Vars.player;

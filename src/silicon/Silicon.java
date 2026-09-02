@@ -85,6 +85,7 @@ public class Silicon extends Mod {
             SignalSource.markDirty();
             SignalRelay.markDirty();
             SatelliteManager.reset();
+            SignalOverlay.reset(); // 清颜色缓存/色相分配/显示状态，防跨世界累积
         });
         // 玩家中途加入时同步「卫星在轨」buff 显示（按队伍）
         Events.on(EventType.PlayerJoin.class, e -> {

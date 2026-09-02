@@ -12,6 +12,7 @@ import arc.struct.Seq;
 import mindustry.content.Fx;
 import mindustry.entities.Effect;
 import mindustry.game.Team;
+import mindustry.gen.Building;
 import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.gen.Player;
@@ -34,10 +35,12 @@ public class SatelliteManager {
     public static final int LAUNCH_OK = 0;
     /** 无待发射卫星 */
     public static final int LAUNCH_NO_READY = 1;
-    /** 燃料不足（石油 < 1000） */
+    /** 燃料不足（石油少于该轨道需求） */
     public static final int LAUNCH_NO_FUEL = 2;
     /** 缓冲电力不足（< 10000） */
     public static final int LAUNCH_NO_POWER = 3;
+    /** 轨道与卫星种类不匹配（信号卫星不能发 SSO） */
+    public static final int LAUNCH_ORBIT_FORBIDDEN = 4;
 
     /** 在轨卫星数量（按队伍、按种类）——联网时仅主机维护真实值，客机经 sat-state 广播镜像 */
     private static final ObjectMap<Team, ObjectIntMap<Integer>> launched = new ObjectMap<>();
@@ -47,7 +50,10 @@ public class SatelliteManager {
     private static final ObjectMap<Team, String> satelliteSignal = new ObjectMap<>();
     /** 客机端镜像的待发射数（主机广播 sat-state 填充；主机端直接用 readyLaunchers） */
     private static final ObjectIntMap<Team> readyMirror = new ObjectIntMap<>();
-    /** 状态广播字段分隔符（编码：teamId|sigCount|testCount|signal|readyCount） */
+    /** 客机端镜像：待发射第一颗的种类 / 制造中种类（-1=无；主机端实时计算） */
+    private static final ObjectIntMap<Team> readyTypeMirror = new ObjectIntMap<>();
+    private static final ObjectIntMap<Team> producingTypeMirror = new ObjectIntMap<>();
+    /** 状态广播字段分隔符（编码：teamId|sigC|testC|signal|readyC|readyType|producingType） */
     static final String SEP = "|";
 
     /** 本端是否为状态权威端（dedicated 服务器或 host，或单机）：只有权威端执行发射/生产登记 */
@@ -80,6 +86,8 @@ public class SatelliteManager {
         readyLaunchers.clear();
         satelliteSignal.clear();
         readyMirror.clear();
+        readyTypeMirror.clear();
+        producingTypeMirror.clear();
     }
 
     /** 某队伍在轨卫星总数 */
@@ -121,16 +129,39 @@ public class SatelliteManager {
         broadcastState(launcher.team);
     }
 
+    /** 某队伍待发射第一颗卫星种类（信号/测试；-1=无）——客机读镜像，权威端读登记列表 */
+    public static int readyType(Team team) {
+        if (!isAuthority()) return readyTypeMirror.get(team, -1);
+        Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
+        return list == null || list.isEmpty() ? -1 : list.get(0).selectedType;
+    }
+
+    /** 某队伍正在制造的卫星种类（-1=无）——客机读镜像，权威端扫描中枢生产状态 */
+    public static int producingType(Team team) {
+        if (!isAuthority()) return producingTypeMirror.get(team, -1);
+        for (Building b : Groups.build) {
+            if (b instanceof SatelliteLauncher.SatelliteLauncherBuild lb
+                    && lb.team == team && !lb.produced && lb.progress > 0f) {
+                return lb.selectedType;
+            }
+        }
+        return -1;
+    }
+
+    /** 编码某队状态为广播串（teamId|sigC|testC|signal|readyC|readyType|producingType） */
+    static String encodeState(Team team) {
+        return team.id + SEP + launchedCount(team, SatelliteLauncher.TYPE_SIGNAL) + SEP
+                + launchedCount(team, SatelliteLauncher.TYPE_TEST) + SEP
+                + (satelliteSignal.get(team) == null ? "" : satelliteSignal.get(team)) + SEP
+                + readyCount(team) + SEP + readyType(team) + SEP + producingType(team);
+    }
+
     /**
      * 权威端广播某队卫星状态给同队所有已连接客户端（客机以 applyState 应用）。
-     * 编码：teamId|sigCount|testCount|signal|readyCount
      */
     public static void broadcastState(Team team) {
         if (!Vars.net.server()) return; // 仅服务器（host/dedicated）广播；单机无客户端
-        String data = team.id + SEP + launchedCount(team, SatelliteLauncher.TYPE_SIGNAL) + SEP
-                + launchedCount(team, SatelliteLauncher.TYPE_TEST) + SEP
-                + (satelliteSignal.get(team) == null ? "" : satelliteSignal.get(team)) + SEP
-                + readyCount(team);
+        String data = encodeState(team);
         for (Player p : Groups.player) {
             if (p.team() == team && p.con != null) {
                 Call.clientPacketReliable(p.con, "sat-state", data);
@@ -138,10 +169,21 @@ public class SatelliteManager {
         }
     }
 
+    /** 权威端周期广播所有在场队伍的卫星状态（控制台名称行保鲜；调用方按约 30 tick 周期） */
+    public static void periodicBroadcastAll() {
+        if (!Vars.net.server()) return;
+        Seq<Team> seen = new Seq<>();
+        for (Player p : Groups.player) {
+            if (p.con == null || seen.contains(p.team())) continue;
+            seen.add(p.team());
+            broadcastState(p.team());
+        }
+    }
+
     /** 客户端应用主机广播的某队卫星状态（镜像；不修改权威端数据） */
     public static void applyState(String data) {
         String[] parts = data.split("\\" + SEP, -1);
-        if (parts.length != 5) return;
+        if (parts.length != 7) return;
         try {
             Team team = Team.get(Integer.parseInt(parts[0]));
             ObjectIntMap<Integer> map = launched.get(team, ObjectIntMap::new);
@@ -150,29 +192,34 @@ public class SatelliteManager {
             map.put(SatelliteLauncher.TYPE_TEST, Integer.parseInt(parts[2]));
             satelliteSignal.put(team, parts[3].isEmpty() ? null : parts[3]);
             readyMirror.put(team, Integer.parseInt(parts[4]));
+            readyTypeMirror.put(team, Integer.parseInt(parts[5]));
+            producingTypeMirror.put(team, Integer.parseInt(parts[6]));
         } catch (NumberFormatException ignored) {
         }
     }
 
     /**
-     * 发射一颗卫星：取出第一颗待发射卫星（种类以该中枢选择的为准），
-     * 由其中枢扣除燃料（1000 石油）与缓冲电力（10000），在轨 +1，
+     * 发射一颗卫星（权威端调用）：取出第一颗待发射卫星（种类以该中枢选择的为准），
+     * 校验轨道允许性（信号卫星禁 SSO），由其中枢扣除该轨道所需石油与缓冲电力（10000），在轨 +1，
      * 记录卫星所属信号（控制台选择，全图信号层用其颜色显示），
      * 给发射队伍的全图玩家应用「卫星在轨」buff，并向全图播报。
      * @param signalName 卫星所属信号编码（4 位；null=无归属）
+     * @param orbit 发射轨道（SatelliteConsole.ORBIT_*），决定燃油需求
      * @return 发射结果（LAUNCH_*）
      */
-    public static int launch(Team team, String signalName) {
+    public static int launch(Team team, String signalName, int orbit) {
         Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
         if (list == null || list.isEmpty()) return LAUNCH_NO_READY;
         SatelliteLauncher.SatelliteLauncherBuild launcher = list.get(0);
-        int reason = launcher.checkLaunchResources();
-        if (reason != LAUNCH_OK) return reason;
         int type = launcher.selectedType;
+        if (!SatelliteConsole.orbitAllowed(type, orbit)) return LAUNCH_ORBIT_FORBIDDEN;
+        int fuel = SatelliteConsole.fuelFor(orbit);
+        int reason = launcher.checkLaunchResources(fuel);
+        if (reason != LAUNCH_OK) return reason;
         // 启动方块自绘发射动画（绕开 Effect 渲染管线，方块可见即特效可见）
         launcher.launchAnim = 0f;
-        // 扣燃料与缓冲电力，重置该中枢使其可再生产
-        launcher.consumeLaunchResources();
+        // 扣该轨道所需石油与缓冲电力，重置该中枢使其可再生产
+        launcher.consumeLaunchResources(fuel);
         list.remove(0);
         launched.get(team, ObjectIntMap::new).increment(type, 1);
         // 记录卫星所属信号（全图信号层按此着色）
@@ -194,14 +241,15 @@ public class SatelliteManager {
                 p.unit().apply(Statuses.satelliteBuff, 999999f);
             }
         }
-        // 全图播报：xx队发射了一颗xx卫星
+        // 全图播报：xx队发射了一颗xx卫星到xx轨道
         String teamName = Core.bundle.get("team." + team.name + ".name", team.name);
         String typeKey;
         switch (type) {
             case SatelliteLauncher.TYPE_TEST: typeKey = "block.silicon-satellite-console.type.test"; break;
             default: typeKey = "block.silicon-satellite-console.type.signal"; break;
         }
-        Call.sendMessage(Core.bundle.format("satellite.launch.message", teamName, Core.bundle.get(typeKey)));
+        Call.sendMessage(Core.bundle.format("satellite.launch.message", teamName,
+                Core.bundle.get(typeKey), SatelliteConsole.orbitName(orbit)));
         // 在轨/待发射变化 → 广播同队客户端（launch 仅在权威端被调用）
         broadcastState(team);
         return LAUNCH_OK;

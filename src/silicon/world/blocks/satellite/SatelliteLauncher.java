@@ -57,8 +57,8 @@ public class SatelliteLauncher extends Block {
     public static final float LAUNCH_POWER = 10000f;
     /** 缓冲充电速率（/秒）：电网供电时向缓冲充电 */
     public static final float CHARGE_RATE = 2000f / 60f;
-    /** 发射所需石油燃料 */
-    public static final int FUEL_OIL = 1000;
+    /** 石油储油上限（按最高轨道需求 SSO 8000 设计；发射实际消耗按控制台所选轨道 1000~8000） */
+    public static final int OIL_CAPACITY = SatelliteConsole.ORBIT_MAX_FUEL;
     /** 生产所需冷冻液 */
     public static final int COST_CRYOFLUID = 1000;
     /** 生产所需物品材料 */
@@ -132,7 +132,7 @@ public class SatelliteLauncher extends Block {
         acceptsItems = true;
         itemCapacity = 5000 + 5000 + 1250 + 1250;
         hasLiquids = true;
-        liquidCapacity = FUEL_OIL + COST_CRYOFLUID;
+        liquidCapacity = OIL_CAPACITY + COST_CRYOFLUID;
         // 卫星种类走 configure 同步（服务器权威下发，各端选中类型一致）
         config(Integer.class, (SatelliteLauncherBuild b, Integer v) ->
                 b.selectedType = Math.max(TYPE_SIGNAL, Math.min(TYPE_TEST, v == null ? TYPE_SIGNAL : v)));
@@ -278,16 +278,16 @@ public class SatelliteLauncher extends Block {
             return liquid == Liquids.oil || liquid == Liquids.cryofluid;
         }
 
-        /** 发射前资源检查：返回 LAUNCH_OK 或缺失原因 */
-        public int checkLaunchResources() {
-            if (liquids.get(Liquids.oil) < FUEL_OIL) return SatelliteManager.LAUNCH_NO_FUEL;
+        /** 发射前资源检查（按所选轨道所需石油）：返回 LAUNCH_OK 或缺失原因 */
+        public int checkLaunchResources(int fuelOil) {
+            if (liquids.get(Liquids.oil) < fuelOil) return SatelliteManager.LAUNCH_NO_FUEL;
             if (battery < LAUNCH_POWER) return SatelliteManager.LAUNCH_NO_POWER;
             return SatelliteManager.LAUNCH_OK;
         }
 
-        /** 发射：扣除燃料与缓冲电力，重置本中枢使其可再生产（由 SatelliteManager 调用） */
-        public void consumeLaunchResources() {
-            liquids.remove(Liquids.oil, FUEL_OIL);
+        /** 发射：扣除该轨道所需石油与缓冲电力，重置本中枢使其可再生产（由 SatelliteManager 调用） */
+        public void consumeLaunchResources(int fuelOil) {
+            liquids.remove(Liquids.oil, fuelOil);
             battery = Math.max(0f, battery - LAUNCH_POWER);
             // 同步从电网电池扣除（模拟真实消耗，电网无电池则仅清空本缓冲）
             if (power != null) power.graph.useBatteries(LAUNCH_POWER);
@@ -369,8 +369,8 @@ public class SatelliteLauncher extends Block {
                 Draw.color(Pal.accent);
                 Tex.barTop.draw(x - barW / 2f, barY - barH / 2f, barW * t, barH);
             }
-            // 石油不足：方块左下角显示石油小图标（原版缺液体风格）
-            if (liquids.get(Liquids.oil) < FUEL_OIL) {
+            // 石油不足（低于最低轨道 LEO 需求）：方块左下角显示石油小图标（原版缺液体风格）
+            if (liquids.get(Liquids.oil) < SatelliteConsole.ORBIT_FUEL[SatelliteConsole.ORBIT_LEO]) {
                 Draw.rect(Liquids.oil.uiIcon, x - size * 4f + 6f, y - size * 4f + 6f, 8f, 8f);
             }
             Draw.reset();
@@ -424,11 +424,11 @@ public class SatelliteLauncher extends Block {
                         () -> produced ? 1f : Math.min(1f, progress / total)))
                         .height(18f).growX().padTop(8f);
                 info.row();
-                // 石油条（与其他 bar 长度统一，带说明文字：石油燃料 x/1000；高度与原版 bar 一致避免文字溢出重叠）
+                // 石油储备条（储量到最高轨道需求；实际发射消耗按控制台所选轨道）
                 info.add(new Bar(
-                        () -> Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), FUEL_OIL),
+                        () -> Core.bundle.format("block.silicon-satellite-launcher.fuel", (int) liquids.get(Liquids.oil), OIL_CAPACITY),
                         () -> Pal.ammo,
-                        () -> Math.min(1f, liquids.get(Liquids.oil) / FUEL_OIL)))
+                        () -> Math.min(1f, liquids.get(Liquids.oil) / OIL_CAPACITY)))
                         .height(18f).growX().padTop(8f);
                 info.row();
                 // 电力条（单独显示：发射缓冲 Bar，与其他 bar 长度统一，带说明文字：发射缓冲 xx%）
@@ -468,17 +468,7 @@ public class SatelliteLauncher extends Block {
                     ).size(40f);
                 }).padRight(4f);
             }
-            // 石油（发射燃料）：同样式，需求数量 1000 角标左下角，不足红斜线
-            materialTable.table(r -> {
-                r.left();
-                r.stack(
-                        new Image(Liquids.oil.uiIcon),
-                        new InsufficientLine(() -> liquids.get(Liquids.oil) < FUEL_OIL),
-                        new Table(t -> t.add(new Label(formatCount(FUEL_OIL), Styles.outlineLabel) {{
-                            setFontScale(0.95f);
-                        }}).expand().bottom().left().padBottom(2f).padLeft(2f))
-                ).size(40f);
-            }).padRight(4f);
+            // 石油（发射燃料）不在此列出需求：消耗量随控制台所选轨道变化（LEO 1000 ~ SSO 8000），见下方石油储备条
         }
 
         @Override

@@ -1,6 +1,7 @@
 package silicon.world.blocks.satellite;
 
 import arc.Core;
+import arc.graphics.Color;
 import arc.scene.ui.ButtonGroup;
 import arc.scene.ui.ScrollPane;
 import arc.scene.ui.TextButton;
@@ -20,12 +21,44 @@ import silicon.world.blocks.signal.SignalSource;
 
 /**
  * 卫星控制台（3×3）：卫星的发射终端，仅提供发射操作。
- * 不存储燃料与电力——燃料（1000 石油）与缓冲电力（10000）均由卫星发射中枢提供；
- * 卫星种类由卫星发射中枢选择。点击方块打开全屏界面查看状态并发射。
+ * 不存储燃料与电力——燃料（石油）与缓冲电力（10000）均由卫星发射中枢提供；
+ * 卫星种类由卫星发射中枢选择。点击方块弹出界面选择轨道与信号后发射。
+ * 轨道影响中枢燃油需求（LEO 1000 / MEO 2500 / GEO 5000 / SSO 8000）；
+ * 信号卫星仅可发射到 LEO/MEO/GEO，SSO 为测试卫星专属。
  */
 public class SatelliteConsole extends Block {
     /** 卫星种类：信号卫星（与发射中枢保持一致） */
     public static final int TYPE_SIGNAL = 0;
+
+    // —— 发射轨道 ——
+    public static final int ORBIT_LEO = 0, ORBIT_MEO = 1, ORBIT_GEO = 2, ORBIT_SSO = 3;
+    public static final int ORBIT_COUNT = 4;
+    /** 各轨道所需石油（单位）：LEO 1000 / MEO 2500 / GEO 5000 / SSO 8000 */
+    public static final int[] ORBIT_FUEL = {1000, 2500, 5000, 8000};
+    /** 最大轨道需求（中枢储油上限按此设计） */
+    public static final int ORBIT_MAX_FUEL = 8000;
+    private static final String[] ORBIT_KEYS = {
+            "block.silicon-satellite-console.orbit.leo",
+            "block.silicon-satellite-console.orbit.meo",
+            "block.silicon-satellite-console.orbit.geo",
+            "block.silicon-satellite-console.orbit.sso"
+    };
+
+    /** 轨道燃油需求（越界 clamp 到 LEO） */
+    public static int fuelFor(int orbit) {
+        return ORBIT_FUEL[Math.max(0, Math.min(ORBIT_COUNT - 1, orbit))];
+    }
+
+    /** 轨道显示名（低地球轨道 (LEO) 等，bundle） */
+    public static String orbitName(int orbit) {
+        return Core.bundle.get(ORBIT_KEYS[Math.max(0, Math.min(ORBIT_COUNT - 1, orbit))]);
+    }
+
+    /** 卫星种类 × 轨道允许性：信号卫星限 LEO/MEO/GEO；测试卫星可全部轨道（SSO 专属） */
+    public static boolean orbitAllowed(int type, int orbit) {
+        return !(type == TYPE_SIGNAL && orbit == ORBIT_SSO);
+    }
+
     /** 耗电（/秒，Mindustry 按 /60 tick 计）：100 电力/秒 */
     public static final float POWER_CONSUMPTION = 100f / 60f;
 
@@ -42,11 +75,16 @@ public class SatelliteConsole extends Block {
         // 卫星所属信号走原版 configure 机制同步（服务器 tileConfig 权威下发，各端 selectedSignal 一致）
         config(String.class, (SatelliteConsoleBuild b, String value) ->
                 b.selectedSignal = (value == null || value.isEmpty()) ? null : value);
+        // 发射轨道同步
+        config(Integer.class, (SatelliteConsoleBuild b, Integer v) ->
+                b.selectedOrbit = Math.max(ORBIT_LEO, Math.min(ORBIT_SSO, v == null ? ORBIT_LEO : v)));
     }
 
     public class SatelliteConsoleBuild extends Building {
         /** 卫星所属信号编码（4 位；null=无归属，全图信号保持蓝色） */
         public String selectedSignal = null;
+        /** 发射轨道（默认 LEO） */
+        public int selectedOrbit = ORBIT_LEO;
         /** 上次渲染的信号源列表签名（窗口实时刷新用） */
         private String lastSrcSignature = "";
 
@@ -60,22 +98,23 @@ public class SatelliteConsole extends Block {
             // 纯客机（联网但非主机）：发射请求交给主机（sat-launch），主机校验后执行并广播状态、反馈失败原因
             if (Vars.net.active() && !SatelliteManager.isAuthority()) {
                 Call.serverPacketReliable("sat-launch", tileX() + "," + tileY() + "|"
-                        + (selectedSignal == null ? "" : selectedSignal));
+                        + (selectedSignal == null ? "" : selectedSignal) + "|" + selectedOrbit);
                 return;
             }
             // 权威端：本地执行（建筑逻辑与卫星状态均在主机/单机计算）
-            doLaunch(selectedSignal);
+            doLaunch(selectedSignal, selectedOrbit);
         }
 
         /** 权威端发射执行 + 结果提示（launch 的本地路径，或主机的 sat-launch 处理器直接调用） */
-        public void doLaunch(String signalName) {
-            int result = SatelliteManager.launch(team, signalName);
+        public void doLaunch(String signalName, int orbit) {
+            int result = SatelliteManager.launch(team, signalName, orbit);
             String key;
             switch (result) {
                 case SatelliteManager.LAUNCH_OK: key = "block.silicon-satellite-console.success"; break;
                 case SatelliteManager.LAUNCH_NO_READY: key = "block.silicon-satellite-console.noready"; break;
                 case SatelliteManager.LAUNCH_NO_FUEL: key = "block.silicon-satellite-console.nofuel"; break;
                 case SatelliteManager.LAUNCH_NO_POWER: key = "block.silicon-satellite-console.nopower"; break;
+                case SatelliteManager.LAUNCH_ORBIT_FORBIDDEN: key = "block.silicon-satellite-console.orbitForbidden"; break;
                 default: key = "block.silicon-satellite-console.fail"; break;
             }
             if (result == SatelliteManager.LAUNCH_OK) {
@@ -105,27 +144,86 @@ public class SatelliteConsole extends Block {
             // 可拖动式窗口（原版对话框默认可拖标题栏移动）；不铺满全屏
             dialog.setFillParent(false);
             dialog.setMovable(true);
-            // 尺寸按屏幕比例动态计算（大屏封顶 620×500，小屏按比例缩小）
-            float w = Math.min(620f, Core.graphics.getWidth() * 0.6f);
-            float h = Math.min(500f, Core.graphics.getHeight() * 0.72f);
+            // 尺寸按屏幕比例动态计算（大屏封顶 660×580，小屏按比例缩小；内容增加轨道区后调高上限）
+            float w = Math.min(660f, Core.graphics.getWidth() * 0.6f);
+            float h = Math.min(580f, Core.graphics.getHeight() * 0.82f);
             dialog.cont.pane(content -> rebuildFull(content, dialog)).width(w).height(h).pad(10f);
             dialog.buttons.button(Core.bundle.get("block.silicon-satellite-console.close"), Styles.defaultt, dialog::hide)
                     .size(120f, 40f).padTop(6f);
             dialog.show();
         }
 
-        /** 窗口内容：状态 + 当前信号 + 信号选择（搜索/滚轮，参考信号中继器）+ 发射按钮 */
+        /** 卫星种类短名（信号卫星 / 测试卫星，bundle） */
+        String typeShortName(int type) {
+            return type == TYPE_SIGNAL
+                    ? Core.bundle.get("block.silicon-satellite-console.type.short.signal")
+                    : Core.bundle.get("block.silicon-satellite-console.type.short.test");
+        }
+
+        /** 名称行：准备发射/制造中的卫星（动态，主机直读权威状态，客机读 sat-state 镜像） */
+        void addSatelliteNameRow(Table table) {
+            table.label(() -> {
+                int r = SatelliteManager.readyType(team);
+                int m = SatelliteManager.producingType(team);
+                String rs = r < 0 ? Core.bundle.get("block.silicon-satellite-console.name.none") : typeShortName(r);
+                String ms = m < 0 ? Core.bundle.get("block.silicon-satellite-console.name.none") : typeShortName(m);
+                return Core.bundle.format("block.silicon-satellite-console.name.line", rs, ms);
+            }).color(Color.lightGray).pad(2f);
+        }
+
+        /** 轨道选择按钮行（4 单选）+ 选中轨道名（SSO 标注测试卫星专属） */
+        void rebuildOrbitRow(Table table, Runnable refreshChecked) {
+            table.row();
+            table.label(() -> Core.bundle.format("block.silicon-satellite-console.orbit.current", orbitName(selectedOrbit)))
+                    .color(arc.graphics.Color.lightGray).padTop(6f);
+            table.row();
+            table.label(() -> Core.bundle.get("block.silicon-satellite-console.orbit.title")).color(Color.lightGray).pad(2f);
+            table.row();
+            Table row = new Table();
+            ButtonGroup<TextButton> group = new ButtonGroup<>();
+            for (int o = ORBIT_LEO; o < ORBIT_COUNT; o++) {
+                final int orbit = o;
+                TextButton btn = new TextButton(orbitKeyShort(orbit), Styles.flatTogglet);
+                btn.setChecked(selectedOrbit == orbit);
+                btn.clicked(() -> {
+                    selectedOrbit = orbit;
+                    configure(orbit);
+                    refreshChecked.run();
+                });
+                group.add(btn);
+                row.add(btn).size(110f, 40f).pad(2f);
+            }
+            table.add(row).pad(2f);
+            table.row();
+            // 燃油需求与轨道限制说明
+            table.label(() -> Core.bundle.get("block.silicon-satellite-console.orbit.hint")).color(Color.gray).pad(2f);
+        }
+
+        /** 轨道按钮短标签（LEO 等） */
+        static String orbitKeyShort(int orbit) {
+            switch (orbit) {
+                case ORBIT_LEO: return "LEO";
+                case ORBIT_MEO: return "MEO";
+                case ORBIT_GEO: return "GEO";
+                default: return "SSO";
+            }
+        }
+
+        /** 窗口内容：卫星名称 + 状态 + 当前信号 + 信号选择 + 轨道选择 + 发射 */
         void rebuildFull(Table table, BaseDialog dialog) {
             table.clearChildren();
             table.top();
+            // 卫星名称行（准备发射/制造中）——动态
+            addSatelliteNameRow(table);
+            table.row();
             // 状态（动态刷新）
             table.label(() -> Core.bundle.format("block.silicon-satellite-console.status.ready",
-                    SatelliteManager.readyCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
+                    SatelliteManager.readyCount(team))).color(Color.lightGray).pad(2f);
             table.row();
             table.label(() -> Core.bundle.format("block.silicon-satellite-console.status.orbit",
-                    SatelliteManager.launchedCount(team))).color(arc.graphics.Color.lightGray).pad(2f);
+                    SatelliteManager.launchedCount(team))).color(Color.lightGray).pad(2f);
             table.row();
-            // 当前卫星所属信号（顶部居中，与中继器"当前编号"风格一致）
+            // 当前卫星所属信号（与中继器"当前编号"风格一致）
             table.label(() -> Core.bundle.format("block.silicon-satellite-console.signal.current",
                     selectedSignal == null || selectedSignal.isEmpty()
                             ? Core.bundle.get("block.silicon-satellite-console.nobind") : selectedSignal))
@@ -133,14 +231,14 @@ public class SatelliteConsole extends Block {
             table.row();
             // 信号选择区（参考信号中继器：搜索框模糊过滤 + 滚轮按钮网格 + 清除）
             Table srcTable = new Table();
-            arc.scene.ui.TextField search = table.field("", text -> rebuildSourceButtons(srcTable, text.trim()))
+            TextField search = table.field("", text -> rebuildSourceButtons(srcTable, text.trim()))
                     .width(280f).padTop(2f).get();
             search.setMessageText(Core.bundle.get("block.silicon-satellite-console.signal.search"));
             search.setMaxLength(4);
             table.row();
             ScrollPane pane = new ScrollPane(srcTable, Styles.noBarPane);
             pane.setScrollingDisabled(true, false); // 禁水平滚动，垂直滚轮翻页
-            table.add(pane).height(160f).growX().padTop(2f);
+            table.add(pane).height(150f).growX().padTop(2f);
             table.row();
             // 清除按钮
             table.button(Core.bundle.get("block.silicon-satellite-console.signal.clear"), Styles.defaultt, () -> {
@@ -148,8 +246,14 @@ public class SatelliteConsole extends Block {
                 configure("");
                 rebuildSourceButtons(srcTable, search.getText().trim());
             }).size(88f, 40f).padTop(2f);
+            // 轨道区（点击后仅重选按钮态，不整窗重建以保留搜索词）
+            Runnable refreshChecked = () -> {
+                // 轨道按钮选中态由 rebuildOrbitRow 重建：这里通过重建整窗最简单可靠，
+                // 但会清掉搜索词——改为仅刷新轨道行即可（轨道行独立于信号区，此处重建整个轨道行）
+            };
+            rebuildOrbitRow(table, refreshChecked);
             table.row();
-            // 发射按钮（状态为动态 label，发射后自动刷新，无需重建窗口）
+            // 发射按钮（状态/名称为动态 label，发射后自动刷新，无需重建窗口）
             table.button(Core.bundle.get("block.silicon-satellite-console.launch"), Styles.defaultt, this::launch)
                     .size(280f, 56f).padTop(10f);
             // 实时刷新：信号源列表变化（增删/编号变更）时重建按钮区（保持搜索过滤）
@@ -200,7 +304,7 @@ public class SatelliteConsole extends Block {
             }
             if (!any) {
                 srcTable.add(Core.bundle.get("block.silicon-satellite-console.signal.none"))
-                        .color(arc.graphics.Color.lightGray).pad(2f);
+                        .color(Color.lightGray).pad(2f);
             }
         }
 
@@ -219,6 +323,7 @@ public class SatelliteConsole extends Block {
         public void write(Writes write) {
             super.write(write);
             write.str(selectedSignal == null ? "" : selectedSignal);
+            write.i(selectedOrbit);
         }
 
         @Override
@@ -226,6 +331,14 @@ public class SatelliteConsole extends Block {
             super.read(read, revision);
             String s = read.str();
             selectedSignal = s.isEmpty() ? null : s;
+            if (revision >= 1) {
+                selectedOrbit = Math.max(ORBIT_LEO, Math.min(ORBIT_SSO, read.i()));
+            }
+        }
+
+        @Override
+        public byte version() {
+            return 1;
         }
     }
 }

@@ -60,6 +60,9 @@ public class Silicon extends Mod {
         }
     }
 
+    /** 卫星状态周期广播计时（约 30 tick / 0.5s） */
+    private static int satelliteBroadcastTick = 0;
+
     public Silicon() {
         Events.on(EventType.ClientLoadEvent.class, e -> {
             MOD = mods.getMod(Silicon.class);
@@ -113,7 +116,7 @@ public class Silicon extends Mod {
             netServer.addPacketHandler("sat-launch", (p, data) -> {
                 try {
                     String[] parts = data.split("\\|", -1);
-                    if (parts.length != 2) return;
+                    if (parts.length != 3) return;
                     String[] xy = parts[0].split(",");
                     if (xy.length != 2) return;
                     mindustry.world.Tile tile = world.tile(
@@ -126,7 +129,15 @@ public class Silicon extends Mod {
                         Call.clientPacketReliable(p.con, "sat-result", "disabled");
                         return;
                     }
-                    int result = SatelliteManager.launch(p.team(), parts[1].isEmpty() ? null : parts[1]);
+                    int orbit;
+                    try {
+                        orbit = Integer.parseInt(parts[2].trim());
+                        if (orbit < silicon.world.blocks.satellite.SatelliteConsole.ORBIT_LEO
+                                || orbit > silicon.world.blocks.satellite.SatelliteConsole.ORBIT_SSO) return;
+                    } catch (NumberFormatException e) {
+                        return;
+                    }
+                    int result = SatelliteManager.launch(p.team(), parts[1].isEmpty() ? null : parts[1], orbit);
                     if (result != SatelliteManager.LAUNCH_OK) {
                         Call.clientPacketReliable(p.con, "sat-result", String.valueOf(result));
                     }
@@ -256,6 +267,7 @@ public class Silicon extends Mod {
                         case SatelliteManager.LAUNCH_NO_READY: key = "block.silicon-satellite-console.noready"; break;
                         case SatelliteManager.LAUNCH_NO_FUEL: key = "block.silicon-satellite-console.nofuel"; break;
                         case SatelliteManager.LAUNCH_NO_POWER: key = "block.silicon-satellite-console.nopower"; break;
+                        case SatelliteManager.LAUNCH_ORBIT_FORBIDDEN: key = "block.silicon-satellite-console.orbitForbidden"; break;
                         default: key = "block.silicon-satellite-console.fail"; break;
                     }
                     ui.showInfoToast(Core.bundle.get(key), 3f);
@@ -266,6 +278,11 @@ public class Silicon extends Mod {
 
         Events.run(EventType.Trigger.update, () -> {
             if (!state.isGame()) return;
+            // 卫星状态周期广播（控制台卫星名称/制造中字段保鲜，约 0.5s；服务器端）
+            if (net.server() && ++satelliteBroadcastTick >= 30) {
+                satelliteBroadcastTick = 0;
+                SatelliteManager.periodicBroadcastAll();
+            }
             if (net.client() && Core.settings.getBool("pauseRequest", true)) {
                 if (Core.input.keyTap(Binding.pause)) {
                     String time = String.valueOf((long) Time.time);

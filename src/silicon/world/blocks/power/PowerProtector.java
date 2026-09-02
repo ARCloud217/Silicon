@@ -11,6 +11,7 @@ import arc.scene.event.Touchable;
 import arc.scene.style.NinePatchDrawable;
 import arc.scene.ui.Image;
 import arc.scene.ui.Label;
+import arc.scene.ui.Slider;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.TextButton.TextButtonStyle;
 import arc.scene.ui.layout.Table;
@@ -268,7 +269,10 @@ public class PowerProtector extends PowerGenerator {
 
     @Override
     public boolean canBreak(Tile tile) {
-        if (tile != null && tile.build instanceof PowerProtectorBuild ppb && ppb.state != null && ppb.state.debt > 0) {
+        // 电网冲突中的保护器强制停机、未在保护亦无法偿还，需允许拆除以解除冲突；否则
+        // 若双方均欠债将无法拆除任何一台而陷入死锁。其余情况欠债保护器禁止拆除（防弃债跑路）。
+        if (tile != null && tile.build instanceof PowerProtectorBuild ppb && ppb.state != null
+                && ppb.state.debt > 0 && !ppb.state.conflict) {
             if (Time.time - lastBreakToast >= 90f) {
                 lastBreakToast = Time.time;
                 if (!mindustry.Vars.headless && !state.isMenu()) {
@@ -297,7 +301,8 @@ public class PowerProtector extends PowerGenerator {
         Normal,      // 待机（未保护、未偿还）
         Protecting,  // 保护中（正在供电补缺）
         Recovering,  // 偿还中（正在消耗电网电力还清欠款）
-        Stopped      // 已禁用（UI 启停按钮或逻辑 `enabled` 指令关闭，不保护、不偿还）
+        Stopped,     // 已禁用（UI 启停按钮或逻辑 `enabled` 指令关闭，不保护、不偿还）
+        Error        // 电网冲突：同电网存在其他保护器，强制停机直至仅剩本保护器
     }
 
     /** 状态数据（存档字段 + 运行时临时变量），每台保护器一个实例。 */
@@ -309,6 +314,9 @@ public class PowerProtector extends PowerGenerator {
         public float restoreTimer = 0f;
         /** 自家欠下电力（每台保护器独立计算与偿还）。 */
         public double debt = 0;
+        /** 进入恢复模式所需的电网电池电量占比（0~1），由玩家在 UI 滑块调整并存入存档。
+         *  每台保护器独立配置，互不影响。默认 25%。 */
+        public float restoreBatteryPercent = 0.25f;
         // ===== 运行时临时变量（不存档）=====
         public Mode mode = Mode.Normal;                   // 显示模式（仅用于 UI 文案/颜色，不参与运行）
         public float tickPPower = 0f;                     // 保护供电（由 Trigger.update 抢先提交后的当帧产出）
@@ -321,6 +329,8 @@ public class PowerProtector extends PowerGenerator {
         public float restoreHold = 0f;                    // 连续富余计时（秒），达到 restoreEnterTime 才进入恢复
         public float gapHold = 0f;                        // 恢复会话中连续缺口计时（秒），达到 protectReturnTime 才退出恢复
         public float protectExitHold = 0f;                // 保护会话中连续自足计时（秒），达到 protectExitTime 才确认退出保护
+        public float batteryStoredPrev = -1f;             // 上一帧结算后的电网电池存量（用于推算本帧电池净吸入量；-1 表示未初始化）
+        public boolean conflict = false;                   // 电网中存在其他保护器（运行时派生，不存档）：强制停机并在 UI 显示错误
     }
 
     public class PowerProtectorBuild extends GeneratorBuild {
@@ -337,9 +347,24 @@ public class PowerProtector extends PowerGenerator {
             if (power == null || power.graph == null) {
                 state.nextTickPPower = 0f;
                 state.tickRPower = 0f;
+                state.batteryStoredPrev = -1f;
+                // 电网离场：冲突标记需清除，待重连电网后由 gridHasOtherProtector() 重新判定
+                state.conflict = false;
                 updateMode();
+                refreshConfigUI();
                 return;
             }
+
+            // —— 电网冲突检测：同电网存在其他保护器则强制停机 ——
+            // 优先级高于禁用：即使逻辑/UI 已启用也强制停机，直至电网仅剩本保护器，
+            // 之后本帧继续按后续派驻逻辑直接恢复运行（不再需要手动重新启用）。
+            if (gridHasOtherProtector()) {
+                stopFromConflict();
+                updateMode();
+                refreshConfigUI();
+                return;
+            }
+            state.conflict = false;
 
             // —— 禁用（逻辑 `enabled` 指令 / UI 启停按钮共用同一字段）——
             // 禁用时保护器立即离场：撤产出、清保护/恢复会话，但保留欠款与全队时间池。
@@ -353,8 +378,11 @@ public class PowerProtector extends PowerGenerator {
                 state.restoreHold = 0f;
                 state.gapHold = 0f;
                 state.protectExitHold = 0f;
+                // 禁用期间电网可能继续充电；把电池存量快照重置为续接点，重新启用后不计入禁用期变化
+                state.batteryStoredPrev = -1f;
                 manageTeamTimePool();
                 updateMode();
+                refreshConfigUI();
                 return;
             }
 
@@ -385,23 +413,31 @@ public class PowerProtector extends PowerGenerator {
             // —— 恢复（偿还会话）滞回 ——
             // 逐帧瞬时判定会让恢复在电网波动时反复横跳：只要有一帧富余就开还，下一帧小缺口又立即
             // 停还并切回保护，欠款永远还不清、模式在「恢复中 ↔ 保护中」来回抖动。改为会话式：
-            // 电网连续富余 restoreEnterTime 才进入恢复；进入后小幅波动（净缺口未持续
-            // protectReturnTime）不打断偿还会话（有富余就还、无富余则挂起），仅当欠款还清、
-            // 手动停止或缺口真正持续存在才退出恢复。
+            // 电网连续富余 restoreEnterTime 才进入恢复，且电网电池需恢复到玩家设定占比
+            // （restoreBatteryPercent，每台独立配置）——只有电池真的回充到一定水平，
+            // 才说明电网富余是可靠的、足以支撑偿还会话。进入后小幅波动（净缺口未持续
+            // protectReturnTime）不打断偿还会话（有富余就还、无富余则挂起）；放宽重进保护的条件：
+            // 仅当「缺口确实持续存在 且 电池也确已耗尽」才退出恢复、交由保护介入 —— 只有电网
+            // 又开始真实吃紧（电池被榨干）才会打断偿还，防止小波动把恢复会话掐断。
             boolean surplusNow = netSurplus > 0f;
+            // 电网电池电量占比（无电池按充足处理，避免无电池电网永远无法恢复）
+            float batteryRatio = power.graph.getTotalBatteryCapacity() > Mathf.FLOAT_ROUNDING_ERROR
+                    ? power.graph.getBatteryStored() / power.graph.getTotalBatteryCapacity()
+                    : 1f;
 
             if (state.restoring) {
-                // 恢复会话中：连续缺口计时，达到阈值才视为「电网真缺电」并退出恢复
+                // 恢复会话中：连续缺口计时，达到阈值且电池确已耗尽才退出恢复（保护接管）
                 state.gapHold = surplusNow ? 0f : state.gapHold + Time.delta;
-                if (state.debt <= 0f || !enabled || state.gapHold >= protectReturnTime) {
+                if (state.debt <= 0f || !enabled || (batteriesEmpty && state.gapHold >= protectReturnTime)) {
                     state.restoring = false;
                     state.restoreHold = 0f;
                     state.gapHold = 0f;
                 }
             } else {
-                // 未在恢复：累计连续富余，达到门槛才进入。
+                // 未在恢复：电网富余稳定了一段时间，且电池电量达到设定占比，才进入恢复。
                 // 仅在保护已退出（!state.latching）后才允许进入，避免「保护中却同时进入恢复」的错乱
-                if (surplusNow && !state.latching && enabled && state.debt > 0f) {
+                if (surplusNow && !state.latching && enabled && state.debt > 0f
+                        && batteryRatio >= state.restoreBatteryPercent) {
                     state.restoreHold += Time.delta;
                     if (state.restoreHold >= restoreEnterTime) {
                         state.restoring = true;
@@ -460,9 +496,50 @@ public class PowerProtector extends PowerGenerator {
             // 产出直接贴合目标（无趋近）：峰值记忆本身已含衰减平滑，避免滞后再次诱发欠压
             state.nextTickPPower = target;
 
-            // 欠款：按产出记账（10% 额外损耗计入债务，偿还时按此还）
+            // —— 欠款记账：以「真实被电网吸收的电力」为准 ——
+            // 峰值锁定/地板供电可能让本帧产出 selfP 超过电网实时所需。多余电力去向有二：
+            //   a) 电网电池有容量 → 被电池吸走充电（有效储能，算作真实消耗，应记账）；
+            //   b) 无电池 / 电池已满 → 白白浪费（不算消耗，不记账）。
+            // 因此「真实消耗」分两部分：
+            //   1) 补缺口、被 consumer 直接消耗的部分：
+            //      无保护器缺口 = needed - (produced - selfP)（produced 已含 selfP，减去后即电网自身缺口）
+            //      真实满足 = min(selfP, 无保护器缺口)
+            //   2) 过供部分（selfP 超出缺口）中被电池吸走充电的份额。
+            float baseGap = Math.max(0f, needed - (produced - selfP));
+            float realServed = Math.min(selfP, baseGap);
+            float overSupply = Math.max(0f, selfP - baseGap);
+
+            // 本帧电网电池净吸入量：结算后存量与上一帧存量之差（负数说明电池在放电，无吸入）。
+            float batteryStored = power.graph.getBatteryStored();
+            float batteryDelta = state.batteryStoredPrev >= 0f
+                    ? batteryStored - state.batteryStoredPrev
+                    : 0f;
+            state.batteryStoredPrev = batteryStored;
+            float batteryCharged = Math.max(0f, batteryDelta);
+
+            // 过供中被本保护器“负责”的电池充入：按图上各保护器过供占比分摊整图电池吸入，
+            // 避免多台保护器各自把同一份电池充入重复记满。仅电池存在且确实在充电时才会计入。
+            float served = realServed;
+            if (overSupply > 0f && batteryCharged > 0f) {
+                float totalOver = 0f;
+                // 图上所有参与介入的本队保护器过供之和（用各自 tickPPower 相对同一 needed/produced 计算）
+                for (Building b : power.graph.all) {
+                    if (b instanceof PowerProtectorBuild ppb && ppb.team == team && ppb.power != null && ppb.power.graph == power.graph) {
+                        float s = ppb.state.tickPPower;
+                        float gap = Math.max(0f, needed - (produced - s));
+                        totalOver += Math.max(0f, s - gap);
+                    }
+                }
+                if (totalOver > 0f) {
+                    served += batteryCharged * (overSupply / totalOver);
+                }
+            }
+
             if (state.nextTickPPower > 0f) {
-                state.debt = Math.min(state.debt + state.nextTickPPower * lossMultiplier, Double.MAX_VALUE);
+                // 10% 额外损耗计入债务，偿还时按此还
+                if (served > 0f) {
+                    state.debt = Math.min(state.debt + served * lossMultiplier, Double.MAX_VALUE);
+                }
                 // 开始保护时向本队玩家弹出一次缺电警告
                 if (player != null && team == player.team() && !state.announced) {
                     state.announced = true;
@@ -487,7 +564,12 @@ public class PowerProtector extends PowerGenerator {
 
             updateMode();
 
-            // UI 刷新
+            refreshConfigUI();
+        }
+
+        /** 若本保护器配置面板打开则刷新 UI 数据（可用时间/状态/供电等）。
+         *  暂停、电网冲突、断图等早退分支也必须调用，否则面板数据会冻结在停用前的值。 */
+        private void refreshConfigUI() {
             if (configTable != null && control.input.config.isShown() && control.input.config.getSelected() == this) {
                 updateConfigUI();
             }
@@ -500,7 +582,10 @@ public class PowerProtector extends PowerGenerator {
          * 内部状态驱动，Mode 始终是「从运行结果向后看」的信息视图。
          */
         private void updateMode() {
-            if (!enabled) {
+            if (state.conflict) {
+                // 电网冲突（强制停机）显示优先级最高：即使被禁用也如实显示错误根因
+                state.mode = Mode.Error;
+            } else if (!enabled) {
                 state.mode = Mode.Stopped;
             } else if (state.nextTickPPower > 0.05f) {
                 state.mode = Mode.Protecting;
@@ -524,6 +609,33 @@ public class PowerProtector extends PowerGenerator {
                 }
             }
             return n;
+        }
+
+        /** 本电网中是否存在其他保护器（任意队伍，仅以块类型判定）。
+         *  若存在则本保护器检测到电网冲突，必须强制停机：同电网仅允许单个保护器运行。 */
+        private boolean gridHasOtherProtector() {
+            for (Building b : power.graph.all) {
+                if (b instanceof PowerProtectorBuild && b != this) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** 电网冲突强制停机：清空所有介入/偿还会话与产出缓存。
+         *  仅保留欠款（待到电网趋于正常且仅剩本保护器后仍可恢复偿还）与全队共享时间池。 */
+        private void stopFromConflict() {
+            state.nextTickPPower = 0f;
+            state.tickRPower = 0f;
+            state.latching = false;
+            state.peakGap = 0f;
+            state.restoring = false;
+            state.restoreHold = 0f;
+            state.gapHold = 0f;
+            state.protectExitHold = 0f;
+            // 冲突期间电网电池可能已被其他保护器充放；把快照重置为续接点，恢复后不计入冲突期变化
+            state.batteryStoredPrev = -1f;
+            state.conflict = true;
         }
 
         /** 维护全队共享时间池：保护时按参与保护的保护器数扣减；全队无任何欠款才回充。
@@ -581,13 +693,14 @@ public class PowerProtector extends PowerGenerator {
 
         @Override
         public byte version() {
-            return 18;
+            return 19;
         }
 
         // ===== UI 配置面板 =====
         private Table configTable = null;
-        private Label statusLabel = null, remainingLabel = null, debtLabel = null, supplyLabel = null;
+        private Label statusLabel = null, remainingLabel = null, debtLabel = null, supplyLabel = null, restorePercentLabel = null;
         private TextButton stopButton = null;
+        private Slider restorePercentSlider = null;
         private Table bannerTable = null, breakBannerTable = null;
 
         /** 当前显示模式文案（与方块进度条共用） */
@@ -596,6 +709,7 @@ public class PowerProtector extends PowerGenerator {
                 case Protecting -> Core.bundle.get("block.silicon-power-protector.protection");
                 case Recovering -> Core.bundle.get("block.silicon-power-protector.recovery");
                 case Stopped -> Core.bundle.get("block.silicon-power-protector.stopped");
+                case Error -> Core.bundle.get("block.silicon-power-protector.ui.errorConflict");
                 default -> Core.bundle.get("block.silicon-power-protector.normal");
             };
         }
@@ -606,6 +720,7 @@ public class PowerProtector extends PowerGenerator {
                 case Protecting -> Color.green;
                 case Recovering -> Color.cyan;
                 case Stopped -> Color.gray;
+                case Error -> Color.scarlet;
                 default -> Color.white;
             };
         }
@@ -648,6 +763,19 @@ public class PowerProtector extends PowerGenerator {
                 supplyLabel = t.add("").right().get();
             }).colspan(2).growX().padBottom(8f).row();
 
+            // 恢复电池占比滑块（每台保护器独立配置，默认 25%）
+            inner.table(t -> {
+                t.add(Core.bundle.get("block.silicon-power-protector.ui.restoreBatteryPercent"))
+                    .color(Color.lightGray).left();
+                restorePercentLabel = t.add("").color(Color.cyan).right().get();
+            }).colspan(2).growX().padBottom(2f).row();
+            inner.table(t -> {
+                // slider(min, max, step, value, listener)：step 固定 5%，value 为当前配置初始值
+                restorePercentSlider = t.slider(0f, 1f, 0.05f, state.restoreBatteryPercent,
+                        val -> state.restoreBatteryPercent = val
+                ).left().growX().get();
+            }).colspan(2).growX().padBottom(8f).row();
+
             // 启停按钮：与逻辑处理器 `enabled` 指令共用同一字段，行为一致
             stopButton = inner.button("", redToggle(), () -> {
                 enabled = !enabled;
@@ -666,17 +794,30 @@ public class PowerProtector extends PowerGenerator {
             remainingLabel = null;
             debtLabel = null;
             supplyLabel = null;
+            restorePercentLabel = null;
+            restorePercentSlider = null;
             stopButton = null;
         }
 
         private void updateConfigUI() {
             if (configTable == null) return;
 
+            // 电网冲突：强制停机期间禁用启停按钮与恢复占比滑块（逻辑 `enabled` 仍可控制，
+            // 但冲突判定优先级更高，UI 上如实外显错误并阻止调整）。
+            boolean conflict = state.conflict;
             if (stopButton != null) {
-                stopButton.setChecked(!enabled);
-                stopButton.setText(!enabled
-                    ? Core.bundle.get("block.silicon-power-protector.ui.disableRun")
-                    : Core.bundle.get("block.silicon-power-protector.ui.enableRun"));
+                stopButton.setDisabled(conflict);
+                if (conflict) {
+                    stopButton.setText(Core.bundle.get("block.silicon-power-protector.ui.errorConflict"));
+                } else {
+                    stopButton.setChecked(!enabled);
+                    stopButton.setText(!enabled
+                        ? Core.bundle.get("block.silicon-power-protector.ui.disableRun")
+                        : Core.bundle.get("block.silicon-power-protector.ui.enableRun"));
+                }
+            }
+            if (restorePercentSlider != null) {
+                restorePercentSlider.setDisabled(conflict);
             }
 
             if (statusLabel != null) {
@@ -690,6 +831,10 @@ public class PowerProtector extends PowerGenerator {
             }
 
             if (debtLabel != null) debtLabel.setText(UI.formatAmount((long) state.debt));
+
+            if (restorePercentLabel != null) {
+                restorePercentLabel.setText(Strings.fixed(state.restoreBatteryPercent * 100f, 0) + "%");
+            }
 
             if (supplyLabel != null) {
                 // 直接以运行字段判断（与 Mode 解耦）：显示本帧目标产出的实时供电
@@ -719,8 +864,10 @@ public class PowerProtector extends PowerGenerator {
             t.update(() -> {
                 t.pack();
                 t.setPosition(6f, Core.graphics.getHeight() * 0.6f, Align.topLeft);
-                // 直接以运行字段判断（与 Mode 解耦）：不再保护时立即移除横幅
-                if (state.nextTickPPower <= 0.05f || mindustry.Vars.state.isMenu() || !ui.hudfrag.shown) {
+                // 直接以运行字段判断（与 Mode 解耦）：不再保护时立即移除横幅。
+                // 额外检查自身是否仍有效（isValid）：切换存档/拆除后该 building 已失效，
+                // state 不再刷新，若不加此判断横幅会因旧值残留而永不消失。
+                if (!isValid() || state.nextTickPPower <= 0.05f || mindustry.Vars.state.isMenu() || !ui.hudfrag.shown) {
                     if (bannerTable == t) bannerTable = null;
                     t.remove();
                 }
@@ -769,6 +916,7 @@ public class PowerProtector extends PowerGenerator {
             write.f(state.remainingProtectionTime);
             write.f(state.restoreTimer);
             write.d(state.debt);
+            write.f(state.restoreBatteryPercent);
             write.b(enabled ? 1 : 0);
         }
 
@@ -778,6 +926,12 @@ public class PowerProtector extends PowerGenerator {
             state.remainingProtectionTime = read.f();
             state.restoreTimer = read.f();
             state.debt = read.d();
+            if (revision >= 19) {
+                state.restoreBatteryPercent = read.f();
+            } else {
+                // 旧版无该配置，保持默认 25%
+                state.restoreBatteryPercent = 0.25f;
+            }
             if (revision <= 15) {
                 // 旧版（revision 15）额外写入 state.stopped：丢弃以对齐流长度。禁用状态不迁移，
                 // 加载即为启用。
@@ -786,7 +940,7 @@ public class PowerProtector extends PowerGenerator {
                 // 过渡版（revision 17）误未写入 enabled：加载即为启用。
                 enabled = true;
             } else {
-                // revision 16 与 >= 18 均写入 enabled 字节。
+                // revision 16 与 18/19 均写入 enabled 字节。
                 enabled = read.b() == 1;
             }
         }

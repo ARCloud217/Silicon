@@ -11,6 +11,7 @@ import arc.util.io.Reads;
 import arc.util.io.Writes;
 import mindustry.Vars;
 import mindustry.gen.Building;
+import mindustry.gen.Call;
 import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
 import mindustry.world.Block;
@@ -38,6 +39,9 @@ public class SatelliteConsole extends Block {
         configurable = true;
         // 需要供电：100 电力/秒（选中面板显示原版电力条）
         consumePower(POWER_CONSUMPTION);
+        // 卫星所属信号走原版 configure 机制同步（服务器 tileConfig 权威下发，各端 selectedSignal 一致）
+        config(String.class, (SatelliteConsoleBuild b, String value) ->
+                b.selectedSignal = (value == null || value.isEmpty()) ? null : value);
     }
 
     public class SatelliteConsoleBuild extends Building {
@@ -46,14 +50,26 @@ public class SatelliteConsole extends Block {
         /** 上次渲染的信号源列表签名（窗口实时刷新用） */
         private String lastSrcSignature = "";
 
-        /** 发射卫星：由 SatelliteManager 检查/扣减中枢的燃料与缓冲电力，并记录卫星所属信号 */
+        /** 发射卫星：本队可点发射。权威端（主机/单机）直接执行；纯客机发请求由主机执行并广播/反馈结果 */
         public void launch() {
             // 关闭（enabled=false，逻辑门/开关控制）：不能发射
             if (!enabled) {
                 Vars.ui.showInfoToast(Core.bundle.get("block.silicon-satellite-console.disabled"), 3f);
                 return;
             }
-            int result = SatelliteManager.launch(team, selectedSignal);
+            // 纯客机（联网但非主机）：发射请求交给主机（sat-launch），主机校验后执行并广播状态、反馈失败原因
+            if (Vars.net.active() && !SatelliteManager.isAuthority()) {
+                Call.serverPacketReliable("sat-launch", tileX() + "," + tileY() + "|"
+                        + (selectedSignal == null ? "" : selectedSignal));
+                return;
+            }
+            // 权威端：本地执行（建筑逻辑与卫星状态均在主机/单机计算）
+            doLaunch(selectedSignal);
+        }
+
+        /** 权威端发射执行 + 结果提示（launch 的本地路径，或主机的 sat-launch 处理器直接调用） */
+        public void doLaunch(String signalName) {
+            int result = SatelliteManager.launch(team, signalName);
             String key;
             switch (result) {
                 case SatelliteManager.LAUNCH_OK: key = "block.silicon-satellite-console.success"; break;
@@ -129,6 +145,7 @@ public class SatelliteConsole extends Block {
             // 清除按钮
             table.button(Core.bundle.get("block.silicon-satellite-console.signal.clear"), Styles.defaultt, () -> {
                 selectedSignal = null;
+                configure("");
                 rebuildSourceButtons(srcTable, search.getText().trim());
             }).size(88f, 40f).padTop(2f);
             table.row();
@@ -171,7 +188,12 @@ public class SatelliteConsole extends Block {
                 any = true;
                 TextButton btn = new TextButton(code, Styles.flatTogglet);
                 btn.setChecked(code.equals(selectedSignal));
-                btn.clicked(() -> selectedSignal = code);
+                // configure 走网络同步（服务器权威下发，各端一致）；乐观先设本地并刷新按钮选中态
+                btn.clicked(() -> {
+                    selectedSignal = code;
+                    configure(code);
+                    rebuildSourceButtons(srcTable, filter);
+                });
                 group.add(btn);
                 srcTable.add(btn).size(88f, 40f).pad(1f);
                 if (++count % perRow == 0) srcTable.row();

@@ -18,6 +18,7 @@ import mindustry.gen.Player;
 import mindustry.gen.Sounds;
 import mindustry.graphics.Layer;
 import mindustry.graphics.Pal;
+import mindustry.Vars;
 import silicon.content.Statuses;
 import silicon.world.blocks.satellite.SatelliteConsole;
 import silicon.world.blocks.satellite.SatelliteLauncher;
@@ -38,12 +39,21 @@ public class SatelliteManager {
     /** 缓冲电力不足（< 10000） */
     public static final int LAUNCH_NO_POWER = 3;
 
-    /** 在轨卫星数量（按队伍、按种类） */
+    /** 在轨卫星数量（按队伍、按种类）——联网时仅主机维护真实值，客机经 sat-state 广播镜像 */
     private static final ObjectMap<Team, ObjectIntMap<Integer>> launched = new ObjectMap<>();
-    /** 已生产完成、待发射的中枢列表（按队伍） */
+    /** 已生产完成、待发射的中枢列表（按队伍）——仅主机使用（客机建筑不跑 updateTile） */
     private static final ObjectMap<Team, Seq<SatelliteLauncher.SatelliteLauncherBuild>> readyLaunchers = new ObjectMap<>();
     /** 卫星所属信号（按队伍）：控制台选择，发射后全图信号层用该信号的颜色显示（null=无归属，保持蓝色） */
     private static final ObjectMap<Team, String> satelliteSignal = new ObjectMap<>();
+    /** 客机端镜像的待发射数（主机广播 sat-state 填充；主机端直接用 readyLaunchers） */
+    private static final ObjectIntMap<Team> readyMirror = new ObjectIntMap<>();
+    /** 状态广播字段分隔符（编码：teamId|sigCount|testCount|signal|readyCount） */
+    static final String SEP = "|";
+
+    /** 本端是否为状态权威端（dedicated 服务器或 host，或单机）：只有权威端执行发射/生产登记 */
+    public static boolean isAuthority() {
+        return Vars.net.server() || !Vars.net.active();
+    }
 
     /** 卫星发射特效：巨大光柱尾焰 + 向上喷射粒子 + 烟柱（配合方块自绘动画，1.5 秒） */
     public static final Effect launchFx = new Effect(90f, e -> {
@@ -69,6 +79,7 @@ public class SatelliteManager {
         launched.clear();
         readyLaunchers.clear();
         satelliteSignal.clear();
+        readyMirror.clear();
     }
 
     /** 某队伍在轨卫星总数 */
@@ -90,21 +101,57 @@ public class SatelliteManager {
         return list != null && !list.isEmpty();
     }
 
-    /** 某队伍待发射卫星数 */
+    /** 某队伍待发射卫星数（客机读广播镜像，权威端读登记列表） */
     public static int readyCount(Team team) {
+        if (!isAuthority()) return readyMirror.get(team, 0);
         Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
         return list == null ? 0 : list.size;
     }
 
-    /** 中枢生产完成时登记 */
+    /** 中枢生产完成时登记（权威端调用）；登记变化向同队客机广播 */
     public static void addReady(SatelliteLauncher.SatelliteLauncherBuild launcher) {
         readyLaunchers.get(launcher.team, Seq::new).add(launcher);
+        broadcastState(launcher.team);
     }
 
-    /** 中枢拆除/重置时移除登记 */
+    /** 中枢拆除/重置时移除登记（权威端调用）；登记变化向同队客机广播 */
     public static void removeReady(SatelliteLauncher.SatelliteLauncherBuild launcher) {
         Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(launcher.team);
         if (list != null) list.remove(launcher);
+        broadcastState(launcher.team);
+    }
+
+    /**
+     * 权威端广播某队卫星状态给同队所有已连接客户端（客机以 applyState 应用）。
+     * 编码：teamId|sigCount|testCount|signal|readyCount
+     */
+    public static void broadcastState(Team team) {
+        if (!Vars.net.server()) return; // 仅服务器（host/dedicated）广播；单机无客户端
+        String data = team.id + SEP + launchedCount(team, SatelliteLauncher.TYPE_SIGNAL) + SEP
+                + launchedCount(team, SatelliteLauncher.TYPE_TEST) + SEP
+                + (satelliteSignal.get(team) == null ? "" : satelliteSignal.get(team)) + SEP
+                + readyCount(team);
+        for (Player p : Groups.player) {
+            if (p.team() == team && p.con != null) {
+                Call.clientPacketReliable(p.con, "sat-state", data);
+            }
+        }
+    }
+
+    /** 客户端应用主机广播的某队卫星状态（镜像；不修改权威端数据） */
+    public static void applyState(String data) {
+        String[] parts = data.split("\\" + SEP, -1);
+        if (parts.length != 5) return;
+        try {
+            Team team = Team.get(Integer.parseInt(parts[0]));
+            ObjectIntMap<Integer> map = launched.get(team, ObjectIntMap::new);
+            map.clear();
+            map.put(SatelliteLauncher.TYPE_SIGNAL, Integer.parseInt(parts[1]));
+            map.put(SatelliteLauncher.TYPE_TEST, Integer.parseInt(parts[2]));
+            satelliteSignal.put(team, parts[3].isEmpty() ? null : parts[3]);
+            readyMirror.put(team, Integer.parseInt(parts[4]));
+        } catch (NumberFormatException ignored) {
+        }
     }
 
     /**
@@ -155,6 +202,8 @@ public class SatelliteManager {
             default: typeKey = "block.silicon-satellite-console.type.signal"; break;
         }
         Call.sendMessage(Core.bundle.format("satellite.launch.message", teamName, Core.bundle.get(typeKey)));
+        // 在轨/待发射变化 → 广播同队客户端（launch 仅在权威端被调用）
+        broadcastState(team);
         return LAUNCH_OK;
     }
 

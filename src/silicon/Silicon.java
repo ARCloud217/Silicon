@@ -87,10 +87,13 @@ public class Silicon extends Mod {
             SatelliteManager.reset();
             SignalOverlay.reset(); // 清颜色缓存/色相分配/显示状态，防跨世界累积
         });
-        // 玩家中途加入时同步「卫星在轨」buff 显示（按队伍）
+        // 玩家中途加入时同步「卫星在轨」buff 显示（按队伍）；主机向新玩家补发卫星状态
         Events.on(EventType.PlayerJoin.class, e -> {
             if (SatelliteManager.launchedCount(e.player.team()) > 0 && e.player.unit() != null) {
                 e.player.unit().apply(Statuses.satelliteBuff, 999999f);
+            }
+            if (net.server()) {
+                SatelliteManager.broadcastState(e.player.team());
             }
             // PowerProtector 无全局静态状态，数据随存档保存，无需重置
         });
@@ -201,10 +204,55 @@ public class Silicon extends Mod {
                     String target = data.trim();
                     Vars.pauseWhitelist.remove(target);
                 });
+
+                // 卫星发射请求（客机 → 服务器）：主机权威执行发射，失败原因定向回发，成功走全图播报+状态广播
+                netServer.addPacketHandler("sat-launch", (p, data) -> {
+                    try {
+                        String[] parts = data.split("\\|", -1);
+                        if (parts.length != 2) return;
+                        String[] xy = parts[0].split(",");
+                        if (xy.length != 2) return;
+                        mindustry.world.Tile tile = world.tile(
+                                Integer.parseInt(xy[0].trim()), Integer.parseInt(xy[1].trim()));
+                        if (tile == null || !(tile.build instanceof silicon.world.blocks.satellite.SatelliteConsole.SatelliteConsoleBuild)) return;
+                        silicon.world.blocks.satellite.SatelliteConsole.SatelliteConsoleBuild cb =
+                                (silicon.world.blocks.satellite.SatelliteConsole.SatelliteConsoleBuild) tile.build;
+                        if (cb.team != p.team()) return; // 只能操作本队控制台
+                        if (!cb.enabled) {
+                            Call.clientPacketReliable(p.con, "sat-result", "disabled");
+                            return;
+                        }
+                        int result = SatelliteManager.launch(p.team(), parts[1].isEmpty() ? null : parts[1]);
+                        // 失败：定向反馈请求者（成功已有全图播报 + sat-state 状态广播）
+                        if (result != SatelliteManager.LAUNCH_OK) {
+                            Call.clientPacketReliable(p.con, "sat-result", String.valueOf(result));
+                        }
+                    } catch (Exception ignored) {
+                    }
+                });
             }
 
-            netClient.addPacketHandler("paused", (s) -> {
-                Vars.pause.complete = true;
+            // 卫星状态广播（服务器 → 客机）：应用主机权威状态（在轨数/归属信号/待发射数镜像）
+            netClient.addPacketHandler("sat-state", SatelliteManager::applyState);
+            // 发射失败反馈（服务器 → 请求者）
+            netClient.addPacketHandler("sat-result", (s) -> {
+                if (s.equals("disabled")) {
+                    ui.showInfoToast(Core.bundle.get("block.silicon-satellite-console.disabled"), 3f);
+                    return;
+                }
+                try {
+                    int result = Integer.parseInt(s.trim());
+                    if (result == SatelliteManager.LAUNCH_OK) return;
+                    String key;
+                    switch (result) {
+                        case SatelliteManager.LAUNCH_NO_READY: key = "block.silicon-satellite-console.noready"; break;
+                        case SatelliteManager.LAUNCH_NO_FUEL: key = "block.silicon-satellite-console.nofuel"; break;
+                        case SatelliteManager.LAUNCH_NO_POWER: key = "block.silicon-satellite-console.nopower"; break;
+                        default: key = "block.silicon-satellite-console.fail"; break;
+                    }
+                    ui.showInfoToast(Core.bundle.get(key), 3f);
+                } catch (NumberFormatException ignored) {
+                }
             });
         });
 

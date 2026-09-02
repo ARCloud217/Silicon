@@ -174,7 +174,7 @@ public class SignalRelay extends Block {
                     String sat = silicon.util.SatelliteManager.satelliteSignal(team);
                     if (selectedSource != null && selectedSource.equals(sat)) {
                         int sch = SignalChannel.satelliteChannel(team);
-                        float satJam = sch >= 0 ? SignalJammer.strengthAt(team, sch, x, y) : 0f;
+                        float satJam = sch >= 0 ? SignalJammer.strengthAt(sch, x, y) : 0f;
                         float satEff = Math.max(0f, silicon.util.SatelliteManager.signalStrength(team) - satJam);
                         if (satEff > 0.5f) newActive = true;
                     }

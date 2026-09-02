@@ -297,7 +297,7 @@ public class SignalOverlay {
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {
                 float wx = gx * 8f, wy = gy * 8f;
-                float satJam = sch >= 0 ? SignalJammer.strengthAt(team, sch, wx, wy) : 0f;
+                float satJam = sch >= 0 ? SignalJammer.strengthAt(sch, wx, wy) : 0f;
                 float s = Math.max(0f, satStrength - satJam);
                 if (s <= 0f) continue;
                 float t = s / SignalSource.MAX_STRENGTH;
@@ -328,7 +328,7 @@ public class SignalOverlay {
         // 卫星全图信号：受归属信道干扰器压制
         if (satStrength > 0f) {
             int sch = SignalChannel.satelliteChannel(team);
-            float satJam = sch >= 0 ? SignalJammer.strengthAt(team, sch, wx, wy) : 0f;
+            float satJam = sch >= 0 ? SignalJammer.strengthAt(sch, wx, wy) : 0f;
             float satEff = Math.max(0f, satStrength - satJam);
             if (satEff > bestStr) {
                 bestStr = satEff;

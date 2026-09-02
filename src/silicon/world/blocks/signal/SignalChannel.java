@@ -115,8 +115,8 @@ public class SignalChannel {
                     ? "S" + rb.selectedSource : "R" + ((int) rb.x * 7 + (int) rb.y * 13);
             addSource(rb.signalChannel(), s, id, rb);
         }
-        // 干扰器：同信道 + 邻信道泄漏
-        for (SignalJammer.SignalJammerBuild jb : SignalJammer.allJammers(team)) {
+        // 干扰器（全局：敌方干扰器同样压制本信道；同信道 + 邻信道泄漏）
+        for (SignalJammer.SignalJammerBuild jb : SignalJammer.allJammers()) {
             float j = SignalSource.strengthAt(jb.x, jb.y, wx, wy);
             if (jb.jamChannel == SignalJammer.ALL) {
                 for (int ch = 1; ch <= SignalJammer.CHANNEL_MAX; ch++) jamA[ch] += j;
@@ -201,9 +201,9 @@ public class SignalChannel {
                 aciSum += s * acir(dch);
             }
         }
-        // 干扰器：同信道 + 邻信道泄漏
-        float jamSum = SignalJammer.strengthAt(team, ch, wx, wy); // 同信道/全信道
-        for (SignalJammer.SignalJammerBuild jb : SignalJammer.allJammers(team)) {
+        // 干扰器（全局：不分队伍）：同信道 + 邻信道泄漏
+        float jamSum = SignalJammer.strengthAt(ch, wx, wy); // 同信道/全信道
+        for (SignalJammer.SignalJammerBuild jb : SignalJammer.allJammers()) {
             if (jb.jamChannel == SignalJammer.ALL || jb.jamChannel == ch) continue; // 同信道已在 jamSum
             float s = SignalSource.strengthAt(jb.x, jb.y, wx, wy);
             jamSum += s * acirJam(jb.jamChannel - ch);

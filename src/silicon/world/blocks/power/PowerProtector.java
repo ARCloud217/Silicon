@@ -289,7 +289,7 @@ public class PowerProtector extends PowerGenerator {
      * 显示模式（纯信息展示，不参与任何运行决策）。
      * <p>
      * 运行完全由内部状态自行驱动（峰值锁定 latching、产出 nextTickPPower、偿还 tickRPower、
-     * 手动停止开关 stopped），Mode 仅在 updateMode() 末尾由这些运行数值派生一次，
+     * 原版禁用开关 enabled），Mode 仅在 updateMode() 末尾由这些运行数值派生一次，
      * 供徽章/字体颜色等 UI 阅读。任何运行逻辑不得读取 Mode；UI 逻辑如需判断状态，
      * 也应直接读取运行字段而非 Mode，模式只提供文案与颜色的映射。
      */
@@ -297,7 +297,7 @@ public class PowerProtector extends PowerGenerator {
         Normal,      // 待机（未保护、未偿还）
         Protecting,  // 保护中（正在供电补缺）
         Recovering,  // 偿还中（正在消耗电网电力还清欠款）
-        Stopped      // 手动停止（不保护、不偿还）
+        Stopped      // 已禁用（UI 启停按钮或逻辑 `enabled` 指令关闭，不保护、不偿还）
     }
 
     /** 状态数据（存档字段 + 运行时临时变量），每台保护器一个实例。 */
@@ -309,9 +309,6 @@ public class PowerProtector extends PowerGenerator {
         public float restoreTimer = 0f;
         /** 自家欠下电力（每台保护器独立计算与偿还）。 */
         public double debt = 0;
-        /** 手动停止运行（自家）。 */
-        public boolean stopped = false;
-
         // ===== 运行时临时变量（不存档）=====
         public Mode mode = Mode.Normal;                   // 显示模式（仅用于 UI 文案/颜色，不参与运行）
         public float tickPPower = 0f;                     // 保护供电（由 Trigger.update 抢先提交后的当帧产出）
@@ -340,6 +337,23 @@ public class PowerProtector extends PowerGenerator {
             if (power == null || power.graph == null) {
                 state.nextTickPPower = 0f;
                 state.tickRPower = 0f;
+                updateMode();
+                return;
+            }
+
+            // —— 禁用（逻辑 `enabled` 指令 / UI 启停按钮共用同一字段）——
+            // 禁用时保护器立即离场：撤产出、清保护/恢复会话，但保留欠款与全队时间池。
+            // 逻辑处理器通过原版 enabled 字段即可暂停本方块，与原版「应该消费才消费」的语义一致。
+            if (!enabled) {
+                state.nextTickPPower = 0f;
+                state.tickRPower = 0f;
+                state.latching = false;
+                state.peakGap = 0f;
+                state.restoring = false;
+                state.restoreHold = 0f;
+                state.gapHold = 0f;
+                state.protectExitHold = 0f;
+                manageTeamTimePool();
                 updateMode();
                 return;
             }
@@ -379,7 +393,7 @@ public class PowerProtector extends PowerGenerator {
             if (state.restoring) {
                 // 恢复会话中：连续缺口计时，达到阈值才视为「电网真缺电」并退出恢复
                 state.gapHold = surplusNow ? 0f : state.gapHold + Time.delta;
-                if (state.debt <= 0f || state.stopped || state.gapHold >= protectReturnTime) {
+                if (state.debt <= 0f || !enabled || state.gapHold >= protectReturnTime) {
                     state.restoring = false;
                     state.restoreHold = 0f;
                     state.gapHold = 0f;
@@ -387,7 +401,7 @@ public class PowerProtector extends PowerGenerator {
             } else {
                 // 未在恢复：累计连续富余，达到门槛才进入。
                 // 仅在保护已退出（!state.latching）后才允许进入，避免「保护中却同时进入恢复」的错乱
-                if (surplusNow && !state.latching && !state.stopped && state.debt > 0f) {
+                if (surplusNow && !state.latching && enabled && state.debt > 0f) {
                     state.restoreHold += Time.delta;
                     if (state.restoreHold >= restoreEnterTime) {
                         state.restoring = true;
@@ -406,18 +420,20 @@ public class PowerProtector extends PowerGenerator {
             // 待确认窗口走完后才真正停手，电网不会瞬间失去支撑。
             boolean wantProtect = state.peakGap > protectionGapThreshold
                     && state.remainingProtectionTime > Mathf.FLOAT_ROUNDING_ERROR
-                    && !state.stopped
                     && !state.restoring
                     && batteriesEmpty;
 
             if (state.latching) {
-                // 已在保护会话中：电网自足持续稳定才确认退出；任何瞬时缺口都会重置确认计时。
-                if (netSurplus >= 0f) {
+                // 禁用或保护时间耗尽：无论电网状态如何都立即撤产（不被自足确认窗口耽搁）。
+                if (!enabled || state.remainingProtectionTime <= Mathf.FLOAT_ROUNDING_ERROR) {
+                    state.latching = false;
+                    state.peakGap = 0f;
+                    state.protectExitHold = 0f;
+                }
+                // 电网持续自足才确认退出；任何瞬时缺口都会重置确认计时。
+                else if (netSurplus >= 0f) {
                     state.protectExitHold += Time.delta;
-                    if (state.protectExitHold >= protectExitTime
-                            || state.remainingProtectionTime <= Mathf.FLOAT_ROUNDING_ERROR
-                            || state.stopped) {
-                        // 确认退出：清空峰值记忆与确认计时，退出后需真实缺口重新触发进入
+                    if (state.protectExitHold >= protectExitTime) {
                         state.latching = false;
                         state.peakGap = 0f;
                         state.protectExitHold = 0f;
@@ -458,7 +474,7 @@ public class PowerProtector extends PowerGenerator {
             }
 
             // —— 偿还（电池式「充电」）：仅恢复会话中、电网确实富余时用富余电力还债 ——
-            if (state.restoring && surplusNow && !state.stopped) {
+            if (state.restoring && surplusNow && enabled) {
                 state.tickRPower = Math.min((float) state.debt, netSurplus);
                 state.debt -= state.tickRPower;
                 if (state.debt < 0) state.debt = 0;
@@ -479,12 +495,12 @@ public class PowerProtector extends PowerGenerator {
 
         /**
          * 收尾派生显示模式：在 updateTile() 末尾调用一次，仅从运行字段
-         * （stopped / nextTickPPower / tickRPower）推导 Mode，供 UI 文案与颜色使用。
+         * （enabled / nextTickPPower / tickRPower）推导 Mode，供 UI 文案与颜色使用。
          * 本方法不对任何运行逻辑产生副作用 —— 运行只由 latching / nextTickPPower / tickRPower 等
          * 内部状态驱动，Mode 始终是「从运行结果向后看」的信息视图。
          */
         private void updateMode() {
-            if (state.stopped) {
+            if (!enabled) {
                 state.mode = Mode.Stopped;
             } else if (state.nextTickPPower > 0.05f) {
                 state.mode = Mode.Protecting;
@@ -565,7 +581,7 @@ public class PowerProtector extends PowerGenerator {
 
         @Override
         public byte version() {
-            return 15;
+            return 18;
         }
 
         // ===== UI 配置面板 =====
@@ -632,9 +648,9 @@ public class PowerProtector extends PowerGenerator {
                 supplyLabel = t.add("").right().get();
             }).colspan(2).growX().padBottom(8f).row();
 
-            // 启停按钮
+            // 启停按钮：与逻辑处理器 `enabled` 指令共用同一字段，行为一致
             stopButton = inner.button("", redToggle(), () -> {
-                state.stopped = !state.stopped;
+                enabled = !enabled;
                 updateConfigUI();
             }).colspan(2).height(40f).growX().get();
             stopButton.getLabel().setAlignment(Align.center);
@@ -657,8 +673,8 @@ public class PowerProtector extends PowerGenerator {
             if (configTable == null) return;
 
             if (stopButton != null) {
-                stopButton.setChecked(state.stopped);
-                stopButton.setText(state.stopped
+                stopButton.setChecked(!enabled);
+                stopButton.setText(!enabled
                     ? Core.bundle.get("block.silicon-power-protector.ui.disableRun")
                     : Core.bundle.get("block.silicon-power-protector.ui.enableRun"));
             }
@@ -745,13 +761,15 @@ public class PowerProtector extends PowerGenerator {
         }
 
         // ===== 存档 =====
+        // enabled 写入存档：重载同一存档时保持 UI/逻辑设置的状态；每台保护器的 enabled 都是
+        // 各自独立的存档字节流，A 存档的改动只存在 A 存档里，不会污染 B 存档。
         @Override
         public void write(Writes write) {
             super.write(write);
             write.f(state.remainingProtectionTime);
             write.f(state.restoreTimer);
             write.d(state.debt);
-            write.b(state.stopped ? 1 : 0);
+            write.b(enabled ? 1 : 0);
         }
 
         @Override
@@ -760,7 +778,17 @@ public class PowerProtector extends PowerGenerator {
             state.remainingProtectionTime = read.f();
             state.restoreTimer = read.f();
             state.debt = read.d();
-            state.stopped = read.b() == 1;
+            if (revision <= 15) {
+                // 旧版（revision 15）额外写入 state.stopped：丢弃以对齐流长度。禁用状态不迁移，
+                // 加载即为启用。
+                read.b();
+            } else if (revision == 17) {
+                // 过渡版（revision 17）误未写入 enabled：加载即为启用。
+                enabled = true;
+            } else {
+                // revision 16 与 >= 18 均写入 enabled 字节。
+                enabled = read.b() == 1;
+            }
         }
 
         // ===== 实例状态（存档 + 运行时）=====

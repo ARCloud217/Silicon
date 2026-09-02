@@ -10,8 +10,10 @@ import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import arc.util.io.Reads;
 import arc.util.io.Writes;
+import mindustry.Vars;
 import mindustry.game.Team;
 import mindustry.gen.Building;
+import mindustry.gen.Call;
 import mindustry.gen.Groups;
 import mindustry.graphics.Drawf;
 import mindustry.ui.Styles;
@@ -42,6 +44,11 @@ public class SignalRelay extends Block {
         configurable = true;
         config(String.class, (SignalRelayBuild b, String value) ->
                 b.selectedSource = (value == null || value.isEmpty()) ? null : value);
+        // active 状态同步（服务器在激活状态变化时下发；客机应用后 H 覆盖可显示级联段）。
+        // 客机伪造的 Boolean 会在下一次 updateActive（20 tick）被服务器重算覆盖，天然自愈。
+        config(Boolean.class, (SignalRelayBuild b, Boolean v) -> {
+            if (v != null) b.active = v;
+        });
     }
 
     /**
@@ -176,6 +183,8 @@ public class SignalRelay extends Block {
             if (newActive != active) {
                 active = newActive;
                 SignalRelay.markDirty();
+                // 激活状态变化 → 服务器下发到客机（active 是 mod 自定义字段，不随实体网络同步）
+                if (Vars.net.server()) Call.tileConfig(null, this, active);
             }
         }
 

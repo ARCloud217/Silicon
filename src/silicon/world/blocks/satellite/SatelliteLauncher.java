@@ -22,6 +22,7 @@ import mindustry.content.Items;
 import mindustry.content.Liquids;
 import mindustry.ctype.UnlockableContent;
 import mindustry.gen.Building;
+import mindustry.gen.Call;
 import mindustry.gen.Tex;
 import mindustry.graphics.Pal;
 import mindustry.type.Item;
@@ -29,6 +30,7 @@ import mindustry.type.ItemStack;
 import mindustry.type.Liquid;
 import mindustry.ui.Bar;
 import mindustry.ui.Styles;
+import mindustry.Vars;
 import mindustry.world.Block;
 import mindustry.world.meta.Stat;
 import mindustry.world.meta.StatUnit;
@@ -131,7 +133,18 @@ public class SatelliteLauncher extends Block {
         itemCapacity = 5000 + 5000 + 1250 + 1250;
         hasLiquids = true;
         liquidCapacity = FUEL_OIL + COST_CRYOFLUID;
+        // 卫星种类走 configure 同步（服务器权威下发，各端选中类型一致）
+        config(Integer.class, (SatelliteLauncherBuild b, Integer v) ->
+                b.selectedType = Math.max(TYPE_SIGNAL, Math.min(TYPE_TEST, v == null ? TYPE_SIGNAL : v)));
+        // 运行时快照（battery|progress|produced）：服务器周期下发，客机应用镜像，使面板/提示与主机一致
+        config(String.class, (SatelliteLauncherBuild b, String s) -> b.applySnapshot(s));
     }
+
+    /** 快照字段分隔符 */
+    private static final char SNAP_SEP = '|';
+
+    /** 生产进度/缓冲/完成状态同步周期（tick） */
+    private static final int SNAPSHOT_INTERVAL = 15;
 
     @Override
     public void setStats() {
@@ -160,6 +173,25 @@ public class SatelliteLauncher extends Block {
         private final Table materialTable = new Table();
         /** 上次显示的种类（用于检测切换并重建材料行） */
         private int lastShownType = -1;
+        /** 运行状态快照同步计时（服务器每 SNAPSHOT_INTERVAL tick 向客机下发一次） */
+        private int snapshotTimer = 0;
+
+        /** 服务器构造本中枢运行快照（整数化减小包体） */
+        String snapshot() {
+            return (int) battery + "" + SNAP_SEP + (int) progress + SNAP_SEP + (produced ? "1" : "0");
+        }
+
+        /** 客机应用主机下发的运行快照（battery|progress|produced）；解析失败忽略（防伪造串） */
+        void applySnapshot(String s) {
+            try {
+                String[] p = s.split("\\" + SNAP_SEP, -1);
+                if (p.length != 3) return;
+                battery = Math.max(0f, Math.min(LAUNCH_POWER, Integer.parseInt(p[0])));
+                progress = Math.max(0f, Math.min(produceTime(selectedType), Integer.parseInt(p[1])));
+                produced = p[2].equals("1");
+            } catch (NumberFormatException ignored) {
+            }
+        }
 
         @Override
         public void updateTile() {
@@ -167,6 +199,11 @@ public class SatelliteLauncher extends Block {
             if (selectedType != lastShownType) {
                 lastShownType = selectedType;
                 rebuildMaterialTable();
+            }
+            // 运行快照周期下发（仅服务器；客机建筑不跑 updateTile，不会反向发送）
+            if (Vars.net.server() && ++snapshotTimer >= SNAPSHOT_INTERVAL) {
+                snapshotTimer = 0;
+                Call.tileConfig(null, this, snapshot());
             }
             // 关闭（enabled=false，逻辑门/开关控制）：不充电、不生产（进度与已生产状态保留）
             if (!enabled) return;
@@ -349,13 +386,14 @@ public class SatelliteLauncher extends Block {
             ButtonGroup<TextButton> group = new ButtonGroup<>();
             TextButton signalBtn = new TextButton(Core.bundle.get("block.silicon-satellite-launcher.type.signal"), Styles.flatTogglet);
             signalBtn.setChecked(selectedType == TYPE_SIGNAL);
-            signalBtn.clicked(() -> selectedType = TYPE_SIGNAL);
+            // configure 同步（服务器权威下发，各端选中类型一致）；乐观先设本地保证即时反馈
+            signalBtn.clicked(() -> { selectedType = TYPE_SIGNAL; configure(TYPE_SIGNAL); });
             group.add(signalBtn);
             table.add(signalBtn).size(200f, 44f).pad(3f);
             table.row();
             TextButton testBtn = new TextButton(Core.bundle.get("block.silicon-satellite-launcher.type.test"), Styles.flatTogglet);
             testBtn.setChecked(selectedType == TYPE_TEST);
-            testBtn.clicked(() -> selectedType = TYPE_TEST);
+            testBtn.clicked(() -> { selectedType = TYPE_TEST; configure(TYPE_TEST); });
             group.add(testBtn);
             table.add(testBtn).size(200f, 44f).pad(3f);
         }

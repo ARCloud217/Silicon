@@ -18,10 +18,8 @@ import java.util.TreeMap;
 public class StatValues extends mindustry.world.meta.StatValues {
     public static StatValue itemsScaled(boolean displayName, TreeMap<Float, Item> scaled) {
         return table -> {
-            // 末位条目只取一次（原先在 forEach 内对每个元素重复 lastKey()+get()）
-            Item last = scaled.isEmpty() ? null : scaled.get(scaled.lastKey());
             scaled.forEach((amount, item) -> {
-                if (item.equals(last)) {
+                if (scaled.get(scaled.lastKey()).equals(item)) {
                     table.add(displayItemsScaled(item, amount, displayName, ""));
                     return;
                 }

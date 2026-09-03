@@ -220,6 +220,9 @@ public class SignalOverlay {
         toggleVisible = false;
         prevDown = false;
         displayAlpha = 0f;
+        // 显示模式一并复位,否则跨图首帧 rangeMode 与残留的 lastRangeMode 不一致
+        // 会触发一次无意义的淡入重启
+        lastRangeMode = false;
     }
 
     static void update() {
@@ -270,29 +273,30 @@ public class SignalOverlay {
             lastRangeMode = rangeMode;
             displayAlpha = 0f;
         }
-        // 卫星全图信号强度（信号卫星每颗 +1，上限 15）
+        // 卫星全图信号强度（信号卫星每颗 +1，上限 15）；归属信道每帧解析一次,
+        // 传入逐格绘制(卫星信道只依赖 team 与全队源集合,与视角格数无关)
         int satStrength = SatelliteManager.signalStrength(team);
+        int sch = SignalChannel.satelliteChannel(team);
         if (rangeMode) {
             // 范围模式：先画卫星全图基础层（按卫星所属信号着色），再逐格绘制各信道有效信号
             if (satStrength > 0) {
-                drawSatelliteRange(team, satStrength, alpha);
+                drawSatelliteRange(team, satStrength, sch, alpha);
             }
-            drawRangeComposite(team, satStrength, alpha);
+            drawRangeComposite(team, satStrength, sch, alpha);
         } else {
             // 数字模式：逐格取各信道最大有效信号（含底噪/CCI/ACI/干扰器），每格只绘制一次
-            drawNumbersOverlay(team, satStrength, alpha);
+            drawNumbersOverlay(team, satStrength, sch, alpha);
         }
         Draw.reset();
     }
 
     /** 卫星全图信号层（范围模式）：可见区域内每格按卫星信号强度填充色块；卫星信号受归属信道干扰器压制（被压制格不画）；
      *  颜色取卫星所属信号编码的专属色（无归属时蓝色渐变） */
-    static void drawSatelliteRange(Team team, int satStrength, float alpha) {
+    static void drawSatelliteRange(Team team, int satStrength, int sch, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-        int sch = SignalChannel.satelliteChannel(team);
         // 逐格：卫星有效 = 卫星强度 − 归属信道干扰强度（被完全压制不画）
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {
@@ -312,9 +316,12 @@ public class SignalOverlay {
     /** 每信道有效强度/最强源缓冲（静态复用） */
     private static final float[] effBuf = new float[SignalJammer.CHANNEL_MAX + 1];
     private static final Building[] srcBuf = new Building[SignalJammer.CHANNEL_MAX + 1];
+    /** 最强来源出参复用（渲染线程内串行使用,两处 draw 循环共享一份） */
+    private static final Building[] bestSrcTmp = new Building[1];
 
-    /** 每格最大有效信号（一次遍历所有信道，与卫星层取 max）；卫星信号也受归属信道干扰；返回有效强度与最强来源（null=仅卫星） */
-    static float bestSignal(Team team, int satStrength, float wx, float wy, Building[] bestSrcOut) {
+    /** 每格最大有效信号（一次遍历所有信道，与卫星层取 max）；卫星信号也受归属信道干扰；返回有效强度与最强来源（null=仅卫星）。
+     *  sch=卫星归属信道,由 drawOverlay 每帧解析一次后传入——此前每格重扫全队信号源,视口越大浪费越多 */
+    static float bestSignal(Team team, int satStrength, int sch, float wx, float wy, Building[] bestSrcOut) {
         // 批量计算所有信道（一次遍历全部源，按信道分摊——比逐信道调用快约 5 倍）
         SignalChannel.effectiveAll(team, wx, wy, effBuf, srcBuf);
         float bestStr = 0f;
@@ -327,7 +334,6 @@ public class SignalOverlay {
         }
         // 卫星全图信号：受归属信道干扰器压制
         if (satStrength > 0f) {
-            int sch = SignalChannel.satelliteChannel(team);
             float satJam = sch >= 0 ? SignalJammer.strengthAt(sch, wx, wy) : 0f;
             float satEff = Math.max(0f, satStrength - satJam);
             if (satEff > bestStr) {
@@ -340,7 +346,7 @@ public class SignalOverlay {
     }
 
     /** 数字模式：可见区域内逐格取各信道最大有效信号，每格只绘制一次（字号覆盖一格 8px）；颜色取最强来源的专属色 */
-    static void drawNumbersOverlay(Team team, int satStrength, float alpha) {
+    static void drawNumbersOverlay(Team team, int satStrength, int sch, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         int x0 = (int) (view.x / 8f) - 1, x1 = (int) ((view.x + view.width) / 8f) + 1;
         int y0 = (int) (view.y / 8f) - 1, y1 = (int) ((view.y + view.height) / 8f) + 1;
@@ -353,14 +359,14 @@ public class SignalOverlay {
         float screenH = Core.graphics.getBackBufferHeight();
         float scale = Mathf.clamp(0.2f * Core.graphics.getHeight() / (screenH <= 0f ? 1440f : screenH), 0.1f, 0.5f);
         Fonts.def.getData().setScale(scale);
-        Building[] bestSrc = new Building[1];
+        Building[] bestSrc = bestSrcTmp;
         try {
             // 单字符居中偏移：相对原 0.2 字号的 1/1.6，按当前字号比例缩放
             float k = scale / 0.2f;
             for (int gx = x0; gx <= x1; gx++) {
                 for (int gy = y0; gy <= y1; gy++) {
                     float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
-                    float s = bestSignal(team, satStrength, wx, wy, bestSrc);
+                    float s = bestSignal(team, satStrength, sch, wx, wy, bestSrc);
                     if (s <= 0f) continue;
                     int val = Mathf.round(s);
                     float t = s / SignalSource.MAX_STRENGTH;
@@ -384,7 +390,7 @@ public class SignalOverlay {
     }
 
     /** 范围模式（逐格合成）：每格取各信道最大有效信号，用最强来源的专属颜色绘制（重叠/干扰区显示最强或空白） */
-    static void drawRangeComposite(Team team, int satStrength, float alpha) {
+    static void drawRangeComposite(Team team, int satStrength, int sch, float alpha) {
         Rect view = Core.camera.bounds(Tmp.r1);
         float rpx = SignalSource.RADIUS * 8f;
         // 格子范围：视口外扩一个覆盖半径（源在视口外但覆盖进入视口）
@@ -392,11 +398,11 @@ public class SignalOverlay {
         int y0 = (int) ((view.y - rpx) / 8f) - 1, y1 = (int) ((view.y + view.height + rpx) / 8f) + 1;
         // 范围模式透明度（0~100，设置项）
         float rangeAlpha = Core.settings.getInt("signal.rangeAlpha", 45) / 100f;
-        Building[] bestSrc = new Building[1];
+        Building[] bestSrc = bestSrcTmp;
         for (int gx = x0; gx <= x1; gx++) {
             for (int gy = y0; gy <= y1; gy++) {
                 float wx = gx * 8f, wy = gy * 8f; // 格子中心（像素）
-                float s = bestSignal(team, satStrength, wx, wy, bestSrc);
+                float s = bestSignal(team, satStrength, sch, wx, wy, bestSrc);
                 if (s <= 0f) continue;
                 float t = s / SignalSource.MAX_STRENGTH;
                 // 最强来源的专属颜色（仅卫星时为卫星所属信号色，无归属浅蓝），不透明度随强度

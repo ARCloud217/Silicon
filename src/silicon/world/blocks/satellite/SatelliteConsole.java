@@ -141,7 +141,8 @@ public class SatelliteConsole extends Block {
             doLaunch(selectedSignal, selectedOrbit);
         }
 
-        /** 权威端发射执行 + 结果提示（launch 的本地路径，或主机的 sat-launch 处理器直接调用） */
+        /** 权威端发射执行 + 结果提示（仅控制台本地直发路径；主机的 sat-launch 包处理器走
+         *  SatelliteManager.launch 并自行回发 sat-result，不经过这里） */
         public void doLaunch(String signalName, int orbit) {
             int result = SatelliteManager.launch(team, signalName, orbit, x, y);
             String key;

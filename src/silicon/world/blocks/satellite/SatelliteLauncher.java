@@ -183,6 +183,11 @@ public class SatelliteLauncher extends Block {
 
         /** 客机应用主机下发的运行快照（battery|progress|produced）；解析失败忽略（防伪造串） */
         void applySnapshot(String s) {
+            // 主机权威守卫:该处理器挂在 tileConfig 双向通道上,任何同队客户端都能向服务器
+            // 发包走这里——若不拦截,发一条 "10000|0|1" 即可在主机上凭空造出跳过全部
+            // 材料与充电的"已就绪"卫星。快照只允许 服务器下发→客机应用 单向流动:
+            // 服务器侧(含主机自身本地回环)一律忽略,权威值本来就在服务器字段里。
+            if (Vars.net.server()) return;
             try {
                 String[] p = s.split("\\" + SNAP_SEP, -1);
                 if (p.length != 3) return;
@@ -200,10 +205,13 @@ public class SatelliteLauncher extends Block {
                 lastShownType = selectedType;
                 rebuildMaterialTable();
             }
-            // 运行快照周期下发（仅服务器；客机建筑不跑 updateTile，不会反向发送）
+            // 运行快照周期下发（仅服务器，按队定向——不再 tileConfig(null) 全员广播，
+            // 敌队客户端不再收到我方中枢电量/进度明文）。客机 updateTile 照常运行(v159 Logic.java
+            // 的 Groups.build.update 不排除 net.client()),客机进入本分支但 net.server() 为假不会发送;
+            // 即便伪造 tileConfig 顶到服务器,applySnapshot 的服务端守卫也会拦截
             if (Vars.net.server() && ++snapshotTimer >= SNAPSHOT_INTERVAL) {
                 snapshotTimer = 0;
-                Call.tileConfig(null, this, snapshot());
+                silicon.util.NetSync.sendTeamConfig(this, snapshot());
             }
             // 关闭（enabled=false，逻辑门/开关控制）：不充电、不生产（进度与已生产状态保留）
             if (!enabled) return;
@@ -396,12 +404,6 @@ public class SatelliteLauncher extends Block {
             testBtn.clicked(() -> { selectedType = TYPE_TEST; configure(TYPE_TEST); });
             group.add(testBtn);
             table.add(testBtn).size(200f, 44f).pad(3f);
-        }
-
-        /** 当前种类显示名（bundle 键） */
-        String typeNameKey() {
-            return selectedType == TYPE_TEST
-                    ? "block.silicon-satellite-launcher.type.test" : "block.silicon-satellite-launcher.type.signal";
         }
 
         /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标下边缘居中）、进度条、石油条、电力条（长度与原版 bar 一致） */

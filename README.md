@@ -56,7 +56,7 @@
 依赖 Mindustry `v159.7` 的 jar 与 **JDK 17**（Android 端 d8 需要）：
 
 ```powershell
-# 一条龙：17 项代码锚点检查 → 编译 deploy → 自动同步游戏模组目录
+# 一条龙：30 项代码锚点检查 → 编译 deploy → 自动同步游戏模组目录
 powershell -ExecutionPolicy Bypass -File scripts\hub-deep-check.ps1
 
 # 仅桌面快速构建
@@ -75,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File scripts\hub-deep-check.ps1
 ## 链接
 
 - 仓库：<https://github.com/Xiaobei08/Silicon>
-- 方块搜索功能与 Silicon 共用实现（`blocksearch.ui.BlockSearch`），也可作为独立模组打包使用
+- 方块搜索功能与 Silicon 共用实现（`silicon.ui.BlockSearch`），也可作为独立模组打包使用
 
 ## 更新日志
 

@@ -183,8 +183,9 @@ public class SignalRelay extends Block {
             if (newActive != active) {
                 active = newActive;
                 SignalRelay.markDirty();
-                // 激活状态变化 → 服务器下发到客机（active 是 mod 自定义字段，不随实体网络同步）
-                if (Vars.net.server()) Call.tileConfig(null, this, active);
+                // 激活状态变化 → 服务器下发到客机（active 是 mod 自定义字段，不随实体网络同步；
+                // 按队定向,敌队客户端不再收到我方中继器激活时机）
+                if (Vars.net.server()) silicon.util.NetSync.sendTeamConfig(this, active);
             }
         }
 

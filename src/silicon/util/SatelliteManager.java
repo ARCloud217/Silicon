@@ -51,7 +51,9 @@ public class SatelliteManager {
 
     /** 在轨卫星数量（按队伍、按种类）——联网时仅主机维护真实值，客机经 sat-state 广播镜像 */
     private static final ObjectMap<Team, ObjectIntMap<Integer>> launched = new ObjectMap<>();
-    /** 已生产完成、待发射的中枢列表（按队伍）——仅主机使用（客机建筑不跑 updateTile） */
+    /** 已生产完成、待发射的中枢列表（按队伍）——仅主机使用。注意客机 updateTile 照常运行
+     *  （v159 引擎的 Groups.build.update 不排除 net.client()），客机 register() 只写本端镜像、
+     *  不参与权威判定（权威值以主机广播的 sat-state 为准） */
     private static final ObjectMap<Team, Seq<SatelliteLauncher.SatelliteLauncherBuild>> readyLaunchers = new ObjectMap<>();
     /** 卫星所属信号（按队伍）：控制台选择，发射后全图信号层用该信号的颜色显示（null=无归属，保持蓝色） */
     private static final ObjectMap<Team, String> satelliteSignal = new ObjectMap<>();
@@ -108,12 +110,6 @@ public class SatelliteManager {
     public static int launchedCount(Team team, int type) {
         ObjectIntMap<Integer> map = launched.get(team);
         return map == null ? 0 : map.get(type, 0);
-    }
-
-    /** 某队伍是否有可发射的卫星 */
-    public static boolean hasReady(Team team) {
-        Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
-        return list != null && !list.isEmpty();
     }
 
     /** 某队伍待发射卫星数（客机读广播镜像，权威端读登记列表） */

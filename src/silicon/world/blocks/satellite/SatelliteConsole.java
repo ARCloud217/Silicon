@@ -25,7 +25,7 @@ import silicon.world.blocks.signal.SignalSource;
  * 不存储燃料与电力——燃料（石油）与缓冲电力（10000）均由卫星发射中枢提供；
  * 卫星种类由卫星发射中枢选择。点击方块弹出界面选择轨道与信号后发射。
  * 轨道影响中枢燃油需求（LEO 1000 / MEO 2500 / GEO 5000 / SSO 8000）；
- * 信号卫星仅可发射到 LEO/MEO/GEO，SSO 为测试卫星专属。
+ * 信号卫星仅可发射到 LEO/MEO/GEO；SSO 供信号卫星以外的卫星类型使用（轨道划分不同卫星的功能）。
  */
 public class SatelliteConsole extends Block {
     /** 卫星种类：信号卫星（与发射中枢保持一致） */
@@ -55,7 +55,7 @@ public class SatelliteConsole extends Block {
         return Core.bundle.get(ORBIT_KEYS[Math.max(0, Math.min(ORBIT_COUNT - 1, orbit))]);
     }
 
-    /** 卫星种类 × 轨道允许性：信号卫星限 LEO/MEO/GEO；测试卫星可全部轨道（SSO 专属） */
+    /** 卫星种类 × 轨道允许性：信号卫星限 LEO/MEO/GEO（SSO 不对信号卫星开放，供其他卫星类型使用） */
     public static boolean orbitAllowed(int type, int orbit) {
         return !(type == TYPE_SIGNAL && orbit == ORBIT_SSO);
     }
@@ -118,7 +118,7 @@ public class SatelliteConsole extends Block {
             return null;
         }
 
-        /** SSO 是否灰化：绑定的中枢正在制造或待发射信号卫星 */
+        /** SSO 是否灰化：绑定的中枢正在制造或待发射信号卫星（信号卫星不能发 SSO） */
         boolean ssoBlocked() {
             return boundHub != null && boundHub.selectedType == TYPE_SIGNAL
                     && (boundHub.produced || boundHub.progress > 0f);
@@ -155,6 +155,7 @@ public class SatelliteConsole extends Block {
                 case SatelliteManager.LAUNCH_NO_HUB: key = "block.silicon-satellite-console.nohub"; break;
                 case SatelliteManager.LAUNCH_MULTI_HUB: key = "block.silicon-satellite-console.multihub"; break;
                 case SatelliteManager.LAUNCH_MULTI_CONSOLE: key = "block.silicon-satellite-console.multiconsole"; break;
+                case SatelliteManager.LAUNCH_TEST_SANDBOX: key = "block.silicon-satellite-console.sandboxOnly"; break;
                 default: key = "block.silicon-satellite-console.fail"; break;
             }
             if (result == SatelliteManager.LAUNCH_OK) {
@@ -213,7 +214,7 @@ public class SatelliteConsole extends Block {
             }).color(Color.lightGray).pad(2f);
         }
 
-        /** 轨道选择按钮行（4 单选）；绑定的中枢在造/待发信号卫星时 SSO 灰化 */
+        /** 轨道选择按钮行（4 单选）；绑定的中枢在造/待发信号卫星时 SSO 灰化（信号卫星不能发 SSO） */
         void rebuildOrbitRow(Table table) {
             table.row();
             table.label(() -> Core.bundle.format("block.silicon-satellite-console.orbit.current", orbitName(selectedOrbit)))
@@ -374,6 +375,18 @@ public class SatelliteConsole extends Block {
             super.write(write);
             write.str(selectedSignal == null ? "" : selectedSignal);
             write.i(selectedOrbit);
+            // v2:追加本队卫星名册快照。卫星实体的编码/信道/相位无处随单位持久化（无自定义实体组件），
+            // 由控制台代存——所有控制台写同一份全局快照，读侧按 unitId 去重并集，任一存活控制台即可恢复。
+            // 相位在保存时推进到当前时刻（currentAngle）：读档后 Time.time 归零，轨道位置以存档相位续接，卫星不跳位
+            arc.struct.Seq<SatelliteManager.SatelliteRecord> list = SatelliteManager.satellites(team);
+            write.i(list.size);
+            for (SatelliteManager.SatelliteRecord r : list) {
+                write.i(r.unitId);
+                write.i(r.channel);
+                write.i(r.orbit);
+                write.str(r.code == null ? "" : r.code);
+                write.i(Float.floatToIntBits(SatelliteManager.currentAngle(r)));
+            }
         }
 
         @Override
@@ -384,11 +397,22 @@ public class SatelliteConsole extends Block {
             if (revision >= 1) {
                 selectedOrbit = Math.max(ORBIT_LEO, Math.min(ORBIT_SSO, read.i()));
             }
+            if (revision >= 2) {
+                int n = read.i();
+                for (int i = 0; i < n; i++) {
+                    int unitId = read.i();
+                    int channel = read.i();
+                    int orbit = read.i();
+                    String code = read.str();
+                    float phase = Float.intBitsToFloat(read.i());
+                    SatelliteManager.restoreRecord(team, unitId, channel, orbit, code, phase);
+                }
+            }
         }
 
         @Override
         public byte version() {
-            return 1;
+            return 2;
         }
     }
 }

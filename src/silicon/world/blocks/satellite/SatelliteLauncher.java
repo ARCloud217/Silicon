@@ -71,7 +71,7 @@ public class SatelliteLauncher extends Block {
 
     /** 卫星种类：信号卫星 */
     public static final int TYPE_SIGNAL = 0;
-    /** 卫星种类：测试卫星（材料 1 硅，效果同信号卫星：全图信号 +1；低成本快速生产，仅用于测试） */
+    /** 卫星种类：测试卫星（材料 1 硅，效果同信号卫星：星下点覆盖；低成本快速生产，仅用于测试；沙盒模式专属） */
     public static final int TYPE_TEST = 1;
 
     /** 测试卫星的生产材料（1 硅，无冷冻液） */
@@ -226,6 +226,8 @@ public class SatelliteLauncher extends Block {
             }
             // 断电不生产（进度保留）
             if (power == null || power.status <= 0.001f) return;
+            // 测试卫星沙盒专属：非沙盒模式不生产（配置被存档/原理图带入时兜底；不消耗任何材料）
+            if (selectedType == TYPE_TEST && !SatelliteManager.testSatelliteAvailable()) return;
             // 生产开始：检查并一次性扣除材料（进度 > 0 表示已扣）
             if (progress <= 0f) {
                 if (!hasProductionMaterials()) return;
@@ -399,11 +401,17 @@ public class SatelliteLauncher extends Block {
             group.add(signalBtn);
             table.add(signalBtn).size(200f, 44f).pad(3f);
             table.row();
-            TextButton testBtn = new TextButton(Core.bundle.get("block.silicon-satellite-launcher.type.test"), Styles.flatTogglet);
-            testBtn.setChecked(selectedType == TYPE_TEST);
-            testBtn.clicked(() -> { selectedType = TYPE_TEST; configure(TYPE_TEST); });
-            group.add(testBtn);
-            table.add(testBtn).size(200f, 44f).pad(3f);
+            // 测试卫星沙盒专属：非沙盒模式不出现该选项（配置被带入时由生产/发射权威端兜底拦截）
+            if (SatelliteManager.testSatelliteAvailable()) {
+                TextButton testBtn = new TextButton(Core.bundle.get("block.silicon-satellite-launcher.type.test"), Styles.flatTogglet);
+                testBtn.setChecked(selectedType == TYPE_TEST);
+                testBtn.clicked(() -> { selectedType = TYPE_TEST; configure(TYPE_TEST); });
+                group.add(testBtn);
+                table.add(testBtn).size(200f, 44f).pad(3f);
+            } else if (selectedType == TYPE_TEST) {
+                // 非沙盒模式下面板只显示信号卫星选项，选中态归位
+                signalBtn.setChecked(true);
+            }
         }
 
         /** 选中面板（按原版空军工厂样式）：需求材料+石油（图标+数量角标下边缘居中）、进度条、石油条、电力条（长度与原版 bar 一致） */

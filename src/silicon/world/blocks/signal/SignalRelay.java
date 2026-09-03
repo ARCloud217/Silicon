@@ -134,15 +134,14 @@ public class SignalRelay extends Block {
             return null;
         }
 
-        /** 发射信道：绑定信号源后与其保持一致；绑定卫星归属信号时用其信道；未绑定用自身 channel */
+        /** 发射信道：绑定信号源后与其保持一致；绑定卫星编码时用在轨卫星发射时固化的信道
+         *  （源被拆不影响卫星信道），未绑定用自身 channel */
         public int signalChannel() {
             SignalSource.SignalSourceBuild src = findSource();
             if (src != null) return src.channel;
-            // 卫星中继：绑定编号 == 卫星归属编号 → 卫星归属信道
-            String sat = silicon.util.SatelliteManager.satelliteSignal(team);
-            if (selectedSource != null && selectedSource.equals(sat)) {
-                int sch = SignalChannel.satelliteChannel(team);
-                if (sch >= 0) return sch;
+            // 卫星中继：绑定编码有在轨卫星 → 用其发射时固化的信道（ SatelliteManager 名册）
+            for (silicon.util.SatelliteManager.SatelliteRecord r : silicon.util.SatelliteManager.satellites(team)) {
+                if (r.code != null && r.code.equals(selectedSource) && r.channel >= 1) return r.channel;
             }
             return channel;
         }
@@ -169,15 +168,12 @@ public class SignalRelay extends Block {
                         }
                     }
                 }
-                // 卫星中继：绑定编号 == 卫星归属编号，且卫星信号有效（归属信道未被完全压制）
+                // 卫星中继：所选编码存在在轨卫星，且卫星信号在中继器位置有效
+                // （星下点覆盖圆内、未被其固化信道干扰压制；总和扣底噪后需 >0.5——
+                // 单颗卫星恰好 0.5 不达标，两颗起可激活卫星级联，叠星有真实收益）
                 if (!newActive) {
-                    String sat = silicon.util.SatelliteManager.satelliteSignal(team);
-                    if (selectedSource != null && selectedSource.equals(sat)) {
-                        int sch = SignalChannel.satelliteChannel(team);
-                        float satJam = sch >= 0 ? SignalJammer.strengthAt(sch, x, y) : 0f;
-                        float satEff = Math.max(0f, silicon.util.SatelliteManager.signalStrength(team) - satJam);
-                        if (satEff > 0.5f) newActive = true;
-                    }
+                    float satEff = silicon.util.SatelliteManager.satelliteStrengthAt(team, selectedSource, x, y);
+                    if (satEff > 0.5f) newActive = true;
                 }
             }
             if (newActive != active) {

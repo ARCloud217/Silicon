@@ -35,28 +35,31 @@ public class SignalChannel {
         return 0f;
     }
 
-    /** 卫星归属信号所在信道（按归属信号编码找信号源；无归属或源不存在返回 -1） */
-    public static int satelliteChannel(Team team) {
-        String sig = SatelliteManager.satelliteSignal(team);
-        if (sig == null) return -1;
-        for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
-            if (sb.signal != null && sig.equals(sb.signal.name)) return sb.channel;
-        }
-        return -1;
-    }
-
     /**
      * (wx,wy) 处是否处于指定信号 name 的"信号范围"内。
-     * 同一编码视为同一信号：卫星全图广播、信号源自身覆盖、同编码激活中继器的级联延伸，
-     * 三者广播的有效范围取并集。
+     * 同一编码视为同一信号：在轨卫星的星下点覆盖圆（未被同信道干扰完全压制）、
+     * 信号源自身覆盖、同编码激活中继器的级联延伸，三者广播的有效范围取并集。
      * 供卫星控制台 ↔ 卫星发射中枢绑定判定（控制台与中枢必须同处该信号范围内）。
      */
     public static boolean inSignalRange(Team team, String name, float wx, float wy) {
         if (name == null || name.isEmpty()) return false;
-        // 卫星：归属该编码的卫星信号为全图广播（发射过即仍在轨广播），覆盖任意位置
-        if (name.equals(SatelliteManager.satelliteSignal(team))) {
-            return true;
+        // 在轨卫星：编码匹配的卫星，其星下点覆盖圆含该点且有效强度 > 0（同信道干扰可打断卫星绑定）
+        for (SatelliteManager.SatelliteRecord r : SatelliteManager.satellites(team)) {
+            if (r.code != null && name.equals(r.code) && SatelliteManager.satelliteEffAt(r, wx, wy) > 0f) {
+                return true;
+            }
         }
+        return inGroundSignalRange(team, name, wx, wy);
+    }
+
+    /**
+     * 仅地面覆盖（信号源 + 激活中继器），卫星覆盖不参与。
+     * 供卫星发射的 1:1 配对计数（hubsInSignal/consolesInSignal）使用：卫星覆盖只解锁
+     * "远方指派"该编码，配对仍约束地面基建布局——否则全图覆盖会把所有中枢算进同一
+     * "范围"，多中枢队伍永远 MULTI_HUB，发射能力被自己的卫星锁死。
+     */
+    public static boolean inGroundSignalRange(Team team, String name, float wx, float wy) {
+        if (name == null || name.isEmpty()) return false;
         for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
             if (sb.signal != null && name.equals(sb.signal.name)
                     && SignalSource.strengthAt(sb.x, sb.y, wx, wy) > 0f) {

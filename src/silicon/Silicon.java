@@ -20,6 +20,7 @@ import mindustry.mod.Mods;
 import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
 import mindustry.ui.dialogs.SettingsMenuDialog;
+import silicon.content.SatelliteUnits;
 import silicon.content.Statuses;
 import silicon.content.block.Blocks;
 import silicon.content.item.Items;
@@ -74,22 +75,27 @@ public class Silicon extends Mod {
         Items.load();
         Blocks.load();
         Statuses.load();
+        SatelliteUnits.load();
         SiliconLog.info("Loading contents.");
     }
 
     @Override
     public void init() {
         // 信号源/中继器按队缓存也在世界加载时失效重建（读档后建筑重新加入 Groups.build）。
-        // 卫星状态为运行时内存态，世界加载时重置；电力保护器全局状态也需重置。
         // 注:hub network id 计数器不再在此 reset——读档顺序是构造(占号)→read 用存档 id
         // 覆盖→WorldLoadEvent,reset 反而制造撞号;现由 ItemTransferHubBuild.read() 调
         // ItemTransferHubNetwork.updateCounterAfterLoad 按 max 推进。
+        // 卫星名册的清空挂在 ResetEvent（存档读入前/返回主菜单/新开局都会触发）——
+        // 读档流程是 ResetEvent 清空 → 控制台存档块读入重建名册 → WorldLoadEvent 对账。
+        Events.on(EventType.ResetEvent.class, e -> SatelliteManager.reset());
         Events.on(EventType.WorldLoadEvent.class, e -> {
             SignalSource.markDirty();
             SignalRelay.markDirty();
-            SatelliteManager.reset();
+            SatelliteManager.onWorldLoaded(); // 名册↔卫星实体对账（丢弃死 id/补建未绑定记录）+ 广播
             SignalOverlay.reset(); // 清颜色缓存/色相分配/显示状态，防跨世界累积
         });
+        // 卫星实体被击落（伤害仅可能来自 scripted unit.damage()）→ 名册除名并广播
+        Events.on(EventType.UnitDestroyEvent.class, e -> SatelliteManager.onUnitDestroyed(e.unit));
         // 玩家中途加入时同步「卫星在轨」buff 显示（按队伍）；主机向新玩家补发卫星状态 + 中继器激活状态
         Events.on(EventType.PlayerJoin.class, e -> {
             if (SatelliteManager.launchedCount(e.player.team()) > 0 && e.player.unit() != null) {
@@ -290,6 +296,7 @@ public class Silicon extends Mod {
                         case SatelliteManager.LAUNCH_NO_HUB: key = "block.silicon-satellite-console.nohub"; break;
                         case SatelliteManager.LAUNCH_MULTI_HUB: key = "block.silicon-satellite-console.multihub"; break;
                         case SatelliteManager.LAUNCH_MULTI_CONSOLE: key = "block.silicon-satellite-console.multiconsole"; break;
+                        case SatelliteManager.LAUNCH_TEST_SANDBOX: key = "block.silicon-satellite-console.sandboxOnly"; break;
                         default: key = "block.silicon-satellite-console.fail"; break;
                     }
                     ui.showInfoToast(Core.bundle.get(key), 3f);

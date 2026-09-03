@@ -194,9 +194,6 @@ public class SatelliteConsole extends Block {
                 row.add(btn).size(110f, 40f).pad(2f);
             }
             table.add(row).pad(2f);
-            table.row();
-            // 燃油需求与轨道限制说明
-            table.label(() -> Core.bundle.get("block.silicon-satellite-console.orbit.hint")).color(Color.gray).pad(2f);
         }
 
         /** 轨道按钮短标签（LEO 等） */

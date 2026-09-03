@@ -137,7 +137,7 @@ public class Silicon extends Mod {
                     } catch (NumberFormatException e) {
                         return;
                     }
-                    int result = SatelliteManager.launch(p.team(), parts[1].isEmpty() ? null : parts[1], orbit);
+                    int result = SatelliteManager.launch(p.team(), parts[1].isEmpty() ? null : parts[1], orbit, cb.x, cb.y);
                     if (result != SatelliteManager.LAUNCH_OK) {
                         Call.clientPacketReliable(p.con, "sat-result", String.valueOf(result));
                     }
@@ -268,6 +268,9 @@ public class Silicon extends Mod {
                         case SatelliteManager.LAUNCH_NO_FUEL: key = "block.silicon-satellite-console.nofuel"; break;
                         case SatelliteManager.LAUNCH_NO_POWER: key = "block.silicon-satellite-console.nopower"; break;
                         case SatelliteManager.LAUNCH_ORBIT_FORBIDDEN: key = "block.silicon-satellite-console.orbitForbidden"; break;
+                        case SatelliteManager.LAUNCH_NO_HUB: key = "block.silicon-satellite-console.nohub"; break;
+                        case SatelliteManager.LAUNCH_MULTI_HUB: key = "block.silicon-satellite-console.multihub"; break;
+                        case SatelliteManager.LAUNCH_MULTI_CONSOLE: key = "block.silicon-satellite-console.multiconsole"; break;
                         default: key = "block.silicon-satellite-console.fail"; break;
                     }
                     ui.showInfoToast(Core.bundle.get(key), 3f);

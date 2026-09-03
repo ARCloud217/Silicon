@@ -23,6 +23,7 @@ import mindustry.Vars;
 import silicon.content.Statuses;
 import silicon.world.blocks.satellite.SatelliteConsole;
 import silicon.world.blocks.satellite.SatelliteLauncher;
+import silicon.world.blocks.signal.SignalChannel;
 
 /**
  * 卫星系统全局状态（按队伍）：
@@ -41,6 +42,12 @@ public class SatelliteManager {
     public static final int LAUNCH_NO_POWER = 3;
     /** 轨道与卫星种类不匹配（信号卫星不能发 SSO） */
     public static final int LAUNCH_ORBIT_FORBIDDEN = 4;
+    /** 未绑定卫星发射中枢（无信号/信号范围内无中枢/控制台不在信号范围内） */
+    public static final int LAUNCH_NO_HUB = 5;
+    /** 所选信号范围内存在多个卫星发射中枢 */
+    public static final int LAUNCH_MULTI_HUB = 6;
+    /** 所选信号范围内存在多个卫星控制台 */
+    public static final int LAUNCH_MULTI_CONSOLE = 7;
 
     /** 在轨卫星数量（按队伍、按种类）——联网时仅主机维护真实值，客机经 sat-state 广播镜像 */
     private static final ObjectMap<Team, ObjectIntMap<Integer>> launched = new ObjectMap<>();
@@ -198,21 +205,55 @@ public class SatelliteManager {
         }
     }
 
+    /** 指定信号范围内的本队卫星发射中枢（中枢位置处于该信号有效范围内） */
+    public static Seq<SatelliteLauncher.SatelliteLauncherBuild> hubsInSignal(Team team, String signal) {
+        Seq<SatelliteLauncher.SatelliteLauncherBuild> out = new Seq<>();
+        if (signal == null || signal.isEmpty()) return out;
+        for (Building b : Groups.build) {
+            if (b instanceof SatelliteLauncher.SatelliteLauncherBuild lb && lb.team == team
+                    && SignalChannel.inSignalRange(team, signal, lb.x, lb.y)) {
+                out.add(lb);
+            }
+        }
+        return out;
+    }
+
+    /** 指定信号范围内的本队卫星控制台数量（含自身；>1 即"存在多个控制台"） */
+    public static int consolesInSignal(Team team, String signal) {
+        int n = 0;
+        if (signal == null || signal.isEmpty()) return 0;
+        for (Building b : Groups.build) {
+            if (b instanceof SatelliteConsole.SatelliteConsoleBuild cb && cb.team == team
+                    && SignalChannel.inSignalRange(team, signal, cb.x, cb.y)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     /**
-     * 发射一颗卫星（权威端调用）：取出第一颗待发射卫星（种类以该中枢选择的为准），
-     * 校验轨道允许性（信号卫星禁 SSO），由其中枢扣除该轨道所需石油与缓冲电力（10000），在轨 +1，
+     * 发射一颗卫星（权威端调用）：控制台与卫星发射中枢必须绑定——
+     * 控制台须处于所选信号范围内，且该信号范围内恰好一台中枢与一台控制台（1:1 配对，否则拒绝并提示），
+     * 由绑定的中枢扣除该轨道所需石油与缓冲电力（10000），在轨 +1，
      * 记录卫星所属信号（控制台选择，全图信号层用其颜色显示），
      * 给发射队伍的全图玩家应用「卫星在轨」buff，并向全图播报。
-     * @param signalName 卫星所属信号编码（4 位；null=无归属）
+     * @param signalName 卫星所属信号编码（4 位；null=未绑定）
      * @param orbit 发射轨道（SatelliteConsole.ORBIT_*），决定燃油需求
+     * @param consoleX/consoleY 控制台世界坐标（像素）——判定控制台自身是否在该信号范围内
      * @return 发射结果（LAUNCH_*）
      */
-    public static int launch(Team team, String signalName, int orbit) {
-        Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
-        if (list == null || list.isEmpty()) return LAUNCH_NO_READY;
-        SatelliteLauncher.SatelliteLauncherBuild launcher = list.get(0);
+    public static int launch(Team team, String signalName, int orbit, float consoleX, float consoleY) {
+        // —— 绑定校验 ——
+        if (signalName == null || signalName.isEmpty()) return LAUNCH_NO_HUB;
+        if (!SignalChannel.inSignalRange(team, signalName, consoleX, consoleY)) return LAUNCH_NO_HUB;
+        Seq<SatelliteLauncher.SatelliteLauncherBuild> hubs = hubsInSignal(team, signalName);
+        if (hubs.isEmpty()) return LAUNCH_NO_HUB;
+        if (hubs.size > 1) return LAUNCH_MULTI_HUB;
+        if (consolesInSignal(team, signalName) > 1) return LAUNCH_MULTI_CONSOLE;
+        SatelliteLauncher.SatelliteLauncherBuild launcher = hubs.first();
         int type = launcher.selectedType;
         if (!SatelliteConsole.orbitAllowed(type, orbit)) return LAUNCH_ORBIT_FORBIDDEN;
+        if (!launcher.produced) return LAUNCH_NO_READY;
         int fuel = SatelliteConsole.fuelFor(orbit);
         int reason = launcher.checkLaunchResources(fuel);
         if (reason != LAUNCH_OK) return reason;
@@ -220,7 +261,8 @@ public class SatelliteManager {
         launcher.launchAnim = 0f;
         // 扣该轨道所需石油与缓冲电力，重置该中枢使其可再生产
         launcher.consumeLaunchResources(fuel);
-        list.remove(0);
+        Seq<SatelliteLauncher.SatelliteLauncherBuild> list = readyLaunchers.get(team);
+        if (list != null) list.remove(launcher);
         launched.get(team, ObjectIntMap::new).increment(type, 1);
         // 记录卫星所属信号（全图信号层按此着色）
         if (signalName != null && !signalName.isEmpty()) {

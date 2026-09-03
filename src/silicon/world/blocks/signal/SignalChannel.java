@@ -45,6 +45,27 @@ public class SignalChannel {
         return -1;
     }
 
+    /**
+     * (wx,wy) 处是否处于指定信号 name 的"信号范围"内：信号源覆盖或已激活的同源中继器级联延伸。
+     * 供卫星控制台 ↔ 卫星发射中枢绑定判定（控制台与中枢必须同处该信号范围内）。
+     * 信号源为中继器提供初始覆盖，因此遍历源（自身覆盖）即涵盖全部级联源点；激活中继器转发同一编码延伸。
+     */
+    public static boolean inSignalRange(Team team, String name, float wx, float wy) {
+        if (name == null || name.isEmpty()) return false;
+        for (SignalSource.SignalSourceBuild sb : SignalSource.allSources(team)) {
+            if (sb.signal != null && name.equals(sb.signal.name)
+                    && SignalSource.strengthAt(sb.x, sb.y, wx, wy) > 0f) {
+                return true;
+            }
+        }
+        for (SignalRelay.SignalRelayBuild rb : SignalRelay.allRelays(team)) {
+            if (rb.active && name.equals(rb.selectedSource) && rb.strengthAt(wx, wy) > 0f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 计算结果：有效强度 + 最强同信道源（用于显示颜色） */
     public static class Result {
         public float strength;

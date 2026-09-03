@@ -17,6 +17,7 @@ import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
 import mindustry.world.Block;
 import silicon.util.SatelliteManager;
+import silicon.world.blocks.signal.SignalChannel;
 import silicon.world.blocks.signal.SignalSource;
 
 /**
@@ -87,6 +88,41 @@ public class SatelliteConsole extends Block {
         public int selectedOrbit = ORBIT_LEO;
         /** 上次渲染的信号源列表签名（窗口实时刷新用） */
         private String lastSrcSignature = "";
+        /** 窗口绑定状态缓存刷新节流（tick） */
+        private static final int UI_REFRESH = 8;
+        private int uiTick = 0;
+        /** 绑定状态缓存：信号范围内唯一中枢（多台/未绑定时为 null） */
+        private SatelliteLauncher.SatelliteLauncherBuild boundHub = null;
+        private int hubCount = 0;
+        private int consoleCount = 0;
+        private boolean consoleInRange = false;
+        /** SSO 轨道按钮（动态灰化用） */
+        private TextButton ssoBtn = null;
+
+        /** 刷新绑定状态缓存（节流调用） */
+        void refreshBinding() {
+            consoleInRange = selectedSignal != null && !selectedSignal.isEmpty()
+                    && SignalChannel.inSignalRange(team, selectedSignal, x, y);
+            Seq<SatelliteLauncher.SatelliteLauncherBuild> hubs = SatelliteManager.hubsInSignal(team, selectedSignal);
+            hubCount = hubs.size;
+            boundHub = hubCount == 1 ? hubs.first() : null;
+            consoleCount = SatelliteManager.consolesInSignal(team, selectedSignal);
+            if (ssoBtn != null) ssoBtn.setDisabled(ssoBlocked());
+        }
+
+        /** 绑定状态错误键（null=绑定正常可发射） */
+        String bindingKey() {
+            if (!consoleInRange || hubCount == 0) return "block.silicon-satellite-console.nohub";
+            if (hubCount > 1) return "block.silicon-satellite-console.multihub";
+            if (consoleCount > 1) return "block.silicon-satellite-console.multiconsole";
+            return null;
+        }
+
+        /** SSO 是否灰化：绑定的中枢正在制造或待发射信号卫星 */
+        boolean ssoBlocked() {
+            return boundHub != null && boundHub.selectedType == TYPE_SIGNAL
+                    && (boundHub.produced || boundHub.progress > 0f);
+        }
 
         /** 发射卫星：本队可点发射。权威端（主机/单机）直接执行；纯客机发请求由主机执行并广播/反馈结果 */
         public void launch() {
@@ -107,7 +143,7 @@ public class SatelliteConsole extends Block {
 
         /** 权威端发射执行 + 结果提示（launch 的本地路径，或主机的 sat-launch 处理器直接调用） */
         public void doLaunch(String signalName, int orbit) {
-            int result = SatelliteManager.launch(team, signalName, orbit);
+            int result = SatelliteManager.launch(team, signalName, orbit, x, y);
             String key;
             switch (result) {
                 case SatelliteManager.LAUNCH_OK: key = "block.silicon-satellite-console.success"; break;
@@ -115,6 +151,9 @@ public class SatelliteConsole extends Block {
                 case SatelliteManager.LAUNCH_NO_FUEL: key = "block.silicon-satellite-console.nofuel"; break;
                 case SatelliteManager.LAUNCH_NO_POWER: key = "block.silicon-satellite-console.nopower"; break;
                 case SatelliteManager.LAUNCH_ORBIT_FORBIDDEN: key = "block.silicon-satellite-console.orbitForbidden"; break;
+                case SatelliteManager.LAUNCH_NO_HUB: key = "block.silicon-satellite-console.nohub"; break;
+                case SatelliteManager.LAUNCH_MULTI_HUB: key = "block.silicon-satellite-console.multihub"; break;
+                case SatelliteManager.LAUNCH_MULTI_CONSOLE: key = "block.silicon-satellite-console.multiconsole"; break;
                 default: key = "block.silicon-satellite-console.fail"; break;
             }
             if (result == SatelliteManager.LAUNCH_OK) {
@@ -160,19 +199,21 @@ public class SatelliteConsole extends Block {
                     : Core.bundle.get("block.silicon-satellite-console.type.short.test");
         }
 
-        /** 名称行：准备发射/制造中的卫星（动态，主机直读权威状态，客机读 sat-state 镜像） */
+        /** 名称行：绑定的中枢所准备发射/制造中的卫星（动态；未绑定或异常时显示 —） */
         void addSatelliteNameRow(Table table) {
             table.label(() -> {
-                int r = SatelliteManager.readyType(team);
-                int m = SatelliteManager.producingType(team);
-                String rs = r < 0 ? Core.bundle.get("block.silicon-satellite-console.name.none") : typeShortName(r);
-                String ms = m < 0 ? Core.bundle.get("block.silicon-satellite-console.name.none") : typeShortName(m);
-                return Core.bundle.format("block.silicon-satellite-console.name.line", rs, ms);
+                String r = Core.bundle.get("block.silicon-satellite-console.name.none");
+                String m = Core.bundle.get("block.silicon-satellite-console.name.none");
+                if (boundHub != null) {
+                    if (boundHub.produced) r = typeShortName(boundHub.selectedType);
+                    if (!boundHub.produced && boundHub.progress > 0f) m = typeShortName(boundHub.selectedType);
+                }
+                return Core.bundle.format("block.silicon-satellite-console.name.line", r, m);
             }).color(Color.lightGray).pad(2f);
         }
 
-        /** 轨道选择按钮行（4 单选）+ 选中轨道名（SSO 标注测试卫星专属） */
-        void rebuildOrbitRow(Table table, Runnable refreshChecked) {
+        /** 轨道选择按钮行（4 单选）；绑定的中枢在造/待发信号卫星时 SSO 灰化 */
+        void rebuildOrbitRow(Table table) {
             table.row();
             table.label(() -> Core.bundle.format("block.silicon-satellite-console.orbit.current", orbitName(selectedOrbit)))
                     .color(arc.graphics.Color.lightGray).padTop(6f);
@@ -181,6 +222,7 @@ public class SatelliteConsole extends Block {
             table.row();
             Table row = new Table();
             ButtonGroup<TextButton> group = new ButtonGroup<>();
+            ssoBtn = null;
             for (int o = ORBIT_LEO; o < ORBIT_COUNT; o++) {
                 final int orbit = o;
                 TextButton btn = new TextButton(orbitKeyShort(orbit), Styles.flatTogglet);
@@ -188,9 +230,9 @@ public class SatelliteConsole extends Block {
                 btn.clicked(() -> {
                     selectedOrbit = orbit;
                     configure(orbit);
-                    refreshChecked.run();
                 });
                 group.add(btn);
+                if (orbit == ORBIT_SSO) ssoBtn = btn;
                 row.add(btn).size(110f, 40f).pad(2f);
             }
             table.add(row).pad(2f);
@@ -206,11 +248,11 @@ public class SatelliteConsole extends Block {
             }
         }
 
-        /** 窗口内容：卫星名称 + 状态 + 当前信号 + 信号选择 + 轨道选择 + 发射 */
+        /** 窗口内容：卫星名称 + 状态 + 当前信号 + 信号选择 + 轨道选择 + 绑定状态 + 发射 */
         void rebuildFull(Table table, BaseDialog dialog) {
             table.clearChildren();
             table.top();
-            // 卫星名称行（准备发射/制造中）——动态
+            // 卫星名称行（绑定的中枢准备发射/制造中）——动态
             addSatelliteNameRow(table);
             table.row();
             // 状态（动态刷新）
@@ -235,7 +277,7 @@ public class SatelliteConsole extends Block {
             table.row();
             ScrollPane pane = new ScrollPane(srcTable, Styles.noBarPane);
             pane.setScrollingDisabled(true, false); // 禁水平滚动，垂直滚轮翻页
-            table.add(pane).height(150f).growX().padTop(2f);
+            table.add(pane).height(130f).growX().padTop(2f);
             table.row();
             // 清除按钮
             table.button(Core.bundle.get("block.silicon-satellite-console.signal.clear"), Styles.defaultt, () -> {
@@ -243,25 +285,35 @@ public class SatelliteConsole extends Block {
                 configure("");
                 rebuildSourceButtons(srcTable, search.getText().trim());
             }).size(88f, 40f).padTop(2f);
-            // 轨道区（点击后仅重选按钮态，不整窗重建以保留搜索词）
-            Runnable refreshChecked = () -> {
-                // 轨道按钮选中态由 rebuildOrbitRow 重建：这里通过重建整窗最简单可靠，
-                // 但会清掉搜索词——改为仅刷新轨道行即可（轨道行独立于信号区，此处重建整个轨道行）
-            };
-            rebuildOrbitRow(table, refreshChecked);
+            // 轨道区
+            rebuildOrbitRow(table);
+            table.row();
+            // 绑定状态行（未绑定/存在多个…时红字提示；正常显示已绑定）
+            table.label(() -> {
+                String k = bindingKey();
+                String t = k == null ? Core.bundle.get("block.silicon-satellite-console.bound")
+                        : Core.bundle.get(k);
+                return k == null ? t : "[scarlet]" + t + "[]";
+            }).pad(2f);
             table.row();
             // 发射按钮（状态/名称为动态 label，发射后自动刷新，无需重建窗口）
             table.button(Core.bundle.get("block.silicon-satellite-console.launch"), Styles.defaultt, this::launch)
-                    .size(280f, 56f).padTop(10f);
-            // 实时刷新：信号源列表变化（增删/编号变更）时重建按钮区（保持搜索过滤）
+                    .size(280f, 56f).padTop(8f);
+            // 实时刷新：绑定状态缓存（节流）+ 信号源列表变化时重建按钮区（保持搜索过滤）
             lastSrcSignature = "";
+            uiTick = 0;
             pane.update(() -> {
+                if (++uiTick >= UI_REFRESH) {
+                    uiTick = 0;
+                    refreshBinding();
+                }
                 String sig = sourceSignature();
                 if (!sig.equals(lastSrcSignature)) {
                     lastSrcSignature = sig;
                     rebuildSourceButtons(srcTable, search.getText().trim());
                 }
             });
+            refreshBinding();
             // 初始填充全部信号源
             rebuildSourceButtons(srcTable, "");
         }

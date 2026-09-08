@@ -4,8 +4,6 @@ import arc.Core;
 import arc.Events;
 import arc.graphics.Color;
 import arc.math.Mathf;
-import arc.scene.actions.Actions;
-import arc.scene.event.Touchable;
 import arc.scene.style.NinePatchDrawable;
 import arc.scene.ui.Image;
 import arc.scene.ui.Label;
@@ -42,7 +40,6 @@ import silicon.util.MessageSystem.MessageType;
 
 import static mindustry.Vars.control;
 import static mindustry.Vars.state;
-import static mindustry.Vars.ui;
 
 /**
  * PowerProtector - 电力保护器（重写版）
@@ -302,13 +299,24 @@ public class PowerProtector extends PowerGenerator {
                 && ppb.state.debt > 0 && !ppb.state.conflict) {
             if (Time.time - lastBreakToast >= 90f) {
                 lastBreakToast = Time.time;
-                if (!mindustry.Vars.headless && !state.isMenu()) {
-                    ppb.showCannotBreakBanner();
-                }
+                postCannotBreakMessage();
             }
             return false;
         }
         return true;
+    }
+
+    /** 经消息系统发送禁止拆除提示：瞬时消息、淡灰色气泡、× 图标、低优先级。 */
+    private static void postCannotBreakMessage() {
+        if (mindustry.Vars.headless || state.isMenu()) return;
+        MessageSystem.instance.post(
+            MessageSystem.normal(
+                Core.bundle.get("block.silicon-power-protector.announce.cannotBreak.title"),
+                Core.bundle.get("block.silicon-power-protector.announce.cannotBreak.content"))
+            .titleKey("block.silicon-power-protector.announce.cannotBreak.title")
+            .contentKey("block.silicon-power-protector.announce.cannotBreak.content")
+            .icon(Icon.cancel)
+            .life(5f));
     }
 
     @Override
@@ -757,7 +765,6 @@ public class PowerProtector extends PowerGenerator {
         private Label statusLabel = null, remainingLabel = null, debtLabel = null, supplyLabel = null, restorePercentLabel = null;
         private TextButton stopButton = null;
         private Slider restorePercentSlider = null;
-        private Table breakBannerTable = null;
 
         /** 当前显示模式文案（与方块进度条共用） */
         public String modeText() {
@@ -900,32 +907,6 @@ public class PowerProtector extends PowerGenerator {
                 supplyLabel.setText(Strings.fixed(supply, 1) + "/s");
                 supplyLabel.setColor(protecting ? Color.green : Color.gray);
             }
-        }
-
-        /** 禁止拆除提示横幅：短暂显示后消失 */
-        private void showCannotBreakBanner() {
-            if (breakBannerTable != null) return;
-            Table t = new Table(Styles.black3);
-            t.touchable = Touchable.disabled;
-            t.margin(8f);
-            Label label = t.add(Core.bundle.get("block.silicon-power-protector.ui.cannotBreak"))
-                    .style(Styles.outlineLabel).padLeft(2f).get();
-            label.setAlignment(Align.left);
-            t.update(() -> {
-                t.pack();
-                t.setPosition(6f, Core.graphics.getHeight() * 0.6f - 24f, Align.topLeft);
-                if (mindustry.Vars.state.isMenu() || !ui.hudfrag.shown) {
-                    if (breakBannerTable == t) breakBannerTable = null;
-                    t.remove();
-                }
-            });
-            t.actions(Actions.fadeOut(2.4f), Actions.run(() -> {
-                if (breakBannerTable == t) breakBannerTable = null;
-            }), Actions.remove());
-            breakBannerTable = t;
-            t.pack();
-            t.act(0.1f);
-            ui.hudGroup.addChild(t);
         }
 
         // ===== 存档 =====
